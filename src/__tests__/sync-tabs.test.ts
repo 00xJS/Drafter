@@ -145,6 +145,21 @@ describe('the lead passes on', () => {
     B.engine.stop()
   })
 
+  it('a tab given the lead that cannot read the cache yet keeps the lock and tries again, rather than leave nobody syncing', async () => {
+    const server = new FakeServer()
+    server.seed(task('y'))
+    const { tabs, disk, A, B } = await twoTabs(server)
+    A.engine.stop()
+    disk.failReads = 4
+    tabs.close('A')
+    await vi.advanceTimersByTimeAsync(20_000)
+    expect(tabs.leader()).toBe('B')
+    expect(B.engine.inspect().leading).toBe(true)
+    editTask(B, 'y', { title: 'after a slow takeover' })
+    await settleTabs(B)
+    expect(server.row<Task>('y')!.title).toBe('after a slow takeover')
+  })
+
   it('a leader going out of view gives the lead to a tab in view, keeping what it had not sent', async () => {
     const server = new FakeServer()
     server.seed(task('a'))

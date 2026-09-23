@@ -51,6 +51,8 @@ export const LIVE_PERIODIC_MS = 5 * 60_000
 const ASK_TIMEOUT_MS = 60_000
 /** How long boot waits to learn whether this tab syncs before it opens as one that does not. */
 const LEAD_WAIT_MS = 3_000
+/** A tab that holds the lock but could not take over yet tries again after this long. */
+const TAKEOVER_RETRY_MS = 5_000
 const BACKOFF_BASE_MS = 30_000
 const BACKOFF_CAP_MS = 30 * 60_000
 /** The kinds this build syncs, as the bookkeeping records them beside the cursor: when the stored list differs, boot does one full exchange. */
@@ -1399,6 +1401,10 @@ export function createSyncEngine(deps: SyncEngineDeps) {
   async function takeOver(): Promise<void> {
     if (leading || takingOver || !lead) return
     takingOver = true
+    // Holding the lock and not leading is nobody syncing: whatever stopped
+    // this one (a cache that would not read, a boot that superseded it) is
+    // tried again in a moment, for as long as this tab holds the lock.
+    const again = () => void timers.setTimeout(() => void takeOver(), TAKEOVER_RETRY_MS)
     try {
       // this tab's own hand-overs are on disk before the outbox is read
       await handing.catch(() => {})
@@ -1430,8 +1436,8 @@ export function createSyncEngine(deps: SyncEngineDeps) {
         }
         await handing.catch(() => {})
         if (!cached || gen !== bootGen || !lead.leading()) {
-          // cannot lead without knowing what is on disk: let another tab try
-          if (!cached) lead.release()
+          // cannot lead without knowing what is on disk: not yet
+          if (lead.leading()) again()
           return
         }
         leading = true
@@ -1439,9 +1445,20 @@ export function createSyncEngine(deps: SyncEngineDeps) {
         unsaved.clear()
         takeUp(cached, account)
       } else {
-        const { entries, records } = await storage.readOutbox!()
+        let outbox: { entries: Handoff[]; records: Item[] }
+        try {
+          outbox = await storage.readOutbox!()
+        } catch (e) {
+          console.error('Failed to read the edits other tabs handed over', e)
+          if (lead.leading()) again()
+          return
+        }
+        const { entries, records } = outbox
         await handing.catch(() => {})
-        if (gen !== bootGen || !lead.leading()) return
+        if (gen !== bootGen || !lead.leading()) {
+          if (lead.leading()) again()
+          return
+        }
         leading = true
         stopTimers()
         // the cache's copy of each record handed over, not this tab's own edit of it: that is taken in below, as the edit it is
