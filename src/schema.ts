@@ -428,7 +428,7 @@ const PLACE_CATEGORY_SET = new Set<string>(PLACE_CATEGORIES)
 const MEAL_SLOT_SET = new Set<string>(MEAL_SLOTS)
 const GROCERY_STATE_SET = new Set<string>(GROCERY_STATES)
 const ROUTINE_WHEN_SET = new Set<string>(ROUTINE_WHENS)
-/** Every kind sync_posts accepts — one list, in shared/kinds.mjs; a test holds the newest migration to it. */
+/** Every kind sync_posts accepts — one list, in shared/kinds.mjs; a test holds public.record_kinds to it. */
 export const KNOWN_KINDS = SYNC_KINDS
 
 /** Coerce arbitrary data into a valid Person. */

@@ -1,54 +1,99 @@
-import { readdirSync, readFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { PERSONAL_KINDS, SYNC_KINDS, kindOf, readableKind, readableRow } from '../../shared/kinds.mjs'
+import { PERSONAL_KINDS, SHARED_BY_DEFAULT, SYNC_KINDS, kindOf, readableKind, readableRow } from '../../shared/kinds.mjs'
 import { visibleItemsFor } from '../../shared/digest.mjs'
 import { KINDS } from '../../netlify/functions/lib/datastats.mjs'
 import { KNOWN_KINDS } from '../schema'
+import { readMigrations, recordKinds, recordKindsFrom, type Migration } from './recordkinds'
 
-// shared/kinds.mjs is the one list: the app, the digest and the server-side
-// readers all import it. What can't import it — the kind lists written into
-// migrations, and the Admin tallies — is held to it here, and the app is held
-// to importing rather than keeping a copy. A personal kind the policy forgets
-// is how habits and routines reached a household peer's device through v3.9.
+// shared/kinds.mjs is the code's one list: the app, the digest and the
+// server-side readers all import it. The database's is public.record_kinds
+// (v3.31), which sync_posts, the posts policy and account deletion all read;
+// recordKinds() replays the migrations that fill it, so a kind added by an
+// insert is held to this file with no test to edit. The Admin tallies are held
+// here too, and the app is held to importing rather than keeping a copy. A
+// personal kind the policy forgets is how habits and routines reached a
+// household peer's device through v3.9.
 
 const root = new URL('../../', import.meta.url)
-const dir = fileURLToPath(new URL('supabase/migrations/', root))
-const migrations = readdirSync(dir)
-  .filter(f => f.endsWith('.sql'))
-  .sort()
-  .map(f => ({ f, sql: readFileSync(dir + f, 'utf8') }))
+const migrations = readMigrations()
+const kinds = recordKinds()
 const sorted = (xs: Iterable<string>) => [...xs].sort()
 
-/** The newest migration whose text matches `declares`. */
-function newestFile(declares: RegExp): string {
-  for (const { sql } of [...migrations].reverse()) if (declares.test(sql)) return sql
+/** The newest of `among` whose text matches `declares`. */
+function newestFile(declares: RegExp, among: Migration[] = migrations): Migration {
+  for (const m of [...among].reverse()) if (declares.test(m.sql)) return m
   throw new Error(`no migration matches ${declares}`)
 }
 
-/** The quoted kinds in the newest migration matching `declares`, taken from the first group of `list`. */
-function newest(declares: RegExp, list: RegExp): string[] {
-  for (const { f, sql } of [...migrations].reverse()) {
-    if (!declares.test(sql)) continue
-    const m = list.exec(sql)
-    if (!m) throw new Error(`${f} matches ${declares} but has no kind list`)
-    return [...m[1].matchAll(/'([a-z]+)'/g)].map(x => x[1])
-  }
-  throw new Error(`no migration matches ${declares}`)
+/** The quoted kinds in the newest of `among` matching `declares`, taken from the first group of `list`. */
+function newest(declares: RegExp, list: RegExp, among: Migration[] = migrations): string[] {
+  const { file, sql } = newestFile(declares, among)
+  const m = list.exec(sql)
+  if (!m) throw new Error(`${file} matches ${declares} but has no kind list`)
+  return [...m[1].matchAll(/'([a-z]+)'/g)].map(x => x[1])
+}
+
+/** The text of one definition in the newest migration that makes it: from `starts` to the first `ends` after it. */
+function newestDefinition(starts: RegExp, ends: string): string {
+  const { sql } = newestFile(starts)
+  const from = sql.search(starts)
+  return sql.slice(from, sql.indexOf(ends, from) + ends.length)
 }
 
 describe('SYNC_KINDS is every kind the server stores', () => {
-  it('matches the client’s KNOWN_KINDS, the newest sync_posts allowlist and the Admin tallies', () => {
+  it('matches the client’s KNOWN_KINDS, record_kinds and the Admin tallies', () => {
     expect(sorted(SYNC_KINDS)).toEqual(sorted(KNOWN_KINDS))
-    expect(sorted(SYNC_KINDS)).toEqual(sorted(newest(/create or replace function public\.sync_posts/, /kind in \(([^)]*)\)/)))
+    expect(sorted(SYNC_KINDS)).toEqual(sorted(kinds.keys()))
     expect(sorted(KINDS)).toEqual(sorted(SYNC_KINDS))
   })
 })
 
+describe('record_kinds is the database’s one list', () => {
+  it('was seeded with exactly what the database enforced before it — no kind lost, gained or re-decided', () => {
+    // The v3.31 refactor, held from the files as the migration's own guard
+    // holds it against the live database: the seed against the newest
+    // allowlist, personal list and per-record clauses written out before it.
+    const seeding = migrations.findIndex(m => /create table if not exists public\.record_kinds\b/.test(m.sql))
+    expect(seeding, 'the migration that creates record_kinds').toBeGreaterThan(0)
+    const before = migrations.slice(0, seeding)
+    const seed = recordKindsFrom(migrations.slice(0, seeding + 1))
+    expect(sorted(seed.keys())).toEqual(sorted(newest(/create or replace function public\.sync_posts/, /item_kind in \(([^)]*)\)/, before)))
+    const policy = newestFile(/create policy "household access" on public\.posts\b/, before).sql
+    const personal = newest(/create policy "household access" on public\.posts\b/, /create policy "household access" on public\.posts\b[\s\S]*?not in \(([^)]*)\)/, before)
+    expect(sorted([...seed].filter(([, f]) => f.personal).map(([k]) => k))).toEqual(sorted(personal))
+    expect(sorted(newest(/create or replace function public\.admin_prepare_user_deletion/, /personal constant text\[\] := array\[([^\]]*)\]/, before))).toEqual(sorted(personal))
+    const perRecord = Object.fromEntries(
+      [...policy.slice(policy.indexOf('create policy "household access"')).matchAll(/<> '([a-z]+)' or coalesce\(data ->> 'shared', '(true|false)'\) = 'true'/g)]
+        .map(m => [m[1], m[2] === 'true']),
+    )
+    expect(Object.fromEntries([...seed].filter(([, f]) => f.sharedDefault !== null).map(([k, f]) => [k, f.sharedDefault]))).toEqual(perRecord)
+  })
+
+  it('is what sync_posts, the posts policy, account deletion and the flag trigger read — none keeps a list again', () => {
+    // A definition copied from a migration older than v3.31 brings its list
+    // back, and a kind then added by an insert is refused, or seen, by that
+    // one place. db:smoke catches it by behaviour; this catches it first.
+    const syncPosts = newestDefinition(/create or replace function public\.sync_posts\b/, '$$;')
+    expect(syncPosts).toContain('public.record_kind_allowed(item_kind)')
+    expect(syncPosts).not.toMatch(/item_kind in \(/)
+    const policy = newestDefinition(/create policy "household access" on public\.posts\b/, ');\n')
+    expect(policy).toContain('public.record_peer_visible(')
+    expect(policy).toContain('public.record_shared(')
+    expect(policy).not.toMatch(/not in \(|<> '[a-z]+'/)
+    const deletion = newestDefinition(/create or replace function public\.admin_prepare_user_deletion\b/, '$$;')
+    expect(deletion).toContain('public.record_peer_visible(')
+    expect(deletion).not.toMatch(/array\['|in \('/)
+    const flag = newestDefinition(/create or replace function public\.posts_private_flag\b/, '$$;')
+    expect(flag).toContain('public.record_kind_shared_default(')
+    expect(flag).not.toMatch(/in \('/)
+  })
+})
+
 describe('PERSONAL_KINDS is what the database keeps to its owner', () => {
-  it('matches the newest posts policy', () => {
-    const posts = newest(/create policy "household access" on public\.posts\b/, /create policy "household access" on public\.posts\b[\s\S]*?not in \(([^)]*)\)/)
-    expect(sorted(posts)).toEqual(sorted(PERSONAL_KINDS))
+  it('matches record_kinds', () => {
+    expect(sorted([...kinds].filter(([, f]) => f.personal).map(([k]) => k))).toEqual(sorted(PERSONAL_KINDS))
   })
 
   it('does not apply to posts_history, which is the owner\'s alone', () => {
@@ -57,17 +102,12 @@ describe('PERSONAL_KINDS is what the database keeps to its owner', () => {
     // draft would go with it — and VersionsPanel.tsx fetches this table straight
     // from the client with the reader's JWT. So there is no kind list here any
     // more: your own rows, and nothing else.
-    const sql = newestFile(/create policy "household history select" on public\.posts_history/)
+    const { sql } = newestFile(/create policy "household history select" on public\.posts_history/)
     const policy = sql.slice(sql.indexOf('create policy "household history select"'))
     const body = policy.slice(0, policy.indexOf(';') + 1)
     expect(body).toContain('using (user_id = auth.uid())')
     expect(body).not.toContain('household_user_ids')
     expect(body).not.toContain('not in (')
-  })
-
-  it('matches what account deletion treats as personal', () => {
-    const deletion = newest(/create or replace function public\.admin_prepare_user_deletion/, /personal constant text\[\] := array\[([^\]]*)\]/)
-    expect(sorted(deletion)).toEqual(sorted(PERSONAL_KINDS))
   })
 
   it('is what the app reads too — imported, never copied', () => {
@@ -162,11 +202,9 @@ describe('readableRow is the whole posts policy, for the readers that bypass it'
     }
   })
 
-  it('matches the newest posts policy, which is where it is really enforced', () => {
-    const sql = newestFile(/create policy "household access" on public\.posts\b/)
-    expect(sql).toMatch(/<> 'note' or coalesce\(data ->> 'shared', 'false'\) = 'true'/)
-    expect(sql).toMatch(/<> 'task' or coalesce\(data ->> 'shared', 'true'\) = 'true'/)
-    expect(sql).toMatch(/<> 'meal' or coalesce\(data ->> 'shared', 'true'\) = 'true'/)
+  it('matches record_kinds, which the posts policy reads and where it is really enforced', () => {
+    const perRecord = Object.fromEntries([...kinds].filter(([, f]) => f.sharedDefault !== null).map(([k, f]) => [k, f.sharedDefault]))
+    expect(perRecord).toEqual({ ...SHARED_BY_DEFAULT })
   })
 })
 
