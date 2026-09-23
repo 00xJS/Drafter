@@ -192,7 +192,7 @@ const linkRefused = status => status >= 400 && status < 500 && status !== 429
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
 
-/** A one-time magic-link token for `email`, hashed, from the admin API. Emails nothing. */
+/** A one-time magic-link token for `email`, hashed, from the admin API, with the verify type the link names. Emails nothing. */
 async function freshLink(url, admin, email) {
   const link = await fetch(`${url}/auth/v1/admin/generate_link`, { method: 'POST', headers: admin, body: JSON.stringify({ type: 'magiclink', email }) })
   if (!link.ok) throw sessionError(`generate_link answered ${link.status}.`)
@@ -201,7 +201,8 @@ async function freshLink(url, admin, email) {
   const props = linkBody?.properties ?? linkBody
   const hashed = typeof props?.hashed_token === 'string' ? props.hashed_token : ''
   if (!hashed) throw sessionError('generate_link returned no token.')
-  return hashed
+  const type = typeof props?.verification_type === 'string' && props.verification_type ? props.verification_type : 'magiclink'
+  return { hashed, type }
 }
 
 async function mintSession(userId) {
@@ -218,16 +219,23 @@ async function mintSession(userId) {
   const email = typeof user?.email === 'string' ? user.email : ''
   if (!email) throw sessionError('the account has no email address to sign in with.')
 
-  let res
-  for (let tries = 1; ; tries++) {
-    const hashed = await freshLink(url, admin, email)
-    // 'email', not the link's own 'magiclink': that one is deprecated as a
-    // verify type, and 'email' redeems a magic link all the same — one verify a try
-    res = await fetch(`${url}/auth/v1/verify`, {
+  const verify = (type, hashed) =>
+    fetch(`${url}/auth/v1/verify`, {
       method: 'POST',
       headers: { apikey: anonKey, 'content-type': 'application/json' },
-      body: JSON.stringify({ type: 'email', token_hash: hashed }),
+      body: JSON.stringify({ type, token_hash: hashed }),
     })
+  let res
+  for (let tries = 1; ; tries++) {
+    const link = await freshLink(url, admin, email)
+    // 'email' first: 'magiclink' is deprecated as a verify type, and 'email'
+    // redeems a magic link all the same. The link's own type stays as the
+    // fallback it was before, for an auth server that answers otherwise.
+    res = await verify('email', link.hashed)
+    if (linkRefused(res.status) && link.type !== 'email') {
+      await res.text().catch(() => '')
+      res = await verify(link.type, link.hashed)
+    }
     if (res.ok || !linkRefused(res.status)) break
     const pause = MINT_RETRY_PAUSE_MS[0] + Math.random() * (MINT_RETRY_PAUSE_MS[1] - MINT_RETRY_PAUSE_MS[0])
     if (tries >= MINT_ATTEMPTS || Date.now() + pause - started >= MINT_BUDGET_MS) {

@@ -289,10 +289,18 @@ describe('userAccessToken: a real session for the user, minted without an email'
     expect(await userAccessToken(U1)).toBe(`jwt~${U1}~1`)
   })
 
-  it('never asks verify for the deprecated "magiclink" type: one verify a try, with "email"', async () => {
+  it('asks verify with "email" first, so a server that refuses the deprecated "magiclink" costs nothing', async () => {
     fake.rejectVerifyTypes = ['magiclink']
     expect(await userAccessToken(U1)).toBe(`jwt~${U1}~1`)
     expect(calls.filter(c => c.path === '/auth/v1/verify').map(c => c.body.type)).toEqual(['email'])
+  })
+
+  it('falls back to the link\'s own type when "email" is refused, as it did before "email" came first', async () => {
+    fake.rejectVerifyTypes = ['email']
+    expect(await userAccessToken(U1)).toBe(`jwt~${U1}~1`)
+    expect(calls.filter(c => c.path === '/auth/v1/verify').map(c => c.body.type)).toEqual(['email', 'magiclink'])
+    // one link: the fallback redeems the same token, it does not ask for another
+    expect(calls.filter(c => c.path === '/auth/v1/admin/generate_link')).toHaveLength(1)
   })
 
   it('reuses the session until a minute before it expires, then mints a new one and logs the old one out', async () => {
@@ -387,8 +395,13 @@ describe('minting while another instance mints for the same user', () => {
     fake.holdLinks = 2
     const [a, b] = await Promise.all([first.userAccessToken(U1), second.userAccessToken(U1)])
     expect([a, b].sort()).toEqual([`jwt~${U1}~2`, `jwt~${U1}~3`])
-    // the first link was dead when it was redeemed; the retry's link went through
-    expect(calls.filter(c => c.path === '/auth/v1/verify').map(c => c.body.token_hash)).toEqual([`hashed~${U1}~1`, `hashed~${U1}~2`, `hashed~${U1}~3`])
+    // the first link was dead when it was redeemed (under both types); the retry's link went through
+    expect(calls.filter(c => c.path === '/auth/v1/verify').map(c => `${c.body.token_hash}:${c.body.type}`)).toEqual([
+      `hashed~${U1}~1:email`,
+      `hashed~${U1}~2:email`,
+      `hashed~${U1}~1:magiclink`,
+      `hashed~${U1}~3:email`,
+    ])
     // a retry asks for a new link, not for the account again
     expect(calls.filter(c => c.path === `/auth/v1/admin/users/${U1}`)).toHaveLength(2)
   })
@@ -397,11 +410,12 @@ describe('minting while another instance mints for the same user', () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'Date'] })
     const draws = [0, 0.5, 0.999]
     vi.spyOn(Math, 'random').mockImplementation(() => draws.shift() ?? 0)
-    fake.verifyStatus = Array(MINT_ATTEMPTS).fill(403)
+    // two verifies a try: 'email', then the link's own type
+    fake.verifyStatus = Array(2 * MINT_ATTEMPTS).fill(403)
     const started = Date.now()
     await expect(settle(userAccessToken(U1))).rejects.toThrow(`Drafter could not act as you: verify answered 403 on each of ${MINT_ATTEMPTS} tries.`)
     expect(calls.filter(c => c.path === '/auth/v1/admin/generate_link')).toHaveLength(MINT_ATTEMPTS)
-    expect(calls.filter(c => c.path === '/auth/v1/verify')).toHaveLength(MINT_ATTEMPTS)
+    expect(calls.filter(c => c.path === '/auth/v1/verify')).toHaveLength(2 * MINT_ATTEMPTS)
     // three pauses: the bottom of the range, its middle and its top (499.6, which a timer keeps as 499)
     expect(Date.now() - started).toBe(100 + 300 + 499)
     expect([MINT_ATTEMPTS, ...MINT_RETRY_PAUSE_MS]).toEqual([4, 100, 500])
@@ -410,10 +424,11 @@ describe('minting while another instance mints for the same user', () => {
   it('starts no try once MINT_BUDGET_MS has gone, so a slow auth server leaves the tool call its time', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'Date'] })
     vi.spyOn(Math, 'random').mockReturnValue(0)
-    fake.verifyStatus = Array(MINT_ATTEMPTS).fill(403)
+    fake.verifyStatus = Array(2 * MINT_ATTEMPTS).fill(403)
+    // each try is two slow verifies (3 s), so a second try ends past the budget and no third starts
     fake.verifyTakesMs = 1_500
-    await expect(settle(userAccessToken(U1))).rejects.toThrow('Drafter could not act as you: verify answered 403 on each of 3 tries.')
-    expect(calls.filter(c => c.path === '/auth/v1/admin/generate_link')).toHaveLength(3)
+    await expect(settle(userAccessToken(U1))).rejects.toThrow('Drafter could not act as you: verify answered 403 on each of 2 tries.')
+    expect(calls.filter(c => c.path === '/auth/v1/admin/generate_link')).toHaveLength(2)
     expect(MINT_BUDGET_MS).toBe(4_000)
   })
 
