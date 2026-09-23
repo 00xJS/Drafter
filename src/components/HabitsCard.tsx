@@ -3,6 +3,7 @@ import { Habit, PROJECT_COLORS } from '../types'
 import { newerStamp } from '../itemops'
 import { uid } from '../utils'
 import { isDueOn, isDoneOn, streakOf, toggleDone } from '../habits'
+import { noonOf } from '../useDayKey'
 import { ConfirmButton } from './ConfirmButton'
 import { useFold } from './HomeFold'
 
@@ -15,7 +16,9 @@ const WEEKDAY_LETTERS = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
  * reschedule, delete) happens in place rather than on a tab of their own.
  */
 export function HabitsCard({ habits, today, onSave, onDelete }: { habits: Habit[]; today: string; onSave(h: Habit): void; onDelete(id: string): void }) {
-  const now = new Date()
+  // today's weekday and streak go by the day Home hands down, not a clock read
+  // here, which the React Compiler may keep from the first render on
+  const now = noonOf(today)
   const [editing, setEditing] = useState<string | null>(null) // habit id, or 'new'
   const [name, setName] = useState('')
   const [emoji, setEmoji] = useState('')

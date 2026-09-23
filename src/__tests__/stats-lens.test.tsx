@@ -631,8 +631,11 @@ describe('the Insights tab', () => {
     expect(src).toContain('const byId = useMemo(() => liveById(store.garments)')
     // …and the day key is a dependency of the index, not read inside the
     // factory: store.wears keeps its identity when a sync changes nothing, so
-    // an index memoized on the list alone calls yesterday "today" after midnight
-    expect(src).toContain('const today = localDayKey()')
+    // an index memoized on the list alone calls yesterday "today" after midnight.
+    // It is useDayKey's: a localDayKey() read as the screen renders is one the
+    // React Compiler keeps from the first render on, the same yesterday again
+    expect(src).toContain('const today = useDayKey()')
+    expect(src).not.toMatch(/=\s*localDayKey\(\)/)
     expect(src).toContain('const wearIx = useMemo(() => wearIndex(store.wears, today), [store.wears, today])')
     expect(src).not.toMatch(/\b(taskReport|moneyReport|habitReport|journalReport|kitchenIndex)\b/)
     expect(StatsScreen).toBeTypeOf('function')

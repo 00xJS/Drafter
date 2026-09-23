@@ -1,5 +1,6 @@
 import { Priority, PRIORITY_META, Project, Task } from '../types'
 import { dueLabel, dueTone } from '../taskutils'
+import { useNow } from '../useNow'
 import { graphicInk } from '../contrast'
 import { useTheme } from '../theme'
 
@@ -57,9 +58,15 @@ export function ShareMark({ shared, by, kind }: { shared: boolean; by?: string |
 }
 
 export function DueBadge({ task }: { task: Task }) {
+  // The minute from the one clock every badge shares, never read here as it
+  // renders: the React Compiler keeps a badge's label for as long as its task
+  // is unchanged, so "Today" still said so the morning after, and "3:00 PM"
+  // never turned to "Was 3:00 PM".
+  const now = useNow()
   if (!task.dueAt) return null
-  const tone = dueTone(task)
-  const label = dueLabel(task)
+  const at = new Date(now)
+  const tone = dueTone(task, at)
+  const label = dueLabel(task, at)
   return (
     <span className={`due due-${tone}`} title={label}>
       {label}

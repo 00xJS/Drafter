@@ -6,6 +6,7 @@ import { COOK_TASK_PREFIX, saveCookToRecipe } from '../../kitchen'
 import type { Task } from '../../types'
 import { deleteMedia } from '../../media'
 import { localDayKey, shiftDayKey } from '../../journal'
+import { useDayKey } from '../../useDayKey'
 import { readWeekPlanDismissed } from '../../weekplanstore'
 import { ErrorBoundary } from '../ErrorBoundary'
 import type { PlannerCtx } from './ctx'
@@ -89,7 +90,11 @@ export function Overlays({ p }: { p: PlannerCtx }) {
   const { openTask, newTask, openProject, sawThem, logOuting, logAttendance, captureTask, deleteTask, deleteProject, closeLinkedIssue, pushToProjectBoard } = p
   const { mirrorEvent, mirrorsOn, saveEvents, deleteEvent } = p
   const { applyDayPlan, applyShutdown } = p
-  const today = localDayKey()
+  // From useDayKey, never localDayKey() as this renders: the React Compiler
+  // keeps that from the first render for as long as the planner is up, and
+  // Plan my day and Shut down WRITE with it — a focus picked on the phone's
+  // third morning landed on the day the app was opened.
+  const today = useDayKey()
 
   // a citation tapped here closes the sheet first; the same routing serves
   // an answer's sources in Home → Chat (askRouting.ts)
