@@ -33,7 +33,7 @@ import { createHash } from 'node:crypto'
 import { newerStamp } from '../../shared/domain.mts'
 import { resolveProvider } from './lib/ai.mjs'
 import { siteOrigin, startJob } from './lib/aijobs.mjs'
-import { slidingWindow } from './lib/ratelimit.mjs'
+import { sharedWindow } from './lib/ratelimit.mjs'
 import { readableText } from './lib/recipeimport.mjs'
 import { settingsFind, settingsStoreConfigured } from './lib/session.mjs'
 import { keyHeaders } from './lib/supabasekeys.mjs'
@@ -48,10 +48,13 @@ export const CALL_MS = 4_000
 export const RATE_LIMIT = 30
 export const RATE_WINDOW_MS = 10 * 60_000
 
-// per token, in this instance's memory (lib/ratelimit.mjs): enough to stop a
-// forwarding loop or a leaked address filing hundreds of tasks, and asking
-// the model hundreds of times
-const perToken = slidingWindow({ limit: RATE_LIMIT, windowMs: RATE_WINDOW_MS })
+// per token, counted across instances (lib/ratelimit.mjs, v3.33): enough to
+// stop a forwarding loop or a leaked address filing hundreds of tasks, and
+// asking the model hundreds of times — spread over cold starts as well
+const perToken = sharedWindow({ bucket: 'inbound', limit: RATE_LIMIT, windowMs: RATE_WINDOW_MS })
+
+/** What the limit counts a token under: its hash, so the address itself is never written to the limits table. */
+const tokenSubject = (token) => createHash('sha256').update(token).digest('hex').slice(0, 32)
 
 /** Run `work(signal)`, aborting it after `ms`. */
 async function withTimeout(ms, work) {
@@ -167,7 +170,7 @@ export default async req => {
   const key = url.searchParams.get('key') ?? ''
   if (key.length < 16) return new Response('Not found', { status: 404 })
   // before anything is looked up: a flood costs this instance nothing more
-  const slot = perToken.take(key)
+  const slot = await perToken.take(tokenSubject(key))
   if (!slot.ok) return new Response('Too many emails — try again later', { status: 429, headers: { 'retry-after': String(Math.max(1, Math.ceil(slot.retryAfterMs / 1000))) } })
   let row
   try {
