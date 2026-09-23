@@ -1,5 +1,10 @@
 # Weekly update pull requests: npm, and the actions the workflows pin by commit.
 # Each runs CI like any other pull request; nothing merges on its own.
+#
+# Dependabot files an update under its most specific matching group, not the
+# first one listed, and a group with update-types outranks one without: the
+# first run put Capacitor in minor-and-patch. So minor-and-patch excludes every
+# package that has a group of its own.
 version: 2
 updates:
   - package-ecosystem: npm
@@ -12,11 +17,29 @@ updates:
     groups:
       # Capacitor and its plugins come on their own: a bump changes the iOS
       # Swift packages, patch-package pins two of them (patches/), and only a
-      # phone build proves one. First, so a Capacitor minor never joins the web group.
+      # phone build proves one.
       capacitor:
         patterns:
           - '@capacitor/*'
           - '@aparajita/capacitor-*'
+      # packages that name each other as peers come together, majors included:
+      # alone, @vitejs/plugin-react 6 cannot install beside Vite 7, nor
+      # @eslint/js 10 beside ESLint 9 (npm ERESOLVE on the first run)
+      build-tools:
+        patterns:
+          - 'vite'
+          - 'vite-plugin-*'
+          - '@vitejs/*'
+          - 'vitest'
+          - '@vitest/*'
+      lint-and-types:
+        patterns:
+          - 'eslint'
+          - 'eslint-plugin-*'
+          - '@eslint/*'
+          - 'typescript'
+          - 'typescript-eslint'
+          - '@typescript-eslint/*'
       # everything else within its major, in one pull request; a major comes
       # alone, and so does the Anthropic SDK, still 0.x, where a minor can break
       # and only a live call (Admin → Test AI) proves one
@@ -26,6 +49,19 @@ updates:
           - patch
         exclude-patterns:
           - '@anthropic-ai/sdk'
+          - '@capacitor/*'
+          - '@aparajita/capacitor-*'
+          - 'vite'
+          - 'vite-plugin-*'
+          - '@vitejs/*'
+          - 'vitest'
+          - '@vitest/*'
+          - 'eslint'
+          - 'eslint-plugin-*'
+          - '@eslint/*'
+          - 'typescript'
+          - 'typescript-eslint'
+          - '@typescript-eslint/*'
 
   - package-ecosystem: github-actions
     directory: /
@@ -33,3 +69,8 @@ updates:
       interval: weekly
     cooldown:
       default-days: 7
+    # the pinned actions in one pull request a week
+    groups:
+      actions:
+        patterns:
+          - '*'
