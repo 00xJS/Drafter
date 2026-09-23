@@ -184,55 +184,73 @@ function useSheetDrag(onClose?: () => void): (e: ReactPointerEvent<HTMLElement>)
   useLayoutEffect(() => {
     close.current = onClose
   })
-  return useCallback((e: ReactPointerEvent<HTMLElement>) => {
-    if (e.button !== 0 && e.pointerType === 'mouse') return
-    if (!document.documentElement.classList.contains('native')) return
-    if (e.target instanceof Element && e.target.closest(HEAD_CONTROL)) return
-    const head = e.currentTarget
-    const panel = head.closest<HTMLElement>('[role="dialog"]')
-    if (!panel) return
-    const startY = e.clientY
-    const startT = e.timeStamp
-    let dy = 0
-    let last = startY
-    let lastT = startT
-    head.setPointerCapture(e.pointerId)
-    // the entrance animation owns `transform` until it is done; taking the
-    // sheet over means taking that off, or the two write the same property
-    panel.style.animation = 'none'
-    panel.style.transition = 'none'
-    panel.style.willChange = 'transform'
+  return useCallback((e: ReactPointerEvent<HTMLElement>) => dragSheet(e, () => close.current?.()), [])
+}
 
-    const move = (ev: PointerEvent) => {
-      dy = Math.max(0, ev.clientY - startY)
-      // a sheet dragged UP goes nowhere, but it should still feel held
-      panel.style.transform = `translateY(${dy}px)`
-      if (ev.clientY !== last) {
-        last = ev.clientY
-        lastT = ev.timeStamp
-      }
+/** What dragSheet reads off the press on the title bar: the pointer, and the bar it landed on. */
+type SheetPress = Pick<ReactPointerEvent<HTMLElement>, 'button' | 'pointerType' | 'pointerId' | 'clientY' | 'timeStamp' | 'target' | 'currentTarget'>
+
+/**
+ * Follow one drag that began on a sheet's title bar, from the press to the
+ * finger lifting; `close` is asked to close it when the drag says so.
+ */
+export function dragSheet(e: SheetPress, close: () => void): void {
+  if (e.button !== 0 && e.pointerType === 'mouse') return
+  if (!document.documentElement.classList.contains('native')) return
+  if (e.target instanceof Element && e.target.closest(HEAD_CONTROL)) return
+  const head = e.currentTarget
+  const panel = head.closest<HTMLElement>('[role="dialog"]')
+  if (!panel) return
+  const startY = e.clientY
+  const startT = e.timeStamp
+  let dy = 0
+  let last = startY
+  let lastT = startT
+  head.setPointerCapture(e.pointerId)
+  // the entrance animation owns `transform` until it is done; taking the
+  // sheet over means taking that off, or the two write the same property
+  panel.style.animation = 'none'
+  panel.style.transition = 'none'
+  panel.style.willChange = 'transform'
+
+  // back where it was. Reduce Motion (01-base.css blanket-disables
+  // animation, not inline transitions) gets it there at once.
+  const springBack = () => {
+    const still = matchMedia('(prefers-reduced-motion: reduce)').matches
+    panel.style.transition = still ? 'none' : 'transform 0.24s cubic-bezier(0.32, 0.72, 0, 1)'
+    panel.style.transform = ''
+  }
+  const move = (ev: PointerEvent) => {
+    dy = Math.max(0, ev.clientY - startY)
+    // a sheet dragged UP goes nowhere, but it should still feel held
+    panel.style.transform = `translateY(${dy}px)`
+    if (ev.clientY !== last) {
+      last = ev.clientY
+      lastT = ev.timeStamp
     }
-    const end = (ev: PointerEvent) => {
-      head.removeEventListener('pointermove', move)
-      head.removeEventListener('pointerup', end)
-      head.removeEventListener('pointercancel', end)
-      panel.style.willChange = ''
-      const ms = Math.max(1, ev.timeStamp - lastT)
-      const thrown = dy > FLING_PX && (ev.clientY - last) / ms > FLING
-      if (dy > DISMISS_PX || thrown) {
-        close.current?.()
-        return
-      }
-      // back where it was. Reduce Motion (01-base.css blanket-disables
-      // animation, not inline transitions) gets it there at once.
-      const still = matchMedia('(prefers-reduced-motion: reduce)').matches
-      panel.style.transition = still ? 'none' : 'transform 0.24s cubic-bezier(0.32, 0.72, 0, 1)'
-      panel.style.transform = ''
+  }
+  const end = (ev: PointerEvent) => {
+    head.removeEventListener('pointermove', move)
+    head.removeEventListener('pointerup', end)
+    head.removeEventListener('pointercancel', end)
+    panel.style.willChange = ''
+    const ms = Math.max(1, ev.timeStamp - lastT)
+    const thrown = dy > FLING_PX && (ev.clientY - last) / ms > FLING
+    if (dy > DISMISS_PX || thrown) {
+      close()
+      // A close can be turned down — "Discard your changes?" answered
+      // Cancel — and the sheet stayed pushed down where the finger let go.
+      // Still here a frame later means it was kept, so it goes back up.
+      requestAnimationFrame(() => {
+        if (panel.isConnected) springBack()
+      })
+      return
     }
-    head.addEventListener('pointermove', move)
-    head.addEventListener('pointerup', end)
-    head.addEventListener('pointercancel', end)
-  }, [])
+    springBack()
+  }
+  head.addEventListener('pointermove', move)
+  head.addEventListener('pointerup', end)
+  head.addEventListener('pointercancel', end)
 }
 
 /**
