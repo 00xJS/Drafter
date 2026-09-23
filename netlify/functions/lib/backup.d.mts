@@ -49,6 +49,8 @@ export interface BackupReport {
   historyPurged: number | null
   /** Wardrobe photos no piece of clothing pointed at, deleted; null when the sweep could not run. */
   photosDeleted: number | null
+  /** Rows past their 90 days in the Trash turned into content-free purged tombstones; null when the Trash could not be read. */
+  trashEmptied: number | null
   tombstonesPurged: number | null
   /** Client error reports nobody had hit for 30 days, deleted; null when that could not run (v3.29). */
   errorsPurged: number | null
@@ -78,6 +80,8 @@ export function listAllSnapshots(): Promise<{ userId: string; files: SnapshotFil
 export function signSnapshotUrl(objectPath: string, expiresIn?: number): Promise<string>
 export function backupUser(userId: string, rows: PostRow[], date?: string, exportedAt?: Date): Promise<BackupWrite>
 export function purgeHistory(now?: Date): Promise<number | null>
+export const TRASH_BATCH: number
+export function purgeExpiredTrash(now?: Date, batch?: number): Promise<number | null>
 export function purgeTombstones(now?: Date): Promise<number | null>
 export function purgeClientErrors(now?: Date): Promise<number | null>
 /** The paths in an account's personal/ folder that may go: its own photos, pointed at by no piece, older than `olderThan` (null: any age). */

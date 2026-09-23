@@ -6,11 +6,13 @@
 // backups/<user_id>/<YYYY-MM-DD>.json. The newest KEEP_BACKUPS per user are
 // kept. The same pass drops posts_history rows past HISTORY_TTL_MS, deletes
 // the wardrobe photos no piece of clothing points at any more (see
-// sweepPersonalPhotos), hard-deletes purged tombstones past
+// sweepPersonalPhotos), empties what has sat in the Trash past
+// TOMBSTONE_TTL_MS (purgeExpiredTrash), hard-deletes purged tombstones past
 // TOMBSTONE_TTL_MS (peers have had time to see them), and forgets client
 // error reports nobody has hit for CLIENT_ERRORS_TTL_MS.
 
 import { readableRow } from '../../../shared/kinds.mts'
+import { tombstoneFor } from '../../../shared/tombstone.mts'
 import { backupEncryptionOn, wrapSnapshot } from './backupcrypto.mjs'
 import { garmentMediaIds, isPersonalMediaOf, personalFolder } from '../../../shared/media.mts'
 import { keyHeaders } from './supabasekeys.mjs'
@@ -37,6 +39,10 @@ export const TRASH_KEEPS_PHOTOS_MS = TOMBSTONE_TTL_MS + 30 * DAY
 /** Objects asked for per storage list, and paths per storage delete. */
 const LIST_PAGE = 1000
 const DELETE_BATCH = 100
+/** Rows emptied from the Trash in one night at most, the longest there first; the rest wait for the next. */
+export const TRASH_BATCH = 100
+/** And no longer than this: a scheduled run has 30 seconds for everything. */
+const TRASH_BUDGET_MS = 8_000
 /** Private bucket and prefix the snapshots live under. */
 export const BUCKET = 'media'
 export const PREFIX = 'backups'
@@ -263,6 +269,62 @@ export async function purgeTombstones(now = new Date()) {
 }
 
 /**
+ * Empty the Trash of what has sat in it past TOMBSTONE_TTL_MS.
+ *
+ * The Trash says an item disappears for good after 90 days, and on every
+ * device it does (src/itemops.ts drops the tombstone). The server kept the
+ * row, content and all, for good, and a full exchange downloaded it again. So
+ * each such row becomes the content-free tombstone "Delete forever" writes
+ * (shared/tombstone.mts): the same row, the same owner, the audience flag it
+ * carried, its original deletedAt, and nothing of what it said; stamped newer,
+ * and with `synced_at` moved so every device hears of it. purgeTombstones
+ * hard-deletes it in turn once that has aged, and from then on the purge
+ * ledger turns away any copy still out there. Until then a purge beats any
+ * edit in the merge every device runs (shared/merge.mts), so nothing brings
+ * the content back.
+ *
+ * Each write is made only if the row is still exactly as read: one restored
+ * or edited meanwhile is left alone. The versions posts_history kept of an
+ * emptied row go with it — the write that emptied it put its content there.
+ * Every row goes back under its own owner, read and written by id, so no
+ * account's row is ever read into another's. Returns how many were emptied,
+ * or null when the Trash could not be read.
+ */
+export async function purgeExpiredTrash(now = new Date(), batch = TRASH_BATCH) {
+  const cutoff = now.getTime() - TOMBSTONE_TTL_MS
+  let rows
+  try {
+    rows = await restAll(`posts?select=id,user_id,updated_at,data&deleted=eq.true&data->>purged=is.null&data->>deletedAt=lt.${encodeURIComponent(new Date(cutoff).toISOString())}`)
+  } catch {
+    return null
+  }
+  const deletedAt = r => Date.parse(r?.data?.deletedAt ?? '')
+  const due = rows
+    .filter(r => typeof r?.id === 'string' && typeof r.updated_at === 'string' && r.data && typeof r.data === 'object' && !r.data.purged && deletedAt(r) < cutoff)
+    .sort((a, b) => deletedAt(a) - deletedAt(b))
+    .slice(0, batch)
+  const started = Date.now()
+  const emptied = []
+  for (const r of due) {
+    if (Date.now() - started > TRASH_BUDGET_MS) break
+    // strictly newer than the row, as last-write-wins (enforce_lww) asks of every write
+    const stamp = new Date(Math.max(now.getTime(), Date.parse(r.updated_at) + 1, Date.parse(r.data.updatedAt ?? '') + 1 || 0)).toISOString()
+    const data = tombstoneFor({ ...r.data, id: r.id }, stamp, r.data.deletedAt)
+    const res = await restResponse(`posts?id=eq.${encodeURIComponent(r.id)}&updated_at=eq.${encodeURIComponent(r.updated_at)}`, {
+      method: 'PATCH',
+      headers: { prefer: 'count=exact,return=minimal' },
+      body: JSON.stringify({ data, updated_at: stamp, synced_at: new Date().toISOString() }),
+    }).catch(() => null)
+    if (res && rangeTotal(res) === 1) emptied.push(r.id)
+  }
+  if (emptied.length > 0) {
+    const ids = emptied.map(id => `"${id.replace(/"/g, '\\"')}"`).join(',')
+    await restResponse(`posts_history?id=in.(${encodeURIComponent(ids)})`, { method: 'DELETE', headers: { prefer: 'return=minimal' } }).catch(() => null)
+  }
+  return emptied.length
+}
+
+/**
  * Drop client error reports last seen before the TTL (public.client_errors,
  * v3.29). Returns the row count, or null — also before the migration exists.
  */
@@ -414,6 +476,8 @@ export async function runBackup(now = new Date()) {
     unowned: (rows ?? []).filter(r => !r?.user_id).length,
     historyPurged: await purgeHistory(now),
     photosDeleted: photos.deleted,
+    // before the hard delete, which then leaves these for their own 90 days
+    trashEmptied: await purgeExpiredTrash(now),
     tombstonesPurged: await purgeTombstones(now),
     errorsPurged: await purgeClientErrors(now),
   }

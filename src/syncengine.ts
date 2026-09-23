@@ -1,10 +1,10 @@
-import { Item, Note, Project, SOCIAL_PROJECT_ID, Task, TaskStatus } from './types'
+import { Item, Project, SOCIAL_PROJECT_ID, Task, TaskStatus } from './types'
 import { KNOWN_KINDS, migrateStored, sanitizeItem, STORAGE_VERSION } from './schema'
 import { applySync, duplicateSpawnPairs, mergeItems, newerStamp, nextOccurrence, pullSince, purgeTombstones, revokedPeerRows, type SyncConflict } from './itemops'
 import { applyLocalChoice, mergeRecord, sameContent } from '../shared/merge.mts'
 import { withPaidDefault } from './bills'
 import { uid } from './utils'
-import { peerVisibleByKind, purgeTombstone, type SyncProblem, type SyncResult } from './sync'
+import { peerVisibleByKind, tombstoneFor, type SyncProblem, type SyncResult } from './sync'
 import { NO_BOOKKEEPING, forgetLegacyBookkeeping, parseBookkeeping, readLegacyBookkeeping, type KV, type SyncBookkeeping, type SyncFailure } from './syncstate'
 import type { AskOp, Leadership, SyncMessage } from './synclead'
 
@@ -1705,18 +1705,11 @@ export function createSyncEngine(deps: SyncEngineDeps) {
       // somebody else's note that does not leave it shared. So "Delete
       // forever" on a note a housemate shared was refused every round and sat
       // dirty for good. The flag is not content: it is who the row is for, and
-      // the tombstone has to say the same thing the row it replaces said.
-      const raw = purgeTombstone(p.kind, p.id, newerStamp(p.updatedAt), deletedAt)
-      // a private task says the same thing the other way round: the tombstone
-      // carries `false` so the server does not have to put it back (v3.19's
-      // posts_private_flag would), and the row we hold matches the row it holds
-      const tomb = sanitizeItem(
-        p.kind === 'note' && (p as Note).shared
-          ? { ...raw, shared: true }
-          : p.kind === 'task' && (p as Task).shared === false
-            ? { ...raw, shared: false }
-            : raw,
-      )
+      // the tombstone says the same thing the row it replaces said — a private
+      // task's `false` included, so the server does not have to put it back
+      // (v3.19's posts_private_flag would). tombstoneFor holds that rule for
+      // the nightly job too (shared/tombstone.mts).
+      const tomb = sanitizeItem(tombstoneFor(p, newerStamp(p.updatedAt), deletedAt))
       return tomb ? { ...tomb, ownerId: p.ownerId } : p
     })
     const next = tombstones

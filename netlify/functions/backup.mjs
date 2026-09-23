@@ -35,6 +35,7 @@ export default async () => {
         encrypted: result.encrypted,
         historyPurged: result.historyPurged,
         photosDeleted: result.photosDeleted,
+        trashEmptied: result.trashEmptied,
         tombstonesPurged: result.tombstonesPurged,
         errorsPurged: result.errorsPurged,
       },

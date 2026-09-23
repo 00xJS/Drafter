@@ -699,6 +699,7 @@ export function Admin({ initialGroup = 'users', initial }: Props) {
                     {backupReport.unowned > 0 && <Stat label="Unowned rows skipped (no account to restore into)" value={backupReport.unowned} />}
                     <Stat label="History rows purged (60d)" value={backupReport.historyPurged ?? '—'} />
                     <Stat label="Unused wardrobe photos deleted (90d)" value={backupReport.photosDeleted ?? '—'} />
+                    <Stat label="Trash emptied for good (90d)" value={backupReport.trashEmptied ?? '—'} />
                     <Stat label="Purged tombstones hard-deleted (90d)" value={backupReport.tombstonesPurged ?? '—'} />
                   </ul>
                   {backupReport.failures.length > 0 && <p className="warn">{backupReport.failures.join(' | ')}</p>}
