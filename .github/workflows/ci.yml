@@ -2,7 +2,15 @@
 # before a deploy), then the two database smoke tests Netlify cannot run
 # because it has no Postgres. scripts/lib/pgtest.sh boots its own throwaway
 # cluster from the binaries on PATH, so there is no service container. Once
-# all that has passed, the browser tests, in a job of their own.
+# all that has passed, the browser tests, in a job of their own. On main, once
+# every job has passed: the site's deploy, when the owner has switched gated
+# deploys on (the deploy job, below), and the bot's (deploy-bot.yml follows
+# this workflow).
+#
+# The repository is public, so every action below is pinned to a commit, not
+# a tag: a tag can be moved to other code, a commit cannot. The version is in
+# the comment beside it, and Dependabot (.github/dependabot.yml) moves both.
+# No step pushes, so no checkout keeps the token in .git/config.
 name: CI
 
 on:
@@ -17,10 +25,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
 
       # .nvmrc: the line Netlify builds with too (package.json engines: >=22.18)
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version-file: .nvmrc
           cache: npm
@@ -31,8 +41,15 @@ jobs:
       # again because Netlify only runs `check`.
       - run: npm run lint
 
-      # lint + vitest + tsc + vite build
+      # lint + vitest + tsc + vite build. The build reads the two Supabase
+      # settings, and without them leaves the Supabase client out (local mode),
+      # so its precache measured about 220 KiB under the one production ships.
+      # Placeholders build the real bundle; nothing is ever asked of them, and
+      # the unit tests never see them (src/__tests__/setup.ts clears both).
       - run: npm run check
+        env:
+          VITE_SUPABASE_URL: https://placeholder.supabase.co
+          VITE_SUPABASE_ANON_KEY: placeholder-anon-key
 
       # Supabase runs Postgres 17 (supabase/config.toml) and so does local
       # development, so the migrations are applied to 17 here too, from the
@@ -52,6 +69,28 @@ jobs:
 
       - run: npm run mcp:smoke
 
+  # The bot gateway (supabase/functions/bot) is Deno, so neither tsc nor ESLint
+  # reads it: Deno type-checks and lints it here, against the exact supabase-js
+  # its import pins. No node_modules in this job, so Deno is told not to look
+  # for one beside the repository's package.json, and to write no lockfile.
+  # no-import-prefix asks for an import map: the bot deploys as one file with
+  # its jsr: import inline, and a deno.json beside it would change the deploy.
+  bot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
+        with:
+          deno-version: 2.9.6
+
+      - run: deno check --no-lock --node-modules-dir=none supabase/functions/bot/index.ts
+
+      - run: deno lint --rules-exclude=no-import-prefix supabase/functions/bot
+
   # The browser tests (npm run e2e): Playwright drives a local-mode build of the
   # app in WebKit, as an iPhone with the iOS look, and in Chromium, as a desktop.
   # Not part of `check`, which Netlify runs and which has no browsers; here, once
@@ -61,9 +100,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version-file: .nvmrc
           cache: npm
@@ -75,9 +116,46 @@ jobs:
 
       - run: npm run e2e
 
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         if: failure()
         with:
           name: playwright-report
           path: playwright-report/
           retention-days: 14
+
+  # Gated deploys (README → Deploy): once main has passed everything above,
+  # Netlify is asked to build it through the site's build hook. Only while the
+  # owner has switched the gate on: the NETLIFY_BUILD_HOOK secret here, and
+  # DRAFTER_GATED_DEPLOYS=1 on Netlify, which then skips the build a push
+  # starts (scripts/netlify-ignore.mjs). Without the secret this does nothing,
+  # and Netlify builds each push to main itself, as before.
+  deploy:
+    name: Deploy (Netlify build hook)
+    needs: [check, bot, e2e]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # one at a time; a newer run waits rather than cancelling one
+    concurrency:
+      group: netlify-deploy
+      cancel-in-progress: false
+    steps:
+      - name: Ask Netlify to build main
+        env:
+          NETLIFY_BUILD_HOOK: ${{ secrets.NETLIFY_BUILD_HOOK }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -z "$NETLIFY_BUILD_HOOK" ]; then
+            echo "Gated deploys are off (no NETLIFY_BUILD_HOOK secret): Netlify builds each push to main itself."
+            exit 0
+          fi
+          # A hook builds whatever main is now, not this commit. So only the
+          # newest commit asks: an older run finishing late would otherwise put
+          # a newer push live before its own tests had passed.
+          head=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)
+          if [ "$head" != "$GITHUB_SHA" ]; then
+            echo "main has moved on to ${head:0:7}; its own CI run deploys it once it passes."
+            exit 0
+          fi
+          curl --fail --silent --show-error --retry 3 -X POST -d '{}' "$NETLIFY_BUILD_HOOK?trigger_title=CI+passed+for+${GITHUB_SHA:0:7}"
+          echo "Netlify is building main at ${GITHUB_SHA:0:7}."

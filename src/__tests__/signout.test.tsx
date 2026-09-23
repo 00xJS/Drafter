@@ -213,10 +213,7 @@ describe('the question', () => {
       ['btn', 'Cancel', true],
       ['btn primary', 'Try uploading now', true],
     ])
-    // Escape, the backdrop and ✕ are Cancel on the same terms
-    const sheet = read('../components/SignOutGuard.tsx')
-    expect(sheet).toContain('const leaving = busy === \'signing-out\'')
-    expect(sheet).toContain('<Modal onClose={leaving ? () => {} : onCancel} className="modal narrow" closeOnBackdrop={!leaving}>')
+    // Escape, the backdrop and ✕ are Cancel on the same terms: pressed in signout.dom.test.tsx
   })
 
   it('after the session has expired, says nothing can be uploaded first and offers no try, Cancel being the answer that keeps them', () => {
@@ -248,16 +245,10 @@ describe('the question', () => {
   })
 })
 
+// Settings → Account and the assistant consent sheet are clicked through in
+// signout.dom.test.tsx: the question, then push off, the session, this
+// device's copy and the reload, in that order.
 describe('every sign-out the person starts asks first', () => {
-  it('Settings → Account: the whole sign-out runs only through the question, which knows when the session has expired', () => {
-    const src = read('../components/settings/Household.tsx')
-    expect(src).toMatch(/const signOut = useSignOut\(async \(\) => \{\s*await disablePush\(\)[\s\S]*?await getSupabase\(\)\?\.auth\.signOut\(\)\s*await clearLocalData\(\)/)
-    expect(src).toContain('export function Account({ supabaseOn, onClose, store }: SettingsCtx)')
-    expect(src).toMatch(/window\.location\.reload\(\)\s*\}, store\.syncInfo\.authError\)/)
-    expect(src).toContain('onClick={signOut.start}')
-    expect(src).toContain('{signOut.question}')
-  })
-
   it('the expired-session banner’s Sign in again, which says nothing can upload', () => {
     const shell = plannerSource()
     expect(shell).toMatch(/const signIn = useSignOut\(async \(\) => \{\s*await getSupabase\(\)\?\.auth\.signOut\(\)\s*await clearLocalData\(\)\s*window\.location\.reload\(\)\s*\}, store\.syncInfo\.authError\)/)
@@ -265,13 +256,7 @@ describe('every sign-out the person starts asks first', () => {
     expect(shell).toContain('{signIn.question}')
   })
 
-  it('the assistant consent sheet’s Sign out, held until the sign-out itself is done', () => {
-    const src = read('../components/ConnectAssistantSheet.tsx')
-    expect(src).toContain('onSignOut(): Promise<void>')
-    expect(src).toContain('const signOut = useSignOut(onSignOut)')
-    expect(src).toContain('onClick={signOut.start}')
-    expect(src).toContain('{signOut.question}')
-    // App hands over the sign-out's own promise, not one it has dropped
+  it('the assistant consent sheet is handed the sign-out’s own promise, not one App has dropped', () => {
     expect(read('../App.tsx')).toContain('onSignOut={signOutForAnotherAccount}')
   })
 
@@ -283,55 +268,5 @@ describe('every sign-out the person starts asks first', () => {
   })
 })
 
-/*
- * What a sign-out leaves behind.
- *
- * clearLocalData removes every drafter:* key, which is the point: the planner
- * must not stay readable on a shared, sold or stolen device. Two keys are
- * exempt because they describe the SCREEN and not the person — the colour it
- * is painted in and which of Home's headings are folded shut — and the owner
- * asked for the folds to survive a login ("leave it that way each time the
- * user logs in till they change it").
- *
- * The exemption is the dangerous part, so it is pinned: a key that names a
- * record, a person, a place, a date, a count or a habit of use is the
- * person's, and belongs in the wipe.
- */
-describe('what survives a sign-out', () => {
-  const idb = readFileSync(fileURLToPath(new URL('../idb.ts', import.meta.url)), 'utf8')
-  const kept = [...(idb.match(/const KEPT_ACROSS_SIGN_OUT = new Set\(\[([^\]]*)\]\)/)?.[1] ?? '').matchAll(/'([^']+)'/g)].map(m => m[1])
-
-  it('keeps the two display settings, and nothing else', () => {
-    expect(kept.sort()).toEqual(['drafter:home-folded', 'drafter:theme'])
-  })
-
-  it('reads the list when it decides what to remove', () => {
-    expect(idb).toMatch(/k\.startsWith\('drafter:'\) && !KEPT_ACROSS_SIGN_OUT\.has\(k\)/)
-  })
-
-  it('exempts nothing that could name what the person keeps', () => {
-    // the keys that hold records, cursors, counts or where they last were
-    for (const key of [
-      'drafter:household',
-      'drafter:chat-seen',
-      'drafter:dirty-ids',
-      'drafter:sync-cursor',
-      'drafter:kitchen-recipes',
-      'drafter:keep-tab',
-      'drafter:tasks-tab',
-      'drafter:insights-tab',
-      'drafter:calendar-mode',
-      'drafter:app-lock',
-      'drafter:weather',
-    ])
-      expect(kept, key).not.toContain(key)
-  })
-
-  it('exempts only keys whose value cannot say anything about an account', () => {
-    // a fold is a list of section NAMES; a theme is a colour. Neither can
-    // carry a title, a date or a count, whatever the account holds.
-    const folds = readFileSync(fileURLToPath(new URL('../homefolds.ts', import.meta.url)), 'utf8')
-    expect(folds).toMatch(/const KEY = 'drafter:home-folded'/)
-    expect(folds).toMatch(/filter\(\(id\): id is string => typeof id === 'string'\)/)
-  })
-})
+// What a sign-out leaves behind (the two display settings, and nothing else)
+// is the real wipe, run in a document: signout.dom.test.tsx.

@@ -136,37 +136,13 @@ describe('step: one pull, one buzz, one refresh', () => {
 })
 
 /**
- * The hook is DOM-bound and vitest runs in node, so its wiring is checked in
- * the source, the way the swipe row's is.
+ * The gesture itself — html.native, a touch that is somebody else's, the one
+ * buzz, the refresh — is driven with touches in pull.dom.test.tsx. What is
+ * left here is how the shell around it is wired.
  */
 describe('pull to refresh: wired the way the shell needs', () => {
-  // comments are allowed to name what the code must not call
-  const hook = read('../components/PullToRefresh.tsx').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
   const planner = plannerSource()
   const css = sheetSource()
-
-  it('gates on the html.native class so ?native=1 can preview it, not on isNative()', () => {
-    expect(hook).toContain("classList.contains('native')")
-    expect(hook).not.toContain('isNative(')
-  })
-
-  it('goes non-passive only for the touchmove of a live pull', () => {
-    const nonPassive = hook.match(/passive: false/g) ?? []
-    expect(nonPassive).toHaveLength(1)
-    expect(hook).toMatch(/addEventListener\('touchmove', onMove, \{ passive: false \}\)/)
-  })
-
-  it('refuses a pull that starts on a sheet, a field, or under the keyboard', () => {
-    expect(hook).toContain('.cal-sheet-backdrop')
-    expect(hook).toContain('.modal-backdrop')
-    expect(hook).toContain("classList.contains('keyboard-open')")
-    expect(hook).toContain('window.scrollY > 0')
-  })
-
-  it('buzzes only on entering the band, from the step result', () => {
-    expect(hook.match(/void haptic\('light'\)/g)).toHaveLength(1)
-    expect(hook).toMatch(/if \(r\.buzz\) void haptic\('light'\)/)
-  })
 
   it('runs the same refresh the header pill does, and the pill runs the foreground set', () => {
     expect(planner).toContain('onRefresh={manualSync}')
@@ -228,7 +204,6 @@ describe('pull to refresh: wired the way the shell needs', () => {
   it('names no chrome that is gone', () => {
     // the More drawer left with the five-tab bar; its selector would keep
     // its dead CSS looking live
-    expect(hook).not.toContain('.more-backdrop')
     expect(css).not.toMatch(/\.more-(backdrop|sheet|item)/)
   })
 })

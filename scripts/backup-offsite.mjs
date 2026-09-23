@@ -147,7 +147,7 @@ async function exists(path) {
  * does not stop the others; its failure is in the result.
  */
 export async function copyOffsite({ cli, dest, cloud = dirname(dest), tmp = tmpdir(), now = new Date(), keepDays = KEEP_DAYS }) {
-  const result = { accounts: 0, copied: 0, present: 0, plain: 0, pruned: 0, failures: [] }
+  const result = { accounts: 0, copied: 0, present: 0, plain: 0, pruned: 0, failures: /** @type {string[]} */ ([]) }
   // never made here: a folder this script invented would sync to nowhere
   if (!(await exists(cloud))) throw new Error(`iCloud Drive is not on (there is no ${cloud}). Turn it on in System Settings → your name → iCloud → iCloud Drive.`)
 
@@ -172,7 +172,7 @@ export async function copyOffsite({ cli, dest, cloud = dirname(dest), tmp = tmpd
         const snapshots = listedNames(await cli(['storage', 'ls', ...CLI_FLAGS, `${REMOTE}${account}/`])).filter(n => SNAPSHOT.test(n))
         for (const name of snapshots) {
           // older than the copies kept: fetching it would only prune it again
-          if (SNAPSHOT.exec(name)[1] < cutoff) continue
+          if ((SNAPSHOT.exec(name)?.[1] ?? '') < cutoff) continue
           if (here.has(name) || here.has(`.${name}.icloud`)) {
             result.present++
             continue

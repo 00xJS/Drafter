@@ -1,0 +1,35 @@
+# Weekly update pull requests: npm, and the actions the workflows pin by commit.
+# Each runs CI like any other pull request; nothing merges on its own.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    # a release gets a week to be found out before it is offered
+    cooldown:
+      default-days: 7
+    groups:
+      # Capacitor and its plugins come on their own: a bump changes the iOS
+      # Swift packages, patch-package pins two of them (patches/), and only a
+      # phone build proves one. First, so a Capacitor minor never joins the web group.
+      capacitor:
+        patterns:
+          - '@capacitor/*'
+          - '@aparajita/capacitor-*'
+      # everything else within its major, in one pull request; a major comes
+      # alone, and so does the Anthropic SDK, still 0.x, where a minor can break
+      # and only a live call (Admin → Test AI) proves one
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+        exclude-patterns:
+          - '@anthropic-ai/sdk'
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7

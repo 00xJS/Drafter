@@ -224,12 +224,19 @@ export function forecastUrl(lat: number, lon: number, unit: TempUnit = 'c'): str
 
 const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null)
 
+/** The parts of Open-Meteo's answer read below. Any of them may be missing or the wrong shape: num() checks each number. */
+type ForecastJson = {
+  current?: { temperature_2m?: unknown; weather_code?: unknown }
+  current_units?: { temperature_2m?: unknown }
+  daily?: { temperature_2m_max?: unknown[]; temperature_2m_min?: unknown[]; precipitation_probability_max?: unknown[] }
+} | null
+
 /** Fetch and shape today's forecast; null on any network, HTTP or shape problem. */
 export async function fetchForecast(lat: number, lon: number, fetchFn: typeof fetch = fetch, unit: TempUnit = 'c'): Promise<Forecast | null> {
   try {
     const res = await fetchFn(forecastUrl(lat, lon, unit))
     if (!res.ok) return null
-    const json = (await res.json()) as any
+    const json = (await res.json()) as ForecastJson
     const temp = num(json?.current?.temperature_2m)
     const code = num(json?.current?.weather_code)
     const hi = num(json?.daily?.temperature_2m_max?.[0])

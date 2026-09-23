@@ -106,11 +106,6 @@ if (isMain) {
     process.exit(1)
   }
 
-  if (setAt === -1 && !kind) {
-    console.log(`app-version: ${current}`)
-    process.exit(0)
-  }
-
   let next
   if (setAt !== -1) {
     const asked = args[setAt + 1]
@@ -120,8 +115,16 @@ if (isMain) {
       console.error(`app-version: --set wants a version like 1.0.1, got ${asked}`)
       process.exit(1)
     }
-  } else {
+  } else if (kind) {
     next = bumpVersion(current, kind)
+    // never while readStoredVersion reads a version, but it must not write "null" everywhere if it ever does not
+    if (!next) {
+      console.error(`app-version: ${current} is not a version that can be raised`)
+      process.exit(1)
+    }
+  } else {
+    console.log(`app-version: ${current}`)
+    process.exit(0)
   }
 
   const prev = writeAll(next)

@@ -66,9 +66,7 @@ describe('no task row names the project', () => {
     expect(namesProject(html)).toBe(false)
   })
 
-  it('in the task editor’s footer', () => {
-    expect(read('../components/TaskEditor.tsx')).not.toMatch(/>\s*in \{project/)
-  })
+  // the task editor's foot names none either: rendered in taskeditor.dom.test.tsx
 })
 
 describe('nothing starts a second project', () => {

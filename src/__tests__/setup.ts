@@ -15,7 +15,14 @@
 /**
  * Variables that change what the code under test does, cleared before anything
  * runs. Add one here rather than leaving a test to hope the host is clean.
+ *
+ * The two Supabase settings decide whether the app runs in cloud or local
+ * mode, and every test is written against local mode. They reach vitest from
+ * `.env.local` on a laptop, from the site's environment on Netlify, and as
+ * placeholders on GitHub, where CI builds with them so the precache budget
+ * measures the bundle production ships. A test that wants cloud mode stubs
+ * them itself (vi.stubEnv).
  */
-const DECIDED_HERE = ['BACKUP_PASSPHRASE']
+const DECIDED_HERE = ['BACKUP_PASSPHRASE', 'VITE_SUPABASE_URL', 'VITE_SUPABASE_ANON_KEY']
 
 for (const key of DECIDED_HERE) delete process.env[key]

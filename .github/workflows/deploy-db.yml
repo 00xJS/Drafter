@@ -1,11 +1,17 @@
 # Apply the pending migrations to production, then redeploy the bot. Only on
-# purpose: run it from the Actions tab (Deploy database → Run workflow) and
-# type the word apply.
+# purpose: run it from the Actions tab (Deploy database → Run workflow), from
+# main, and type the word apply.
 #
 # The steps the owner runs at the Mac, in the open: link the project, print
 # the migrations and the dry run so the log shows what is about to change,
 # push, then deploy the bot — a migration that changes what is personal needs
 # the bot's copy of that list to follow it.
+#
+# Only main: a migration on a branch has passed none of CI, and production is
+# no place for it to find out. The job runs in the `production` environment,
+# where the owner can require a review before anything is applied
+# (Settings → Environments → production → Required reviewers) and keep it to
+# main (Deployment branches). GitHub makes the environment on the first run.
 #
 # Needs three repository secrets (Settings → Secrets and variables → Actions):
 #   SUPABASE_ACCESS_TOKEN  a personal access token (supabase.com → Account → Access Tokens)
@@ -31,52 +37,95 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  push:
+  # What can be refused before anyone is asked to approve: the branch and the
+  # word. Either one wrong fails the run here, with nothing touched.
+  preflight:
+    name: Refuse without main and the word
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-    env:
-      CONFIRM: ${{ inputs.confirm }}
-      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-      # read by `supabase link` and `supabase db push` from the environment, never passed as an argument
-      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+    timeout-minutes: 2
     steps:
+      - name: Refuse a branch other than main
+        env:
+          REF: ${{ github.ref_name }}
+        run: |
+          if [ "$GITHUB_REF" != refs/heads/main ]; then
+            echo "::error title=Nothing applied::Deploy database runs from main only, not $REF. Nothing was changed."
+            exit 1
+          fi
+
       - name: Refuse without the word
+        env:
+          CONFIRM: ${{ inputs.confirm }}
         run: |
           if [ "$CONFIRM" != "apply" ]; then
             echo "::error title=Nothing applied::Type apply, exactly, to push the migrations. Nothing was changed."
             exit 1
           fi
 
+  push:
+    needs: preflight
+    if: github.ref == 'refs/heads/main'
+    environment: production
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      # Each secret reaches only the steps that spend it; this one is told
+      # whether they are set, never what they are.
       - name: Check the secrets are set
+        env:
+          HAVE_SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN != '' }}
+          HAVE_SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD != '' }}
+          HAVE_SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF != '' }}
         run: |
           missing=""
           for name in SUPABASE_ACCESS_TOKEN SUPABASE_DB_PASSWORD SUPABASE_PROJECT_REF; do
-            if [ -z "${!name}" ]; then missing="$missing $name"; fi
+            have="HAVE_$name"
+            if [ "${!have}" != true ]; then missing="$missing $name"; fi
           done
           if [ -n "$missing" ]; then
             echo "::error title=Secrets missing::Set$missing as repository secrets. Nothing was changed."
             exit 1
           fi
 
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
 
       # pinned: the version the owner's Mac pushes with
-      - uses: supabase/setup-cli@v1
+      - uses: supabase/setup-cli@ab058987d8d6c725971f6cf9d0b5c98467e30bd1 # v1.7.1
         with:
           version: 2.109.0
 
+      # The database password is read by `supabase link` and each command
+      # that reaches the database from the environment, never passed as an
+      # argument; the access token by every command that talks to Supabase.
       - name: Link the project
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
         run: supabase link --project-ref "$SUPABASE_PROJECT_REF"
 
       - name: Migrations, here and on the server
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
         run: supabase migration list --linked
 
       - name: What would change (dry run)
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
         run: supabase db push --linked --dry-run
 
       - name: Apply
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
         run: supabase db push --linked --yes
 
       - name: Deploy the bot
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
         run: supabase functions deploy bot --use-api --project-ref "$SUPABASE_PROJECT_REF"

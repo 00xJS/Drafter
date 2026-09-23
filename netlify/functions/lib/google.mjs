@@ -10,7 +10,7 @@ import { isUntimed, localDate } from '../../../shared/domain.mts'
 
 export const SCOPES = ['https://www.googleapis.com/auth/calendar', 'https://www.googleapis.com/auth/userinfo.email']
 
-const env = () => ({ clientId: process.env.GOOGLE_CLIENT_ID, clientSecret: process.env.GOOGLE_CLIENT_SECRET })
+const env = () => ({ clientId: process.env.GOOGLE_CLIENT_ID ?? '', clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? '' })
 
 export function googleConfigured() {
   const e = env()

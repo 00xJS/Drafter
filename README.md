@@ -87,28 +87,41 @@ npm run dev          # http://localhost:5173
 Without Supabase settings it runs in local mode, keeping everything in the browser. For cloud mode, copy `.env.example` to `.env.local`; it names every environment variable and what each turns on.
 
 ```bash
-npm run check        # lint, tests, both type-checks, the build and the precache check
+npm run check        # lint, the React Compiler check, tests, type-checks (app, shared rules, server, build config), the build and the precache check
 npm run db:smoke     # every migration on a throwaway Postgres (brew install postgresql@17)
 npm run mcp:smoke    # the real MCP server against that database
 npm run e2e          # browser tests: an iPhone in WebKit and a desktop in Chromium (npx playwright install chromium webkit, once)
 ```
 
-The smoke tests and the browser tests aren't part of `check`, since Netlify has no Postgres and no browsers. Run `db:smoke` after any migration.
+The smoke tests and the browser tests aren't part of `check`, since Netlify has no Postgres and no browsers; CI runs them on every push, and type-checks and lints the Deno bot (`deno check` and `deno lint`), which `check` doesn't read either. Run `db:smoke` after any migration. The React Compiler check fails when a component or hook it used to compile is left as written (an eslint-disable of the hooks rules is the usual cause); `scripts/compiler-baseline.json` lists the ones still left, and `node scripts/compiler-check.mjs --update` takes one off once it compiles.
 
 ## Deploy
 
-- **Web.** Netlify builds `main` with `npm run check`. It needs `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_KEY` and `NVIDIA_API_KEY`; everything else is optional and listed in `.env.example`. There's no public sign-up: the owner's account comes from the Supabase dashboard, and the owner adds others in Admin (Settings → Household).
-- **Database.** The owner applies migrations before deploying code that needs them: `supabase db push` at the Mac, or **Deploy database** in the repository's Actions tab, which asks you to type `apply`, prints the dry run, pushes, and redeploys the bot. It needs the repository secrets `SUPABASE_ACCESS_TOKEN`, `SUPABASE_DB_PASSWORD` and `SUPABASE_PROJECT_REF`. A new kind of record must be on the sync allow-list first, or the server refuses it.
-- **Bot.** A push to `main` that changes `supabase/functions/` or `shared/kinds.mts` deploys it (**Deploy bot**, needing `SUPABASE_ACCESS_TOKEN` and `SUPABASE_PROJECT_REF`; without them it deploys nothing and still passes). By hand: `supabase functions deploy bot` (add `--use-api` if Docker isn't running). Either way `BOT_TOKEN` is a Supabase secret.
+- **Web.** Netlify builds `main` with `npm run check`, or, once gated deploys are on (below), when CI has passed on it. It needs `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_KEY` and `NVIDIA_API_KEY`; everything else is optional and listed in `.env.example`. There's no public sign-up: the owner's account comes from the Supabase dashboard, and the owner adds others in Admin (Settings → Household).
+- **Database.** The owner applies migrations before deploying code that needs them: `supabase db push` at the Mac, or **Deploy database** in the repository's Actions tab, run from `main`, which asks you to type `apply`, prints the dry run, pushes, and redeploys the bot. It runs in the `production` environment, so Settings → Environments → production can require a review before anything is applied. It needs the repository secrets `SUPABASE_ACCESS_TOKEN`, `SUPABASE_DB_PASSWORD` and `SUPABASE_PROJECT_REF`. A new kind of record must be on the sync allow-list first, or the server refuses it.
+- **Bot.** Once CI has passed on `main`, **Deploy bot** deploys it if `supabase/functions/` or `shared/kinds.mts` changed since it was last deployed, so a change pushed while CI was red goes out with the next green run (it needs `SUPABASE_ACCESS_TOKEN` and `SUPABASE_PROJECT_REF`; without them it deploys nothing and still passes). By hand: `supabase functions deploy bot` (add `--use-api` if Docker isn't running). Either way `BOT_TOKEN` is a Supabase secret.
+- **CI.** Every push and pull request runs lint and `check`, both smoke tests, the browser tests and the Deno bot's checks on GitHub. The repository is public, so each action is pinned to a commit, and Dependabot opens weekly update pull requests (npm within each major in one, Capacitor on its own, anything under a week old left for later).
 - **iPhone.** `npm run ios`, then Run in Xcode. The app carries its own copy of the web bundle, so rebuild it to pick up changes. `?native=1` previews the iOS look in a browser.
 - **Checks.** Admin → Data → Integration health has **Test AI**, **Send test push** and **Preview my digest**; Admin → Data shows what the database holds, the last run of the nightly backup and the hourly digest, and the errors devices reported. The owner's Today gets a banner when an hourly sync check finds the server refusing a kind of record, when the digest has not run for 3 hours, when no backup has worked for 36 hours, or when a run failed.
 - **Content Security Policy.** The web app ships a report-only policy (`shared/csp.mts`, written into `dist/_headers` by the build); anything it would block shows up in Admin → Data as `CSP would block …`. To enforce it, set `CSP_ENFORCE=true` in Netlify's environment and redeploy (unset it and redeploy to go back), then check that `curl -sI https://<your-site>/ | grep -i content-security` shows `Content-Security-Policy:`.
+
+### Gated deploys
+
+Off until the owner switches them on. Netlify's build runs `npm run check` but not the database smoke tests or the browser tests, so a push that fails those on GitHub still went live. With the gate on, Netlify skips the build a push to `main` starts (`scripts/netlify-ignore.mjs`, the `ignore` line in `netlify.toml`), and CI's last job calls the site's build hook once every test has passed. Branches and pull requests are never held back.
+
+To switch it on, in this order:
+
+1. **Netlify:** Project configuration → Developer settings → Continuous deployment → Build hooks → **Add build hook**, named `CI passed`, for the `main` branch. Copy its URL.
+2. **GitHub:** Settings → Secrets and variables → Actions → **New repository secret** `NETLIFY_BUILD_HOOK`, the URL. From here on each green `main` calls it; until step 3, a push is built twice, which does no harm.
+3. **Netlify:** Project configuration → Environment variables → add `DRAFTER_GATED_DEPLOYS` with the value `1`, scoped to Builds. The next push to `main` shows as skipped in Netlify's deploy list, and goes live when CI finishes, as a deploy titled *CI passed for* its commit. If that push builds on its own anyway, the variable is not reaching Netlify's ignore step: check its scope.
+
+To switch it off, remove `DRAFTER_GATED_DEPLOYS` first, then the secret. While it is on, `curl -X POST -d '{}' <the hook URL>` deploys `main` as it stands, without waiting: the gate never skips a build the hook starts.
 
 ### iPhone and the Apple Developer Program
 
 The membership is on and the bundle ID is `app.drafter.ios`; sign with the paid team in Xcode.
 
-- **TestFlight.** `npm run release:ios` raises the version people read and Apple's build number, rebuilds and opens Xcode; then *Product → Archive → Distribute App → App Store Connect*. Add `-- --minor` or `-- --major` for `1.1.0` / `2.0.0`, or `--keep` to raise only the build number. `npm run build:ios` rebuilds without changing either. Settings → Data → About shows `Drafter 1.1.0 (12)` on a phone so installs can be told apart.
+- **TestFlight.** `npm run release:ios` raises the version people read and Apple's build number, rebuilds and opens Xcode; then *Product → Archive → Distribute App → App Store Connect*. Add `-- --minor` or `-- --major` for `1.1.0` / `2.0.0`, or `--keep` to raise only the build number. The phone gets the working tree, so it refuses while anything but those numbers is uncommitted, and it runs the unit tests before raising either (`-- --skip-tests` in an emergency). `npm run build:ios` rebuilds without changing either. Settings → Data → About shows `Drafter 1.1.0 (12)` on a phone so installs can be told apart.
 - **Push (APNs).** Set `APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_PRIVATE_KEY` and `APNS_BUNDLE_ID=app.drafter.ios` on Netlify. Leave `APNS_ENV` unset for TestFlight and the App Store (Apple's production servers); set `APNS_ENV=sandbox` only while testing a build run from Xcode — a token from the other environment is retried there on its own. `App.entitlements` already has `aps-environment`, and `AppDelegate.swift` hands the device token to the push plugin. Then Settings → Reminders → *Enable on this device*; each launch checks the token is still the one the server has. Admin → Integrations shows whether it is configured.
 - **Universal Links and Password AutoFill.** Both are on the entitlements (`applinks:` and `webcredentials:drafterz.netlify.app`). The association file is written at build time from `APPLE_TEAM_ID` — see `ios/apple-app-site-association.example.json` for the shape — and `netlify.toml` serves it as JSON.
 - **Widget and Siri.** The widget is a second target, `DrafterWidgets` (`app.drafter.ios.widgets`), embedded in the app, and the two share the App Group `group.app.drafter.ios`; automatic signing registers both the first time the paid team builds. `npm run release:ios` raises both targets' numbers together.

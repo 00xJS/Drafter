@@ -406,9 +406,10 @@ async function checkSyncCanary(users, ownerId, now, site) {
       if (email && (await sendEmail(email, title, `${text}\n\nOpen Drafter: ${site}/`).catch(() => false))) told = true
     }
     if (told) {
-      record.alertedAt = now.toISOString()
+      const alertedAt = now.toISOString()
+      record.alertedAt = alertedAt
       // kept in the owner's hub too, as the push or email was worded
-      await keepNotice(ownerId, { id: noticeId(ownerId, 'alarm', record.alertedAt), type: 'alarm', title, lines: [body] }, now).catch(e =>
+      await keepNotice(ownerId, { id: noticeId(ownerId, 'alarm', alertedAt), type: 'alarm', title, lines: [body] }, now).catch(e =>
         console.error(`digest: the alarm's notice was not kept: ${e?.message ?? e}`),
       )
     }
@@ -531,7 +532,7 @@ async function digestRun(now, run) {
       if (!subscribed) continue
 
       const { hour, day, weekday } = localParts(now, tz)
-      if (hour === null) continue
+      if (hour === null || day === null) continue
       const subs = u.push_subscriptions ?? []
       let liveSubs = subs
       const settingsPath = `user_settings?user_id=eq.${encodeURIComponent(u.user_id)}`
@@ -586,8 +587,8 @@ async function digestRun(now, run) {
         const from = Math.max(Number.isFinite(lastCheck) ? lastCheck : now.getTime() - HOUR, now.getTime() - MAX_NUDGE_WINDOW)
         // rows of every kind, read here for a task's fields; soonest first
         const due = /** @type {Partial<import('../../src/types.js').Task>[]} */ (browsers().length ? items : [])
-          .filter(t => t.kind === 'task' && !t.deletedAt && OPEN.includes(t.status) && t.dueAt && isMineTask(t, u.user_id) && hasDueTime(t.dueAt, tz))
-          .map(t => ({ t, at: Date.parse(t.dueAt) }))
+          .filter(t => t.kind === 'task' && !t.deletedAt && OPEN.includes(t.status ?? '') && t.dueAt && isMineTask(t, u.user_id) && hasDueTime(t.dueAt, tz))
+          .map(t => ({ t, at: Date.parse(t.dueAt ?? '') }))
           .filter(({ at }) => Number.isFinite(at) && at <= now.getTime() && at > from)
           .sort((a, b) => a.at - b.at)
         // At most MAX_NUDGES a run, and none skipped: when more came due, the

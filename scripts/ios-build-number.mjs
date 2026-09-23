@@ -31,7 +31,7 @@ if (found.length === 0) {
 
 const flag = process.argv.indexOf('--set')
 const asked = flag === -1 ? null : Number(process.argv[flag + 1])
-if (flag !== -1 && (!Number.isInteger(asked) || asked < 1)) {
+if (asked !== null && (!Number.isInteger(asked) || asked < 1)) {
   console.error(`ios-build-number: --set wants a positive whole number, got ${process.argv[flag + 1]}`)
   process.exit(1)
 }

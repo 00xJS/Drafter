@@ -12,7 +12,8 @@ import { SHARED_BY_DEFAULT, SYNC_KINDS, readableRow } from '../../shared/kinds.m
 // handler it registers, as a bot would.
 
 const SOURCE = readFileSync(fileURLToPath(new URL('../../supabase/functions/bot/index.ts', import.meta.url)), 'utf8')
-const IMPORT = "import { createClient } from 'jsr:@supabase/supabase-js@2'"
+// the import as the gateway writes it, at whatever exact version it is pinned to
+const IMPORT = /import \{ createClient \} from 'jsr:@supabase\/supabase-js@\d+\.\d+\.\d+'/
 const TOKEN = 'correct horse battery staple'
 const OWNER = '00000000-0000-0000-0000-00000000000a'
 const PEER = '00000000-0000-0000-0000-00000000000b'
@@ -112,7 +113,7 @@ const echo =
  * undefined for one never set — and `keys` records the key each client was made with.
  */
 function gateway(rows: Row[], answer: Answer = echo(rows), extraEnv: Record<string, string> = {}) {
-  if (!SOURCE.includes(IMPORT)) throw new Error('the gateway no longer imports supabase-js the way this stand-in replaces it')
+  if (!IMPORT.test(SOURCE)) throw new Error('the gateway no longer imports supabase-js the way this stand-in replaces it')
   const synced: Record<string, unknown>[][] = []
   const members = [
     { household_id: 'h1', user_id: OWNER },

@@ -71,6 +71,7 @@ function toRow(job, record) {
 /** Every job's last run: { backup, digest }, each null until it has run once. Throws when the table cannot be read. */
 export async function readJobs(rest) {
   const rows = await rest('job_runs?select=*')
+  /** @type {Record<string, ReturnType<typeof fromRow>>} */
   const out = Object.fromEntries(JOBS.map(j => [j, null]))
   for (const r of Array.isArray(rows) ? rows : []) if (JOBS.includes(r?.job)) out[r.job] = fromRow(r)
   return out

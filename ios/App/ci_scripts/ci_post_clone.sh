@@ -24,8 +24,9 @@
 # no node_modules, and fails there — which reads like a package problem and is
 # not one. That is exactly what the first cloud build did.
 #
-# Keep this in step with .github/workflows/ci.yml (the Node line) and with
-# package.json's build:ios (the build itself).
+# Keep this in step with .nvmrc and package.json's engines (the Node line,
+# which CI and Netlify both build with) and with package.json's build:ios
+# (the build itself).
 set -eu
 
 # The scripts run with their own directory as the working directory, so nothing
@@ -57,8 +58,9 @@ export npm_config_fetch_retries=5
 # on an Intel runner every install compiles from source. The tarball needs no
 # compiler and reads the same on both architectures.
 #
-# Neither package.json nor package-lock.json declares an engines field, so this
-# matches the version CI pins (.github/workflows/ci.yml: node-version 22).
+# package.json's engines asks for Node >=22.18 and .nvmrc names 22, the line
+# CI (setup-node reads .nvmrc) and Netlify build with, so this is a 22 release
+# at or above that.
 NODE_VERSION=v22.23.2
 case "$(uname -m)" in
   arm64) NODE_ARCH=arm64 ;;

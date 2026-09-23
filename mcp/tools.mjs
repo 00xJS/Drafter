@@ -165,6 +165,7 @@ export function resolveContext(all, { peopleIds, placeId, placeName }) {
  * A place as the place tools return it. `myId` is whose outings count: the
  * places are the household's, going to one is each member's own (ownVisit),
  * and a meal shared with the household counts for both, as in the app.
+ * @param {string | null} [myId]
  */
 export function summarizePlace(p, tasks = [], people = [], meals = [], nowMs = Date.now(), myId = null) {
   // one rule, in shared/places.mts: done tasks here plus past meals eaten here
@@ -1232,6 +1233,7 @@ export const TOOLS = [
       }
       // planning a meal writes the grocery list in the same round, or the shop list never leaves this device
       const weekKey = groceryWeekFor(day)
+      if (!weekKey) throw new Error(`"${day}" is not a real calendar date`)
       // the caller's own meals for the week, with the one just written in place
       // of whatever was in its slot; a week's list is one row per member too
       const ownsIt = m => !userId || !m.ownerId || m.ownerId === userId
@@ -1257,6 +1259,7 @@ export const TOOLS = [
       const day = date ? String(date).trim() : clock.todayKey()
       assertDayKey(day)
       const weekKey = weekKeyOf(day)
+      if (!weekKey) throw new Error(`"${day}" is not a real calendar date`)
       const all = await db.fetchAll({ kinds: ['grocery', 'meal', 'recipe'] })
       const list = all.find(i => i.kind === 'grocery' && i.weekKey === weekKey) ?? buildGroceryList(weekKey, mealsInWeekOf(all.filter(i => i.kind === 'meal'), day), all.filter(i => i.kind === 'recipe'), null)
       const lines = activeGroceryLines(list.items)
@@ -1286,6 +1289,7 @@ export const TOOLS = [
       const day = date ? String(date).trim() : clock.todayKey()
       assertDayKey(day)
       const weekKey = weekKeyOf(day)
+      if (!weekKey) throw new Error(`"${day}" is not a real calendar date`)
       const all = await db.fetchAll({ kinds: ['grocery', 'meal', 'recipe'] })
       const mine = g => !userId || !g.ownerId || g.ownerId === userId
       const prev = all.find(i => i.kind === 'grocery' && i.weekKey === weekKey && mine(i)) ?? null
@@ -1408,7 +1412,8 @@ export const TOOLS = [
         notWornLately: {
           days: NOT_WORN_DAYS,
           pieces: notWornLately(garments, ix).map(g => {
-            const last = ix.days.get(g.id)[0]
+            // never '' here: notWornLately only returns pieces worn before
+            const last = ix.days.get(g.id)?.[0] ?? ''
             return { ...pieceOf(g), lastWorn: last, daysSince: daysApart(last, ix.dayKey) }
           }),
         },

@@ -2,7 +2,10 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
 /*
- * Some tests read source text instead of rendering it (vitest runs in node).
+ * Some tests read source text instead of rendering it: most tests run in node,
+ * with no document. A behaviour that needs one — a click, an effect, a touch —
+ * belongs in a *.dom.test.tsx instead (dom.ts), which can run it; what is left
+ * here is wiring between files and the style sheet, which no document shows.
  * These helpers are the one place that knows which files that text lives in,
  * so splitting Planner.tsx or the style sheet still feeds every such test the
  * same text.

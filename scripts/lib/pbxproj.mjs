@@ -16,7 +16,8 @@
 export function parsePbxproj(text) {
   let at = 0
 
-  const fail = (/** @type {string} */ why) => {
+  /** @type {(why: string) => never} typed, so a guard that calls it narrows what follows */
+  const fail = why => {
     throw new Error(`project.pbxproj: ${why} at offset ${at}`)
   }
 

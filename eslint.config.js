@@ -4,12 +4,21 @@ import reactHooks from 'eslint-plugin-react-hooks'
 import tseslint from 'typescript-eslint'
 
 // What src is held to. The server code — Netlify functions, the MCP server,
-// the rules shared with the app, and the scripts — is held to the same.
+// the rules shared with the app, and the scripts — is held to the same, and
+// so are the build's own config files.
 const rules = {
   '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
-  '@typescript-eslint/no-explicit-any': 'off',
+  '@typescript-eslint/no-explicit-any': 'error',
   'no-empty': ['error', { allowEmptyCatch: true }],
 }
+
+/**
+ * Where `any` stays allowed: the hand-written declarations of the server's
+ * JavaScript, whose records are loose by design (mcp/data.d.mts `Item`), and
+ * the tests, whose stand-ins for Deno, fetch or a client are typed only as far
+ * as the test needs. Everything the app and the server run is typed.
+ */
+const looseAny = { '@typescript-eslint/no-explicit-any': 'off' }
 
 const server = ['netlify/functions', 'mcp', 'shared', 'scripts']
 
@@ -69,7 +78,8 @@ const noRenderClock = {
 }
 
 export default tseslint.config(
-  // supabase/functions/bot is Deno: its own globals and URL imports.
+  // supabase/functions/bot is Deno: its own globals and jsr: imports, so
+  // Deno lints and type-checks it (the bot job in .github/workflows/ci.yml).
   // e2e/.dist and the two report folders are what `npm run e2e` builds and writes.
   { ignores: ['dist/**', 'ios/**', 'node_modules/**', 'supabase/functions/**', 'e2e/.dist/**', 'playwright-report/**', 'test-results/**'] },
   js.configs.recommended,
@@ -81,6 +91,10 @@ export default tseslint.config(
     files: ['src/**/*.{ts,tsx}'],
     plugins: { 'react-hooks': reactHooks },
     rules: { ...reactHooks.configs['recommended-latest'].rules, ...rules },
+  },
+  {
+    files: ['src/__tests__/**/*.{ts,tsx}'],
+    rules: looseAny,
   },
   {
     // Home and the cards it draws, the due badge every task list draws, and
@@ -113,12 +127,19 @@ export default tseslint.config(
   {
     // The hand-written declarations beside those modules.
     files: server.map(dir => `${dir}/**/*.d.mts`),
+    rules: { ...rules, ...looseAny },
+  },
+  {
+    // The build's own configuration, run by Node through Vite, the Capacitor
+    // CLI and Playwright (tsconfig.config.json and e2e/tsconfig.json type-check them).
+    files: ['vite.config.ts', 'capacitor.config.ts', 'playwright.config.ts'],
+    languageOptions: { globals: globals.node },
     rules,
   },
   {
     // The rules shared with the app, in TypeScript (tsconfig.shared.json):
     // typed properly, so nothing in them is `any`.
     files: ['shared/**/*.mts'],
-    rules: { ...rules, '@typescript-eslint/no-explicit-any': 'error' },
+    rules,
   },
 )

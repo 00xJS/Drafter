@@ -37,7 +37,7 @@ const GOOGLE_COOKIE = 'drafter_google_oauth'
 
 function consentUrl(origin, state, loginHint) {
   const q = new URLSearchParams({
-    client_id: process.env.GOOGLE_CLIENT_ID,
+    client_id: process.env.GOOGLE_CLIENT_ID ?? '',
     redirect_uri: redirectUriFor(origin),
     response_type: 'code',
     scope: SCOPES.join(' '),

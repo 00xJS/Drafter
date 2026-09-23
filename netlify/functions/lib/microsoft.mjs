@@ -32,7 +32,7 @@ const EVENT_PROP = 'String {66f5a359-4659-4830-9070-00047ec6ac6e} Name drafterEv
 const odataLiteral = v => `'${String(v).replace(/'/g, "''")}'`
 
 
-const env = () => ({ clientId: process.env.MICROSOFT_CLIENT_ID, clientSecret: process.env.MICROSOFT_CLIENT_SECRET })
+const env = () => ({ clientId: process.env.MICROSOFT_CLIENT_ID ?? '', clientSecret: process.env.MICROSOFT_CLIENT_SECRET ?? '' })
 
 export function microsoftConfigured() {
   const e = env()

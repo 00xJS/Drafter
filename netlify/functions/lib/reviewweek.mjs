@@ -56,10 +56,13 @@ const label = key => new Date(`${key}T12:00:00Z`).toLocaleDateString('en-GB', { 
  */
 export function previousWeekIn(now, tz) {
   const today = localParts(now, tz || 'UTC').day
-  const thisWeek = weekStartKey(today)
-  const startKey = shiftDayKey(thisWeek, -7)
+  const thisWeek = today && weekStartKey(today)
+  const startKey = thisWeek && shiftDayKey(thisWeek, -7)
+  const key = startKey && weekKeyOf(startKey)
+  // only a Date that is no date gets here without all three
+  if (!thisWeek || !startKey || !key) throw new RangeError(`previousWeekIn: ${now} is not a date`)
   return {
-    key: weekKeyOf(startKey),
+    key,
     label: `${label(startKey)} – ${label(shiftDayKey(thisWeek, -1))}`,
     startKey,
     endKey: thisWeek,

@@ -67,7 +67,7 @@ async function start(url) {
   const verifier = newVerifier()
   const state = nativeState(verifier, challenge)
   await settingsSet(row.user_id, { oauth_handoff: null, oauth_handoff_at: null, ms_oauth_state: state, ms_state_at: new Date().toISOString() })
-  const headers = new Headers({ location: authUrl(process.env.MICROSOFT_CLIENT_ID, redirectUriFor(url.origin), state) })
+  const headers = new Headers({ location: authUrl(process.env.MICROSOFT_CLIENT_ID ?? '', redirectUriFor(url.origin), state) })
   headers.append('set-cookie', cookieHeader(MS_COOKIE, verifier))
   headers.append('set-cookie', cookieHeader(RETURN_COOKIE, 'native'))
   return new Response(null, { status: 302, headers })
@@ -170,7 +170,7 @@ const handler = async req => {
       const state = stateFor(verifier)
       await settingsSet(user.id, { ms_oauth_state: state, ms_state_at: new Date().toISOString() })
       return Response.json(
-        { url: authUrl(process.env.MICROSOFT_CLIENT_ID, redirectUriFor(url.origin), state, body.loginHint) },
+        { url: authUrl(process.env.MICROSOFT_CLIENT_ID ?? '', redirectUriFor(url.origin), state, body.loginHint) },
         { headers: { 'set-cookie': cookieHeader(MS_COOKIE, verifier) } },
       )
     }
