@@ -40,7 +40,7 @@ async function request(system: string, prompt: string, maxTokens: number, json: 
   return typeof text === 'string' ? text : ''
 }
 
-async function complete(system: string, prompt: string, maxTokens = 2048, json = false): Promise<string> {
+export async function complete(system: string, prompt: string, maxTokens = 2048, json = false): Promise<string> {
   let text = await request(system, prompt, maxTokens, json)
   // A reasoning model (NVIDIA's default is one) can spend its budget thinking
   // and stop mid-answer — "Where should we go?" came back as half an array,

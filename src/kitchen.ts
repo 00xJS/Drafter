@@ -611,3 +611,86 @@ export function serialiseCookSteps(recipeId: string, done: Record<number, boolea
   if (!ticked.length) return null
   return JSON.stringify({ id: recipeId, at: now, steps, done: ticked })
 }
+
+// ---- recipes the grocery list cannot use ----------------------------------------
+
+/** Whether a recipe has anything to shop for. One with none puts nothing on the grocery list. */
+export function recipeHasIngredients(recipe: Pick<Recipe, 'ingredients'>): boolean {
+  return (recipe.ingredients ?? []).some(i => typeof i?.name === 'string' && i.name.trim() !== '')
+}
+
+/**
+ * The recipes to fill in, in the order worth doing them: the ones already on
+ * the plan (soonest first), then the most cooked, then by name. Live recipes
+ * with a name and no ingredients only.
+ */
+export function fillQueue(recipes: readonly Recipe[], cooked?: CookedIndex): Recipe[] {
+  const row = (r: Recipe) => cooked?.byId.get(r.id)
+  // tonight's dinner counts as cooked today, and it is the most planned of all
+  const planned = (r: Recipe) => (cooked && row(r)?.lastCooked === cooked.dayKey ? cooked.dayKey : (row(r)?.nextPlanned ?? ''))
+  return recipes
+    .filter(r => !r.deletedAt && r.name.trim() && !recipeHasIngredients(r))
+    .sort((a, b) => {
+      const pa = planned(a)
+      const pb = planned(b)
+      if (pa !== pb) return !pa ? 1 : !pb ? -1 : pa.localeCompare(pb)
+      return (row(b)?.timesCooked ?? 0) - (row(a)?.timesCooked ?? 0) || a.name.localeCompare(b.name)
+    })
+}
+
+/** Why a week's grocery list is short: its cooked meals whose recipes have no ingredients. */
+export interface GroceryGaps {
+  /** The week's meals that cook at least one recipe with no ingredients, by day and slot. */
+  meals: Meal[]
+  /** How many of those add nothing at all: every recipe they cook is bare. */
+  addNothing: number
+  /** Those bare recipes, once each, in the order the week first cooks them. */
+  recipes: Recipe[]
+}
+
+/**
+ * Which of these meals leave the grocery list short, and which recipes would
+ * fix it. It reads meals as the list is built from them (mealRecipeIds: the
+ * main and its sides, a bought meal nothing), so the two cannot disagree. A
+ * meal with only a typed name has no recipe to fill in and is not counted,
+ * and nor is a recipe that no longer exists.
+ */
+export function groceryGaps(meals: readonly Meal[], recipes: readonly Recipe[]): GroceryGaps {
+  const byId = new Map(recipes.filter(r => !r.deletedAt).map(r => [r.id, r]))
+  const ordered = meals
+    .filter(m => !m.deletedAt)
+    .slice()
+    .sort((a, b) => a.date.localeCompare(b.date) || MEAL_SLOTS.indexOf(a.slot) - MEAL_SLOTS.indexOf(b.slot))
+  const out: GroceryGaps = { meals: [], addNothing: 0, recipes: [] }
+  const seen = new Set<string>()
+  for (const meal of ordered) {
+    const cooks = mealRecipeIds(meal)
+      .map(id => byId.get(id))
+      .filter((r): r is Recipe => !!r)
+    const bare = cooks.filter(r => !recipeHasIngredients(r))
+    if (!bare.length) continue
+    out.meals.push(meal)
+    if (bare.length === cooks.length) out.addNothing += 1
+    for (const r of bare) {
+      if (seen.has(r.id)) continue
+      seen.add(r.id)
+      out.recipes.push(r)
+    }
+  }
+  return out
+}
+
+/** Grocery → the sentence that says why the list is short, or '' when nothing is missing. */
+export function groceryGapLine(gaps: GroceryGaps): string {
+  const n = gaps.meals.length
+  if (!n) return ''
+  const meals = `${n} of this week’s meals`
+  if (gaps.addNothing === n) return `${meals} ${n === 1 ? 'has' : 'have'} no ingredients, so ${n === 1 ? 'it adds' : 'they add'} nothing here.`
+  return `${meals} ${n === 1 ? 'has a dish' : 'have dishes'} with no ingredients, so the list is missing what ${n === 1 ? 'it needs' : 'they need'}.`
+}
+
+/** Recipes → the quiet line over the list while some recipe has nothing to shop for, or '' when every one has. */
+export function bareRecipesLine(count: number): string {
+  if (count <= 0) return ''
+  return `${count} recipe${count === 1 ? ' has' : 's have'} no ingredients — the grocery list can’t use ${count === 1 ? 'it' : 'them'}.`
+}

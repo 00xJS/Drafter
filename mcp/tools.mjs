@@ -1091,7 +1091,7 @@ export const TOOLS = [
     scope: 'read',
     annotations: READS,
     description:
-      'Recipes the household cooks: ingredients, steps, tags, servings, and when each was last cooked (lastCooked, YYYY-MM-DD, or null when never) and how many times (timesCooked). A meal counts once its day has come, whether the recipe was its main or a side; a bought meal never does. Use the id with plan_meal.',
+      'Recipes the household cooks: ingredients, steps, tags, servings, the web page one was imported from (sourceUrl, or null), and when each was last cooked (lastCooked, YYYY-MM-DD, or null when never) and how many times (timesCooked). A meal counts once its day has come, whether the recipe was its main or a side; a bought meal never does. Use the id with plan_meal.',
     inputSchema: { type: 'object', properties: { search: { type: 'string', description: 'Match on name, tag or ingredient' } } },
     async run({ search } = {}, { db, clock }) {
       const all = await db.fetchAll({ kinds: ['recipe', 'meal'] })
@@ -1115,6 +1115,8 @@ export const TOOLS = [
             ingredients: r.ingredients ?? [],
             steps: r.steps ?? [],
             notes: r.notes ?? null,
+            // the page it was imported from, when it was (a web address only)
+            sourceUrl: typeof r.sourceUrl === 'string' && /^https?:\/\//i.test(r.sourceUrl) ? r.sourceUrl : null,
             timesCooked: cooked.get(r.id)?.timesCooked ?? 0,
             lastCooked: cooked.get(r.id)?.lastCooked ?? null,
           })),

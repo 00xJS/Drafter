@@ -426,6 +426,8 @@ export interface Recipe extends Owned {
   steps?: string[]
   tags: string[]
   notes?: string
+  /** The web page it was imported from (http or https only), shown as its Source. */
+  sourceUrl?: string
   createdAt: string
   updatedAt: string
   deletedAt?: string
