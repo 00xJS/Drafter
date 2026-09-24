@@ -2,16 +2,16 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { chosenIn, rowsOf, start } from '../components/wardrobe/composer'
 import { dayAfterRoll, untilNextDay } from '../useDayKey'
 import type { Garment, Wear } from '../types'
-import { byRest, liveById, wearIndex } from '../wardrobe'
+import { liveById } from '../wardrobe'
 
 // Reported from the phone: dressing a day, midnight passed, and the next day
 // showed the previous day's clothes instead of nothing.
 //
 // Two causes, and the second is the one that could have written bad data.
 //
-// 1. The rows started on each row's first card, so a day nobody had dressed
-//    looked exactly like one that had been — and "Wearing this" was live, so a
-//    press logged a look nobody chose.
+// 1. The swiping rows started on each row's first card, so a day nobody had
+//    dressed looked exactly like one that had been — and "Wearing this" was
+//    live, so a press logged a look nobody chose. The look card starts empty.
 // 2. Nothing in the app re-rendered at midnight. The Wardrobe read the day
 //    once, on mount, and iOS resumes the same page rather than killing it, so
 //    an app that was not force-quit went on dressing yesterday. A log then
@@ -25,22 +25,22 @@ const look = (date: string, garmentIds: string[]): Wear =>
 
 const garments = [piece('tee', 'top'), piece('shirt', 'top'), piece('jeans', 'bottom')]
 const byId = liveById(garments)
-const rowsFor = (wears: Wear[], today: string) => rowsOf(garments, byRest(garments, wearIndex(wears, today)).map(g => g.id))
+const rowsFor = () => rowsOf(garments)
 
 afterEach(() => vi.useRealTimers())
 
 describe('a day nobody has dressed', () => {
-  it('starts on None, not on whatever card happens to be first', () => {
-    const rows = rowsFor([], '2026-09-17')
+  it('starts with its slots empty, not on whatever piece happens to be first', () => {
+    const rows = rowsFor()
     const { slots } = chosenIn(start(rows, undefined, byId), rows, [])
     expect(slots.top).toBeNull()
     expect(slots.bottom).toBeNull()
-    // the pieces are all still there to swipe to — it is the choice that is empty
+    // the pieces are all still there to choose from — it is the choice that is empty
     expect(rows.top.map(g => g.id).sort()).toEqual(['shirt', 'tee'])
   })
 
   it('cannot be logged until something is chosen, so no look is ever a guess', () => {
-    const rows = rowsFor([], '2026-09-17')
+    const rows = rowsFor()
     const empty = start(rows, undefined, byId)
     expect(chosenIn(empty, rows, []).dressed).toBe(false)
     expect(chosenIn(empty, rows, []).pieces).toEqual([])
@@ -52,17 +52,17 @@ describe('a day nobody has dressed', () => {
 
   it('still opens on the look when the day has one', () => {
     const wears = [look('2026-09-16', ['shirt', 'jeans'])]
-    const rows = rowsFor(wears, '2026-09-16')
+    const rows = rowsFor()
     const { slots } = chosenIn(start(rows, wears[0], byId), rows, [])
     expect(slots.top).toBe('shirt')
     expect(slots.bottom).toBe('jeans')
   })
 
-  it('goes to None rather than another garment when the chosen piece leaves its row', () => {
+  it('empties the slot rather than take another garment when the chosen piece leaves', () => {
     const wears = [look('2026-09-16', ['shirt', 'jeans'])]
-    const sel = start(rowsFor(wears, '2026-09-16'), wears[0], byId)
-    // the shirt is retired from its own sheet mid-visit, so its row no longer deals it
-    const without = rowsOf([piece('tee', 'top'), piece('jeans', 'bottom')], ['tee', 'jeans'])
+    const sel = start(rowsFor(), wears[0], byId)
+    // the shirt is retired from its own sheet mid-visit, so no slot can hold it
+    const without = rowsOf([piece('tee', 'top'), piece('jeans', 'bottom')])
     expect(chosenIn(sel, without, []).slots.top).toBeNull()
   })
 })

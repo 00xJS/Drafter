@@ -153,8 +153,19 @@ const LAZY_ONLY = [
   // thumbnails ride in the Planner chunk. WardrobeStats has a preloadable of
   // its own too (the Stats lens draws it), so it must stay out of the first
   // load by BOTH routes — hence it is listed here as well as among the views.
-  ...['wardrobe/OutfitComposer', 'wardrobe/SnapRow', 'wardrobe/SavedOutfits', 'wardrobe/Clothes', 'wardrobe/GarmentSheet', 'wardrobe/PieceDetails', 'wardrobe/WardrobeStats'].map(component),
+  ...[
+    'wardrobe/OutfitComposer',
+    'wardrobe/WeekStrip',
+    'wardrobe/LookSlot',
+    'wardrobe/PiecePicker',
+    'wardrobe/SavedOutfits',
+    'wardrobe/Clothes',
+    'wardrobe/GarmentSheet',
+    'wardrobe/PieceDetails',
+    'wardrobe/WardrobeStats',
+  ].map(component),
   resolve(SRC, 'components', 'wardrobe', 'composer.ts'),
+  resolve(SRC, 'components', 'wardrobe', 'board.ts'),
   // People → Stats' and Places → Stats' counting travels with its view, and the face both draw a person with
   resolve(SRC, 'peoplestats.ts'),
   resolve(SRC, 'placestats.ts'),

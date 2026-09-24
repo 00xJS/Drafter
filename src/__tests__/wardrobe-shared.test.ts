@@ -45,7 +45,6 @@ const STAYED = [
   'wornLine',
   'wornShort',
   'garmentStats',
-  'byRest',
   'CLOTHES_SORTS',
   'clothesOrder',
   'wardrobeTiles',
@@ -68,7 +67,7 @@ const STAYED = [
   'DAY_OCCASION_LABEL',
   'fitsOccasion',
   'outfitOccasion',
-  // favourites, details, plans and notes, Surprise me, seasons and tags, worn with and cost per wear, the weather
+  // favourites, details, plans and notes, the ideas' draw, seasons and tags, worn with and cost per wear, the weather
   'starred',
   'withDetails',
   'PLAN_DAYS',
@@ -90,6 +89,7 @@ const STAYED = [
   'WET_PCT',
   'weatherNeed',
   'weatherLine',
+  'dayWeather',
   'outerwearFor',
   'hasOuterwear',
   // the wardrobe in the palette, Ask, the Calendar, the Week review and Stats

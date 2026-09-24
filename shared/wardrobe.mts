@@ -126,7 +126,7 @@ export interface LookLog {
  * Pieces logged on a day. With `another`, or on a day with no look yet, a new
  * look. Otherwise the day's latest look takes them under its own id, stamped
  * newer. What that look held and the screen did not show (`shown`; by default
- * the composer's rows, every live and unretired piece) stays, unless a new
+ * the Outfit board's pieces, every live and unretired one) stays, unless a new
  * piece takes its slot: a retired piece, or one in Trash, keeps its day, and
  * nothing is written that nobody chose. `records` is every piece this device
  * has, Trash included, so one in Trash still has a slot; an id with no record
@@ -135,7 +135,7 @@ export interface LookLog {
  *
  * A log is a look worn unless `planned` makes it a plan (a day still to
  * come), so logging a day whose latest look was a plan confirms that plan,
- * as the composer's Wearing this and an assistant's log_outfit do: a caller
+ * as the Outfit board's Wearing this and an assistant's log_outfit do: a caller
  * that logs one piece and shows none of the plan (a piece's Wear today) logs
  * `another` beside it instead. `wearId` edits that look of the day instead of
  * the latest. `note`, when given, is the look's note; '' clears it.

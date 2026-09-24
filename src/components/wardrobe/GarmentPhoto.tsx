@@ -26,7 +26,7 @@ export const hasBack = (g: Garment): boolean => !!(g.backPhotoId || g.backThumbI
 /**
  * The side a piece is shown by, wherever it is drawn: its front, or its back
  * when Show the back first is on and it has one. At card size or larger the
- * other side is the inset (GarmentView, and the composer's cards); a small
+ * other side is the inset (GarmentView, and the look card's slots); a small
  * thumbnail — a collage, Today, Stats, Search, the Calendar — shows this side
  * alone. Every caller reads it here, so none disagrees.
  */

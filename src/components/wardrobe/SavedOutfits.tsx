@@ -10,7 +10,7 @@ interface Props {
   outfits: Outfit[]
   byId: ReadonlyMap<string, Garment>
   ix: WearIndex
-  /** Put it in the composer's rows. */
+  /** Put it on the look card. */
   onLoad(o: Outfit): void
   onWear(o: Outfit): void
   onRename(o: Outfit, name: string): void
@@ -19,10 +19,11 @@ interface Props {
 }
 
 /**
- * The saved outfits under the composer, the favourites and then the most worn
- * lately first: a tap puts one in the rows — whatever the day is dressed for —
- * and "…" wears it today, stars it, renames it or deletes it. One whose pieces
- * are for work, or for days off, says so (outfitOccasion).
+ * The saved outfits on the Outfit board, each a look drawn small, the
+ * favourites and then the most worn lately first: a tap puts one on the card
+ * — whatever the day is dressed for — and "…" wears it today, stars it,
+ * renames it or deletes it. One whose pieces are for work, or for days off,
+ * says so (outfitOccasion).
  */
 export function SavedOutfits({ outfits, byId, ix, onLoad, onWear, onRename, onFavourite, onDelete }: Props) {
   const list = useMemo(() => savedOrder(outfits, ix, byId), [outfits, ix, byId])
@@ -38,7 +39,7 @@ export function SavedOutfits({ outfits, byId, ix, onLoad, onWear, onRename, onFa
           const occasion = outfitOccasion(o.garmentIds, byId)
           return (
           <li key={o.id} className="saved-tile">
-            <button type="button" className="saved-load" title="Put it in the rows" onClick={() => onLoad(o)}>
+            <button type="button" className="saved-load" title="Put it on the card" onClick={() => onLoad(o)}>
               <Collage ids={o.garmentIds} byId={byId} />
               <span className="saved-name">
                 {o.favourite && <FavouriteMark inline />}

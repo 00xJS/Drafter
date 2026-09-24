@@ -39,6 +39,7 @@ export type IconName =
   | 'chevron'
   | 'bell'
   | 'alert'
+  | 'check'
   | 'tee'
   | 'trousers'
   | 'dress'
@@ -232,6 +233,8 @@ const PATHS: Record<IconName, JSX.Element> = {
       <path d="M12 10v4.4M12 17.3v.1" />
     </>
   ),
+  /* a tick: the piece a picker has chosen */
+  check: <path d="M5 12.6l4.3 4.3L19.2 7" />,
   /* a piece of clothing by its type, where it has no photo yet: a tee, a pair
      of trousers, a dress, a coat, a shoe and a bag, each its outline alone */
   tee: <path d="M8.6 3.6 4.3 5.5 2.6 10.2l3.4 1.3 1-2v10.9h10V9.5l1 2 3.4-1.3-1.7-4.7-4.3-1.9c-.5 1.5-1.9 2.5-3.4 2.5s-2.9-1-3.4-2.5z" />,

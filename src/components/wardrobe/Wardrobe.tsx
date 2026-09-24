@@ -36,7 +36,7 @@ interface Props {
 /** A day the composer may show: a day key no later than the last a look can be planned for, else today. */
 const dayOr = (day: string | undefined, today: string) => (day && /^\d{4}-\d{2}-\d{2}$/.test(day) && day <= lastPlanDay(today) ? day : today)
 const sheetFor = (o: WardrobeOpen | null): SheetMode | null => (o?.add ? { kind: 'add', type: o.add === true ? undefined : o.add } : o?.garmentId ? { kind: 'edit', id: o.garmentId } : null)
-/** The pieces of the saved outfit a way in names, for the composer's rows; null when it names none, or that one is gone. */
+/** The pieces of the saved outfit a way in names, for the look card; null when it names none, or that one is gone. */
 const outfitFor = (o: WardrobeOpen | null, outfits: readonly Outfit[]): string[] | null => {
   const found = o?.outfitId ? outfits.find(x => x.id === o.outfitId && !x.deletedAt) : undefined
   return found ? [...found.garmentIds] : null
@@ -48,7 +48,7 @@ const NO_ENTRIES: CalendarEntry[] = []
 const NOTHING_SHOWN: ReadonlySet<string> = new Set()
 
 /**
- * Home → Wardrobe: Outfit (the composer), Clothes (every piece) and Stats,
+ * Keep → Wardrobe: Outfit (the board), Clothes (every piece) and Stats,
  * over one wear index worked out per render. It owns the one piece sheet and
  * every write the three make, each with its toast and Undo; nothing here ever
  * rewrites a look or an outfit because a piece changed or went away.
@@ -62,7 +62,7 @@ export function Wardrobe({ garments, inTrash = NONE, outfits, wears, myId = null
   const [tab, setTab] = useState<WardrobeTab>(() => open?.tab ?? 'outfit')
   const [day, setDay] = useState(() => dayOr(open?.date, todayKey))
   const [sheet, setSheet] = useState<SheetMode | null>(() => sheetFor(open))
-  /** A saved outfit a way in asked for, until the composer has put it in its rows. */
+  /** A saved outfit a way in asked for, until the board has put it on its card. */
   const [pending, setPending] = useState<string[] | null>(() => outfitFor(open, outfits))
   /** A look of the day, or a new change, from Today; consumed once like pending. */
   const [lookFocus, setLookFocus] = useState<{ wearId?: string; another?: true } | null>(() =>
@@ -77,8 +77,8 @@ export function Wardrobe({ garments, inTrash = NONE, outfits, wears, myId = null
    * The local day rolled under an open app. A composer sitting on what WAS
    * today follows it to the new one; a day the wearer went to themselves is
    * theirs, and stays. The composer is keyed on the day it is dressing, so
-   * the roll remounts it: the rows re-deal by rest, and the new day starts on
-   * None instead of carrying what was chosen for yesterday.
+   * the roll remounts it: the new day starts on an empty card instead of
+   * carrying what was chosen for yesterday.
    */
   const rolledFrom = useRef(todayKey)
   useEffect(() => {
@@ -89,7 +89,7 @@ export function Wardrobe({ garments, inTrash = NONE, outfits, wears, myId = null
   }, [todayKey])
 
   // a way in is used once — the view, the day, the sheet, an outfit for the
-  // rows — and then forgotten, so the next visit opens on today's composer.
+  // card — and then forgotten, so the next visit opens on today's board.
   // The state above starts from one that is here at mount; a later one is
   // taken as it renders.
   const [openSeen, setOpenSeen] = useState(open)
@@ -120,7 +120,7 @@ export function Wardrobe({ garments, inTrash = NONE, outfits, wears, myId = null
   }
   const loggedOn = (d: string) => (d === todayKey ? 'Logged for today' : `Logged for ${shortDay(d, todayKey)}`)
   /**
-   * The composer's log: the day's latest look takes the pieces (unless
+   * The board's log: the day's latest look takes the pieces (unless
    * `another`), else a new look does. A day still to come is planned; a plan
    * logged on its day, or after, is confirmed worn.
    */
