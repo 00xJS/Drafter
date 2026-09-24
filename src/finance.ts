@@ -2,6 +2,7 @@ import { formatMoney, isMoney, isPayday, isSaving, savedSoFar } from './bills'
 import { ACCOUNT_TYPE_META, OPEN_STATUSES, type Account, type BalanceCheck, type Bill, type RecurrenceFreq, type Task } from './types'
 import { dateKey } from './utils'
 import { CHECK_IN_PREFIX, isCheckIn, nextOccurrence, seriesRoot } from '../shared/domain.mts'
+import { isOverdue } from '../shared/due.mts'
 import { shiftDayKey } from '../shared/journal.mts'
 
 // Money, beyond the month of bills (v3.27).
@@ -144,7 +145,8 @@ export function moneyRows(tasks: readonly Task[], now: Date, days: number): Mone
     if (!isMoney(t) || !t.dueAt || !OPEN_STATUSES.includes(t.status)) continue
     const due = dateKey(new Date(t.dueAt))
     if (!/^\d{4}-\d{2}-\d{2}$/.test(due)) continue
-    const overdue = due < start
+    // the one overdue rule (shared/due.mts): its day is over, whatever its time
+    const overdue = isOverdue(t.dueAt, now)
     const day = overdue ? start : due
     if (day > end) continue
     const amount = t.estimateCost !== undefined && Number.isFinite(t.estimateCost) ? t.estimateCost : undefined

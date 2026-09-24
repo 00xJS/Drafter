@@ -21,7 +21,7 @@ In a household, the address book is shared but the log is not: who you saw, wher
 
 **List · Board · Finance · Notes.** A task has a description, a status (Wishlist, To do, Doing, Done, or Blocked while it waits on another), a priority, a due date, tags, a checklist, comments, photos and files. A repeating task makes the next one when you finish it, a template or ✨ **Draft a plan** from a one-line goal adds a whole dated set at once, and forwarded emails can become tasks. Deleting takes two clicks, and the Trash keeps things for 90 days.
 
-- **Finance** is a month of bills, each person's **paydays**, and **accounts** you type a balance into — with what comes in, what goes out, what is left over, and the first day in the next sixty that the money goes under. Drafter never connects to a bank: every figure is arithmetic over what you wrote down.
+- **Finance** opens on a money timeline that answers "are we OK until payday?": what is **safe to spend** until the next payday, a 30-day cash line (60 at a tap) with its low point, and the bills, paydays and savings set-asides coming up, with a Paid button on each. **+ Bill** starts from a template (rent, the electric, internet, Netflix…), **Check in** types every account's balance in one go, **Check in weekly** is a repeating task that opens it, and **savings goals** are set-asides on a schedule that count what they have put away. The month of bills, each person's **paydays** and the **accounts** are a tap away. Drafter never connects to a bank: every figure is arithmetic over what you wrote down.
 - A GitHub link shows the issue or pull request's live state. With a GitHub token, finishing the task can close the issue, and a linked Projects board syncs status and due dates both ways.
 
 ### Calendar

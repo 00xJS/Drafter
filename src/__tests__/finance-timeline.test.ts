@@ -180,6 +180,18 @@ describe('coming up', () => {
   })
 })
 
+describe('what is overdue, by the one rule', () => {
+  it('is a day that is over: a bill due today stays today’s, its time gone by or not (shared/due.mts)', () => {
+    const morning = bill('morning', 20, new Date(2026, 8, 21, 9, 0).toISOString())
+    const yesterday = bill('yesterday', 20, new Date(2026, 8, 20, 23, 0).toISOString())
+    const rows = comingUp([morning, yesterday], NOW)
+    expect(rows.map(r => [r.task.id, r.overdue, r.day])).toEqual([
+      ['yesterday', true, '2026-09-21'],
+      ['morning', false, '2026-09-21'],
+    ])
+  })
+})
+
 describe('a savings goal', () => {
   const goal = (over: Partial<Task> = {}, target = 1000, by?: string) =>
     task('goal', { title: 'Trip', bill: { kind: 'saving', goal: { target, ...(by ? { by } : {}) } }, estimateCost: 100, recurrence: { freq: 'monthly' }, dueAt: day(10, 1), ...over })

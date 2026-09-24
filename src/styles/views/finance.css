@@ -446,7 +446,10 @@
   background: var(--surface);
 }
 .fin-weekly-on {
+  display: inline-flex;
   flex: 1 1 auto;
+  align-items: center;
+  gap: 8px;
   font-weight: 600;
 }
 .fin-weekly-when {
@@ -648,7 +651,10 @@
   text-align: center;
 }
 .fin-autopay {
+  display: flex;
   align-self: end;
+  align-items: center;
+  gap: 8px;
   min-height: 40px;
 }
 .goal-emoji {
@@ -697,6 +703,9 @@
       'line coming'
       'accounts goals'
       'month month';
+    /* a long Coming up gives its extra height to the row under the line, so
+       the hero and the buttons stay together at the top */
+    grid-template-rows: auto auto 1fr auto auto;
     align-items: start;
     gap: 16px 24px;
   }
