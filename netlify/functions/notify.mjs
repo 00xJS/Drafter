@@ -1,16 +1,19 @@
-// Telling the other member about a task you share: POST /api/notify.
+// Telling the other member: POST /api/notify, in one of two shapes.
 //   { taskId, events: [{ type: 'status' | 'checklist' | 'comment' | 'due' | 'title' | 'assigned', detail?, done? }] }
+//     what changed on a task you share;
+//   { messageId }
+//     a message you sent the household (the Household side of the chat).
 //
-// The device of whoever made a change calls this with their own session, a
-// few seconds after the edit has reached the server (src/activity.ts). It
-// says what changed; this decides who hears of it, writes their notice for
-// the hub on Home, and pushes it to their devices.
+// The device of whoever made a change, or said something, calls this with
+// their own session once the server has it (src/activity.ts). It names what
+// happened; this decides who hears of it, writes their notice for the hub on
+// Home, and pushes it to their devices.
 //
-// Who: the rule is shared/notices.mts noticeRecipients — whoever handed the
-// task over hears what its assignee does, the assignee hears what changes
-// their job, a shared task's owner hears it finished or commented on — and
-// never the one who did it. Then three checks here, because the service key
-// this reads with bypasses every policy (readableRow is the one rule): the
+// A task. Who: the rule is shared/notices.mts noticeRecipients — whoever
+// handed the task over hears what its assignee does, the assignee hears what
+// changes their job, a shared task's owner hears it finished or commented on
+// — and never the one who did it. Then three checks here, because the service
+// key this reads with bypasses every policy (readableRow is the one rule): the
 // actor must be able to read the task, and each recipient must be in the
 // actor's household and able to read it too. A task its owner keeps private
 // tells nobody anything. A recipient who switched "Tell me when someone
@@ -21,11 +24,43 @@
 // banner on the lock screen is replaced rather than stacked. The words are the
 // task's title, a checklist step, a comment — never anything else.
 //
-// Best effort per instance, like /api/ai's: a ceiling per account on calls.
+// A message. It must be filed under the caller: a member can write a row
+// under their housemate, so a row's owner is no proof of who said it, and the
+// name the notice gives is the caller's own, from their session, never the
+// row's. It must be live, in the caller's household, and readable by them
+// (readableRow again, as the service key reads it). Everyone else in the
+// household who can read it hears of it; the one who said it never does.
+// There is no switch for it: a phone's own notification settings quiet it.
+//
+// What: one notice per recipient, sender and quarter of an hour, a line per
+// message in its own words — the stored row's, never the request's. A message
+// the notice holds already is not added again, nor pushed again, so a retry
+// tells nobody twice (shared/notices.mts mergeMessageNotice). The push is
+// headed with the sender's name and says the notice's lines, the latest last,
+// under the tag messages-<sender>: the lock screen keeps one banner per sender,
+// which each message renews and sounds. A tap opens the chat on its Household
+// side (?chat=household).
+//
+// Best effort per instance, like /api/ai's: a ceiling per account on calls,
+// one for tasks and one for messages, so a lively chat never holds up word of
+// a task.
 
 import { isRecord, legacyPostToTask } from '../../shared/domain.mts'
 import { readableRow } from '../../shared/kinds.mts'
-import { ACTIVITY_TYPES, activityLine, dueWords, noticeBucket, noticeId, noticeRecipients, noticeTitle, noticeTypeOf, oneLine } from '../../shared/notices.mts'
+import {
+  ACTIVITY_TYPES,
+  activityLine,
+  dueWords,
+  mergeMessageNotice,
+  messageNotice,
+  messagesAbout,
+  noticeBucket,
+  noticeId,
+  noticeRecipients,
+  noticeTitle,
+  noticeTypeOf,
+  oneLine,
+} from '../../shared/notices.mts'
 import { withCors } from './lib/cors.mjs'
 import { putNotice } from './lib/notices.mjs'
 import { slidingWindow } from './lib/ratelimit.mjs'
@@ -39,6 +74,8 @@ const MAX_EVENTS = 20
 const MAX_DETAIL = 2000
 // 30 calls per 10 minutes per account: a device sends one a task every ten seconds at most
 const perActor = slidingWindow({ limit: 30, windowMs: 10 * 60_000 })
+// 60 per 10 minutes for messages, one call a message: counted apart, so a lively chat never starves the tasks'
+const perActorMessages = slidingWindow({ limit: 60, windowMs: 10 * 60_000 })
 
 async function rest(path) {
   const url = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL
@@ -87,23 +124,29 @@ export function noticeLines(events, task, tz) {
   return lines
 }
 
-const handler = async req => {
-  if (req.method !== 'POST') return new Response('Method not allowed', { status: 405 })
-  const { user, response } = await requireUser(req)
-  if (response) return response
-  if (!settingsStoreConfigured()) return Response.json({ error: 'Notices need SUPABASE_SERVICE_KEY on the host.' }, { status: 501 })
-
-  const slot = perActor.take(user.id)
-  if (!slot.ok) return Response.json({ error: 'Too many updates at once — they will go out shortly.' }, { status: 429, headers: { 'retry-after': String(Math.ceil(slot.retryAfterMs / 1000)) } })
-
-  const text = await req.text()
-  if (text.length > MAX_BODY) return Response.json({ error: 'That is too much to send at once.' }, { status: 413 })
-  let body
-  try {
-    body = JSON.parse(text)
-  } catch {
-    return Response.json({ error: 'invalid JSON' }, { status: 400 })
+/**
+ * Push `payload` to every device `recipientId` has push on for, and take off
+ * their list any a push service says is gone (keeping what Apple said of an
+ * iPhone's environment on the ones that stay).
+ */
+async function pushTo(recipientId, settings, payload) {
+  const subs = Array.isArray(settings?.push_subscriptions) ? settings.push_subscriptions : []
+  if (!subs.length || !pushConfigured()) return
+  const { gone, updated } = await sendToAll(subs, payload)
+  if (gone.length || updated?.length) {
+    const byEp = new Map((updated ?? []).map(u => [u.endpoint, u]))
+    await settingsSet(recipientId, { push_subscriptions: subs.filter(s => !gone.includes(s.endpoint)).map(s => byEp.get(s.endpoint) ?? s) }).catch(() => {})
   }
+}
+
+/** Over a ceiling: when to try again. */
+const tooMany = slot =>
+  Response.json({ error: 'Too many updates at once — they will go out shortly.' }, { status: 429, headers: { 'retry-after': String(Math.ceil(slot.retryAfterMs / 1000)) } })
+
+/** What changed on a task, told to whoever it concerns. */
+async function tellTask(user, body) {
+  const slot = perActor.take(user.id)
+  if (!slot.ok) return tooMany(slot)
   const taskId = typeof body?.taskId === 'string' ? body.taskId.trim() : ''
   const events = readEvents(body?.events)
   if (!taskId || taskId.length > 200 || !events) return Response.json({ error: 'A task and what changed on it, please.' }, { status: 400 })
@@ -152,10 +195,8 @@ const handler = async req => {
       const put = await putNotice(notice, recipientId)
       if (!put.ok) continue
       notified++
-      const subs = Array.isArray(settings?.push_subscriptions) ? settings.push_subscriptions : []
-      if (!subs.length || !pushConfigured()) continue
       const lines = put.notice.lines ?? []
-      const { gone, updated } = await sendToAll(subs, {
+      await pushTo(recipientId, settings, {
         title: put.notice.title,
         body: lines.length ? lines.join('\n') : 'Open Drafter for the details.',
         // one banner per task: a later push replaces the earlier on the lock
@@ -164,15 +205,85 @@ const handler = async req => {
         renotify: true,
         url: `${site}/?task=${encodeURIComponent(taskId)}`,
       })
-      if (gone.length || updated?.length) {
-        const byEp = new Map((updated ?? []).map(u => [u.endpoint, u]))
-        await settingsSet(recipientId, { push_subscriptions: subs.filter(s => !gone.includes(s.endpoint)).map(s => byEp.get(s.endpoint) ?? s) }).catch(() => {})
-      }
     }
     return Response.json({ ok: true, notified })
   } catch (e) {
     return Response.json({ error: `Could not tell them: ${e?.message ?? e}` }, { status: 502 })
   }
+}
+
+/** A message the caller sent the household, told to everyone else in it. */
+async function tellMessage(user, body) {
+  const slot = perActorMessages.take(user.id)
+  if (!slot.ok) return tooMany(slot)
+  const messageId = typeof body.messageId === 'string' ? body.messageId.trim() : ''
+  // a message, and nothing of a task's beside it
+  if (!messageId || messageId.length > 200 || 'taskId' in body || 'events' in body) return Response.json({ error: 'A message, please.' }, { status: 400 })
+
+  try {
+    // the message as the database holds it, read with the service key
+    const rows = await rest(`posts?id=eq.${encodeURIComponent(messageId)}&select=user_id,data`)
+    const row = Array.isArray(rows) ? rows[0] : null
+    const data = isRecord(row?.data) ? row.data : null
+    const owner = row?.user_id ?? null
+    const words = typeof data?.body === 'string' ? data.body : ''
+    const household = await householdOf(user.id)
+    // the caller's own: filed under them — which alone is no proof they wrote
+    // it, but the name told is theirs, from their session — live, with
+    // something said, in their household and readable by them
+    const said = !!data && data.kind === 'message' && !data.deletedAt && !!words.trim() && owner === user.id && household.has(owner) && readableRow(data, owner, user.id)
+    if (!said) return Response.json({ error: 'No such message.' }, { status: 404 })
+
+    const me = await settingsGet(user.id).catch(() => null)
+    const senderName = oneLine(me?.display_name || user.email.split('@')[0] || '', 40)
+    /** @type {import('../../shared/notices.mts').ToldMessage} */
+    const told = { id: messageId, body: words, createdAt: typeof data.createdAt === 'string' ? data.createdAt : undefined, senderId: user.id, senderName }
+    const site = process.env.URL || process.env.DEPLOY_PRIME_URL || ''
+    const now = new Date()
+
+    let notified = 0
+    for (const recipientId of household) {
+      // everyone else in the household who can read it; never the one who said it
+      if (recipientId === user.id || !readableRow(data, owner, recipientId)) continue
+      const put = await putNotice(messageNotice(recipientId, told, now), recipientId, (had, news) => mergeMessageNotice(had, news, senderName))
+      // nothing written (no notices on this database yet), or nothing new: this
+      // message was told already, by a retry or another tab, and is not pushed again
+      if (!put.ok || put.unchanged) continue
+      notified++
+      const settings = await settingsGet(recipientId).catch(() => null)
+      const lines = put.notice.lines ?? []
+      await pushTo(recipientId, settings, {
+        title: senderName || 'Someone',
+        body: lines.length ? lines.join('\n') : 'Open Drafter to read it.',
+        // one banner per sender: each message renews it, and a browser sounds
+        // it again rather than swapping the words silently
+        tag: messagesAbout(user.id),
+        renotify: true,
+        url: `${site}/?chat=household`,
+      })
+    }
+    return Response.json({ ok: true, notified })
+  } catch (e) {
+    return Response.json({ error: `Could not tell them: ${e?.message ?? e}` }, { status: 502 })
+  }
+}
+
+const handler = async req => {
+  if (req.method !== 'POST') return new Response('Method not allowed', { status: 405 })
+  const { user, response } = await requireUser(req)
+  if (response) return response
+  if (!settingsStoreConfigured()) return Response.json({ error: 'Notices need SUPABASE_SERVICE_KEY on the host.' }, { status: 501 })
+
+  const text = await req.text()
+  if (text.length > MAX_BODY) return Response.json({ error: 'That is too much to send at once.' }, { status: 413 })
+  let body
+  try {
+    body = JSON.parse(text)
+  } catch {
+    return Response.json({ error: 'invalid JSON' }, { status: 400 })
+  }
+  // which of the two it is decides which ceiling the call counts against
+  return isRecord(body) && 'messageId' in body ? tellMessage(user, body) : tellTask(user, body)
 }
 
 export default withCors(handler)

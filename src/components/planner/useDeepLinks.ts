@@ -36,6 +36,7 @@ interface Deps {
   openKitchen: Nav['openKitchen']
   openWardrobe: Nav['openWardrobe']
   openFinanceCheckIn: Nav['openFinanceCheckIn']
+  setChatSide: Nav['setChatSide']
   changeStatus: (id: string, status: TaskStatus) => void
   defer: (id: string, day: Date) => void
 }
@@ -76,12 +77,13 @@ export function useDeepLinks({
   openKitchen,
   openWardrobe,
   openFinanceCheckIn,
+  setChatSide,
   changeStatus,
   defer,
 }: Deps) {
   // Every way in, understood in one place: the PWA share target, ?new=, ?task=,
-  // ?view=, a push tap, the drafter:// scheme, and the return from a calendar
-  // consent screen. Anything that needs data waits for the store to load.
+  // ?view=, ?chat=, a push tap, the drafter:// scheme, and the return from a
+  // calendar consent screen. Anything that needs data waits for the store to load.
   const pendingLink = useRef<PendingLink | null>(null)
   // a calendar sign-in's outcome, said once the app has finished it (waitForOAuth)
   const oauthWait = useRef<(() => void) | null>(null)
@@ -195,6 +197,14 @@ export function useDeepLinks({
     } else if (parsed.tab) {
       goKeepTab(parsed.tab)
       setView('keep')
+    }
+    if (parsed.chat) {
+      // A household message's push: the chat on the household's thread, even
+      // if it was left on the assistant's, over whichever tab is up. It writes
+      // nothing; the thread on screen is what marks the messages seen.
+      setChatSide('household')
+      setPushed('chat')
+      return
     }
     if (parsed.plan) {
       // A planning sheet and nothing else — the morning digest, a Shortcut's

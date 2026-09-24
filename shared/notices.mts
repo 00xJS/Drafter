@@ -5,7 +5,9 @@
 // A notice is its RECIPIENT's row. What one member does to one task within a
 // quarter of an hour is one notice — a line per change — so ticking five
 // steps is one entry in the hub and one banner on the lock screen that keeps
-// being replaced, not five. Dependency-free ESM, like the rest of shared/.
+// being replaced, not five. What one member says in the household's chat
+// within a quarter of an hour is one notice the same way, a line per message.
+// Dependency-free ESM, like the rest of shared/.
 
 import type { Notice, NoticeType, Task } from '../src/types.ts'
 import { hasDueTime } from './due.mts'
@@ -18,6 +20,8 @@ export const NOTICE_LINES_MAX = 8
 export const NOTICE_LINE_MAX = 160
 /** How long a notice stays; the nightly job lets older ones go (lib/notices.mjs). */
 export const NOTICE_KEEP_DAYS = 30
+/** The most message ids a message notice keeps, the newest: far more than a quarter of an hour's chat, so its count holds. */
+export const NOTICE_MESSAGES_MAX = 50
 
 /** What an edit on a device can report about a task (src/activity.ts), as /api/notify takes it. */
 export type ActivityType = 'status' | 'checklist' | 'comment' | 'due' | 'title' | 'assigned'
@@ -35,10 +39,10 @@ export interface ActivityEvent {
   done?: boolean
 }
 
-/** The quarter of an hour an instant falls in: the last part of a task notice's id. */
+/** The quarter of an hour an instant falls in: the last part of a task's or a message's notice id. */
 export const noticeBucket = (ms: number): number => Math.floor(ms / NOTICE_BUCKET_MS)
 
-/** A notice's id: whose, about what (a task's id, `digest`, `alarm`), and which bucket or day. */
+/** A notice's id: whose, about what (a task's id, `messages-<sender>`, `digest`, `alarm`), and which bucket or day. */
 export const noticeId = (recipientId: string, about: string, bucket: number | string): string => `notice~${recipientId}~${about}~${bucket}`
 
 /** The part of a task that decides who hears about it. */
@@ -83,8 +87,12 @@ export function noticeRecipients(task: TaskParties, actorId: string, events: rea
   return out
 }
 
-/** Which kind of notice wins when several kinds of change land in one: the weightiest. */
-const WEIGHT: Record<NoticeType, number> = { done: 6, assigned: 5, comment: 4, progress: 3, changed: 2, digest: 1, alarm: 1 }
+/**
+ * Which kind of notice wins when several kinds of change land in one: the
+ * weightiest. A message notice only ever meets another (its id is the
+ * sender's, never a task's), so its weight decides nothing.
+ */
+const WEIGHT: Record<NoticeType, number> = { done: 6, assigned: 5, comment: 4, message: 4, progress: 3, changed: 2, digest: 1, alarm: 1 }
 
 /** The kind of notice one change makes. */
 export function eventNoticeType(e: ActivityEvent): NoticeType {
@@ -215,6 +223,97 @@ export function mergeNotice(existing: Notice | null | undefined, incoming: Notic
     title: type === incoming.type ? incoming.title : existing.title,
     lines: lines.length ? lines : undefined,
     at: later,
+    createdAt: existing.createdAt,
+    readAt: undefined,
+  }
+}
+
+// ---- household messages -------------------------------------------------------
+
+/**
+ * How far back a message's own stamp is believed: a device lets go of a
+ * message it could not tell after a day (src/activity.ts MAX_AGE_MS).
+ */
+const MESSAGE_TIME_WINDOW_MS = 24 * 3_600_000
+
+/** What a message notice is about, in its id and its push's tag: whose messages they are. */
+export const messagesAbout = (senderId: string): string => `messages-${senderId}`
+
+/** A message notice's headline, as the hub lists it: "Maria sent a message", "Maria sent 3 messages". */
+export function messageNoticeTitle(senderName: string, count: number): string {
+  const who = senderName.trim() || 'Someone'
+  return count > 1 ? `${who} sent ${count} messages` : `${who} sent a message`
+}
+
+/**
+ * When a message was said, as the server takes it: the message's own stamp,
+ * but never later than now — a phone whose clock runs fast — nor more than a
+ * day back. Its notice is dated by it and filed in its quarter of an hour, so
+ * the same message told twice, however far apart, lands in the same notice;
+ * and a thread that has shown the message has shown what its notice says
+ * (src/hub.ts messageNoticesShown).
+ */
+export function messageTime(createdAt: string | undefined, now: number): number {
+  const ms = Date.parse(createdAt ?? '')
+  return Number.isFinite(ms) ? Math.min(now, Math.max(now - MESSAGE_TIME_WINDOW_MS, ms)) : now
+}
+
+/** One household message as its notice is built from it: the stored row's words and stamp, and the sender as their own session names them. */
+export interface ToldMessage {
+  id: string
+  body: string
+  createdAt?: string
+  senderId: string
+  senderName: string
+}
+
+/**
+ * The notice that tells `recipientId` about one household message: a line of
+ * its words under a headline with the sender's name, in the notice for that
+ * sender and quarter of an hour.
+ */
+export function messageNotice(recipientId: string, m: ToldMessage, now: Date): Notice {
+  const at = new Date(messageTime(m.createdAt, now.getTime()))
+  const line = oneLine(m.body)
+  const stamp = now.toISOString()
+  return {
+    kind: 'notice',
+    id: noticeId(recipientId, messagesAbout(m.senderId), noticeBucket(at.getTime())),
+    at: at.toISOString(),
+    type: 'message',
+    actorId: m.senderId,
+    target: { kind: 'message', id: m.id },
+    title: messageNoticeTitle(m.senderName, 1),
+    lines: line ? [line] : undefined,
+    messageIds: [m.id],
+    createdAt: stamp,
+    updatedAt: stamp,
+  }
+}
+
+/**
+ * A message notice with more messages folded in: a line each appended (the
+ * newest NOTICE_LINES_MAX kept), counted in the headline, the later time, and
+ * unread again. A message it tells of already — the same one told twice, by a
+ * retry or by two tabs — adds nothing, and when nothing is new `existing`
+ * itself comes back: lib/notices.mjs writes nothing then, and nothing is pushed.
+ */
+export function mergeMessageNotice(existing: Notice | null | undefined, incoming: Notice, senderName: string): Notice {
+  if (!existing || existing.deletedAt) return mergeNotice(existing, incoming)
+  const had = new Set(existing.messageIds ?? [])
+  const fresh = (incoming.messageIds ?? []).map((id, i) => ({ id, line: incoming.lines?.[i] })).filter(m => !had.has(m.id))
+  if (fresh.length === 0) return existing
+  const messageIds = [...(existing.messageIds ?? []), ...fresh.map(m => m.id)].slice(-NOTICE_MESSAGES_MAX)
+  const lines = [...(existing.lines ?? []), ...fresh.flatMap(m => (m.line ? [m.line] : []))].slice(-NOTICE_LINES_MAX)
+  const later = Date.parse(incoming.at) >= Date.parse(existing.at)
+  return {
+    ...existing,
+    ...incoming,
+    title: messageNoticeTitle(senderName, messageIds.length),
+    lines: lines.length ? lines : undefined,
+    messageIds,
+    at: later ? incoming.at : existing.at,
+    target: later ? incoming.target : existing.target,
     createdAt: existing.createdAt,
     readAt: undefined,
   }

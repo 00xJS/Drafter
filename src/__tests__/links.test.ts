@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { LEGACY_VIEW_TO_KEEP } from '../components/planner/routes'
-import { oauthReasonLabel, paramsOf, parseLink, safeHttpUrl } from '../links'
+import { inAppLink, oauthReasonLabel, paramsOf, parseLink, safeHttpUrl } from '../links'
 
 describe('parseLink', () => {
   it('parses OAuth success and maps known failure reasons', () => {
@@ -141,6 +141,26 @@ describe('parseLink', () => {
     expect(parse('drafter://evil?plan=day')).toEqual({})
     // opening a sheet is all it does: no action, no capture, no journal line
     expect(parse('/?plan=day&act=done')).toEqual({ plan: 'day' })
+  })
+
+  it('reads chat= as the household’s thread alone, from the app’s own links alone', () => {
+    const parse = (raw: string) => {
+      const { host, params } = paramsOf(raw)
+      return parseLink(params, { host, allowAct: true })
+    }
+    // a household message's push, as a browser opens it and as the iPhone app is handed it
+    expect(parse('/?chat=household')).toEqual({ chat: 'household' })
+    expect(parse(inAppLink('https://drafter.example/?chat=household'))).toEqual({ chat: 'household' })
+    expect(parse('drafter://open?chat=household')).toEqual({ chat: 'household' })
+    // no other thread, and nothing that is not one
+    expect(parse('/?chat=assistant')).toEqual({})
+    expect(parse('/?chat=constructor')).toEqual({})
+    // the other hosts stay scoped as before
+    expect(parse('drafter://new?chat=household').chat).toBeUndefined()
+    expect(parse('drafter://journal?chat=household')).toEqual({})
+    expect(parse('drafter://evil?chat=household')).toEqual({})
+    // opening the chat is all it does
+    expect(parse('/?chat=household&act=done')).toEqual({ chat: 'household' })
   })
 
   it('ignores an action button unless the caller opted in', () => {

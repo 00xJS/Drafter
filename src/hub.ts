@@ -104,6 +104,19 @@ export interface HubRow {
 /** A notice not yet opened, here or on the reader's other devices. */
 export const unreadNotice = (n: Notice): boolean => !n.readAt && !n.deletedAt
 
+/**
+ * The unread message notices a household thread has shown everything of,
+ * once it has shown every message up to `seenAt` (the newest one on screen):
+ * a message notice is dated by its newest message (shared/notices.mts
+ * messageTime), so reading the thread is reading it, on opening the chat and
+ * as more arrives while it is open.
+ */
+export function messageNoticesShown(notices: readonly Notice[], seenAt: string | null): Notice[] {
+  const seen = Date.parse(seenAt ?? '')
+  if (!Number.isFinite(seen)) return []
+  return notices.filter(n => n.type === 'message' && unreadNotice(n) && Date.parse(n.at) <= seen)
+}
+
 /** Everything in the hub, newest first. */
 export function hubRows(notices: readonly Notice[], reminders: readonly FiredReminder[], seenAt: number | null): HubRow[] {
   const rows: HubRow[] = [

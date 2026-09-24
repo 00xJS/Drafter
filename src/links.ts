@@ -15,6 +15,8 @@ export interface ParsedLink {
   journal?: string
   /** A planning sheet to open: Plan my day, Shut down, Plan next week. Opening it writes nothing. */
   plan?: 'day' | 'shutdown' | 'week'
+  /** The chat to open on its household thread: a household message's push. Opening it writes nothing. */
+  chat?: 'household'
 }
 
 const JOURNAL_MAX = 2000
@@ -131,6 +133,9 @@ export function parseLink(params: URLSearchParams, opts?: { host?: string; allow
   if (host === '' || host === 'open') {
     const plan = params.get('plan')
     if (plan === 'day' || plan === 'shutdown' || plan === 'week') out.plan = plan
+    // …and so does a household message's push, the chat on its Household side
+    // (netlify/functions/notify.mjs): that one value, and nothing it carries
+    if (params.get('chat') === 'household') out.chat = 'household'
   }
 
   // A reminder's action button appends `&act=…` to that row's own link. It writes
@@ -172,11 +177,12 @@ export function parseLink(params: URLSearchParams, opts?: { host?: string; allow
 /**
  * A tapped push's link, as the app's own. The server writes the site's full
  * address into a push (the digest's `https://…/?plan=day`, a task's
- * `https://…/?task=…`), which a browser opens as it is. Inside the iPhone app
- * the page is capacitor://drafter, so that address named some other host and
- * parseLink ignored it: the tap opened the app and nothing in it. Only what
- * the app reads is kept — the path and the query. A drafter:// link, or one
- * already relative, is left as it is.
+ * `https://…/?task=…`, a message's `https://…/?chat=household`), which a
+ * browser opens as it is. Inside the iPhone app the page is
+ * capacitor://drafter, so that address named some other host and parseLink
+ * ignored it: the tap opened the app and nothing in it. Only what the app
+ * reads is kept — the path and the query. A drafter:// link, or one already
+ * relative, is left as it is.
  */
 export function inAppLink(url: string): string {
   if (!/^https?:\/\//i.test(url)) return url

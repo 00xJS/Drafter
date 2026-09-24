@@ -1015,24 +1015,29 @@ export const SNOOZE_OPTIONS: { days: number; label: string; short: string }[] = 
 ]
 
 /**
- * What a notice is about: a member doing something to a task you share, the
- * morning digest, or an alarm. The hub on Home lists them, newest first.
+ * What a notice is about: a member doing something to a task you share, a
+ * member saying something in the household's chat, the morning digest, or an
+ * alarm. The hub on Home lists them, newest first.
  */
-export type NoticeType = 'assigned' | 'progress' | 'done' | 'comment' | 'changed' | 'digest' | 'alarm'
-export const NOTICE_TYPES: NoticeType[] = ['assigned', 'progress', 'done', 'comment', 'changed', 'digest', 'alarm']
+export type NoticeType = 'assigned' | 'progress' | 'done' | 'comment' | 'changed' | 'message' | 'digest' | 'alarm'
+export const NOTICE_TYPES: NoticeType[] = ['assigned', 'progress', 'done', 'comment', 'changed', 'message', 'digest', 'alarm']
 
 /**
  * One entry in the notification hub (v3.32): "Maria finished “Take bins
- * out”", this morning's digest, an alarm. PERSONAL: the row is its
- * RECIPIENT's, and only their devices ever see it — not even the member it
- * is about. The server writes them (netlify/functions/notify.mjs for a task,
- * digest.mjs for the digest and alarms); a device only ever marks one read,
- * which syncs to the reader's other devices like any edit.
+ * out”", "Maria sent a message", this morning's digest, an alarm. PERSONAL:
+ * the row is its RECIPIENT's, and only their devices ever see it — not even
+ * the member it is about. The server writes them (netlify/functions/notify.mjs
+ * for a task or a message, digest.mjs for the digest and alarms); a device
+ * only ever marks one read, which syncs to the reader's other devices like
+ * any edit.
  *
  * What one member does to one task within a quarter of an hour is ONE notice
  * (`notice~<recipient>~<task>~<bucket>`): each change adds a line to it, and
- * the latest moves it back to the top as unread. The nightly job turns a
- * notice older than 30 days into a tombstone, so devices let it go too.
+ * the latest moves it back to the top as unread. What one member says in the
+ * household's chat within a quarter of an hour is one too
+ * (`notice~<recipient>~messages-<sender>~<bucket>`), a line per message. The
+ * nightly job turns a notice older than 30 days into a tombstone, so devices
+ * let it go too.
  */
 export interface Notice extends Owned {
   kind: 'notice'
@@ -1042,12 +1047,18 @@ export interface Notice extends Owned {
   type: NoticeType
   /** The member who did it; none for the digest or an alarm. */
   actorId?: string
-  /** What a tap opens. */
-  target?: { kind: 'task' | 'event' | 'review'; id: string }
+  /** What a tap opens: a message's is the household's thread, whichever message it names. */
+  target?: { kind: 'task' | 'event' | 'review' | 'message'; id: string }
   /** The headline, as the lock screen said it: "Maria finished “Take bins out”". */
   title: string
   /** What happened, a line each, oldest first; at most eight. */
   lines?: string[]
+  /**
+   * On a message notice, the messages it tells of, by id, oldest first: one
+   * told twice (a retry, two tabs) is added once, and the headline counts
+   * them. The newest fifty are kept.
+   */
+  messageIds?: string[]
   /** When its reader opened it, here or on another of their devices; unread without. */
   readAt?: string
   createdAt: string

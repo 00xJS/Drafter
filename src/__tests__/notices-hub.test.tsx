@@ -4,7 +4,7 @@ import { NoticesSheet } from '../components/NoticesSheet'
 import { Today } from '../components/Today'
 import { hubOpener } from '../components/planner/hubRouting'
 import type { PlannerCtx } from '../components/planner/ctx'
-import { bellLabel, byDay, howLongAgo, hubRows, hubUnread, markHubSeen, readHubSeen, ringingDevice } from '../hub'
+import { bellLabel, byDay, howLongAgo, hubRows, hubUnread, markHubSeen, messageNoticesShown, readHubSeen, ringingDevice } from '../hub'
 import { firedReminders, type FiredReminder } from '../reminders'
 import type { CalendarEntry, Notice, Person, Place, Task } from '../types'
 import { button, elements, rendered, textOf } from './rendered'
@@ -98,6 +98,29 @@ describe('the rows', () => {
     expect(howLongAgo(now - 12 * 60_000, now)).toBe('12 min ago')
     expect(howLongAgo(now - 3 * 3_600_000, now)).toBe('3 h ago')
     expect(howLongAgo(at(23, 8, 5).getTime(), now)).toMatch(/8:05/)
+  })
+})
+
+describe('the household thread reads the bell’s word of it', () => {
+  const said = (over: Partial<Notice> = {}) =>
+    notice({ id: `notice~${ME}~messages-${THEM}~1`, type: 'message', target: { kind: 'message', id: 'm2' }, title: 'Maria sent 2 messages', at: '2026-09-23T15:59:00.000Z', ...over })
+
+  it('every unread message notice dated up to the newest message on screen, and nothing else', () => {
+    const shown = said()
+    const newer = said({ id: 'n-newer', at: '2026-09-23T16:05:00.000Z' })
+    const read = said({ id: 'n-read', readAt: '2026-09-23T16:00:00.000Z' })
+    const gone = said({ id: 'n-gone', deletedAt: '2026-09-23T16:00:00.000Z' })
+    // a task's notice is read by opening the task, never by the chat
+    const task = notice({ at: '2026-09-23T15:00:00.000Z' })
+    expect(messageNoticesShown([shown, newer, read, gone, task], '2026-09-23T15:59:00.000Z').map(n => n.id)).toEqual([shown.id])
+    // a stamp written another way is the same instant
+    expect(messageNoticesShown([shown], '2026-09-23T15:59:00Z')).toEqual([shown])
+    expect(messageNoticesShown([shown, newer], '2026-09-23T16:05:00.000Z')).toEqual([shown, newer])
+  })
+
+  it('none before the thread has shown anything', () => {
+    expect(messageNoticesShown([said()], null)).toEqual([])
+    expect(messageNoticesShown([said()], 'not a time')).toEqual([])
   })
 })
 
@@ -297,6 +320,8 @@ describe('a row opens what it is about', () => {
       openPlace: log('openPlace'),
       setView: log('setView'),
       setEventEditor: log('setEventEditor'),
+      setChatSide: log('setChatSide'),
+      setPushed: log('setPushed'),
       showToast: log('showToast'),
     } as unknown as PlannerCtx
     return { p, calls }
@@ -311,6 +336,14 @@ describe('a row opens what it is about', () => {
     open({ kind: 'person', id: 'mum' })
     open({ kind: 'place', id: 'nopi' })
     expect(calls.map(c => c[0])).toEqual(['close', 'openTask', 'close', 'setEventEditor', 'close', 'openReview', 'close', 'openPerson', 'close', 'openPlace'])
+  })
+
+  it('a household message opens the chat on the household’s thread, whichever message it names', () => {
+    const { p, calls } = ctx()
+    const open = hubOpener(p, () => calls.push(['close']))
+    open({ kind: 'message', id: 'message~2026-09-23T16:00:00.000Z~abcdefghij' })
+    open({ kind: 'message', id: 'not-on-this-device' })
+    expect(calls).toEqual([['close'], ['setChatSide', 'household'], ['setPushed', 'chat'], ['close'], ['setChatSide', 'household'], ['setPushed', 'chat']])
   })
 
   it('a task that is not here says so, and an event that is not opens the Calendar', () => {

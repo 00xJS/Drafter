@@ -93,11 +93,14 @@ function explainPushFailure(failed) {
 
 /**
  * The test push's words: what push brings to every device the account has —
- * the morning digest, and word of a shared task someone else updated unless
- * that is switched off.
+ * the morning digest, the household's messages, which have no switch
+ * (notify.mjs), and word of a shared task someone else updated unless that is
+ * switched off.
  */
 export function testPushBody(settings) {
-  return settings?.notify_activity === false ? 'Push is on: a digest each morning.' : 'Push is on: a digest each morning, and word when someone updates a task you share.'
+  return settings?.notify_activity === false
+    ? 'Push is on: a digest each morning, and messages from your household.'
+    : 'Push is on: a digest each morning, messages from your household, and word when someone updates a task you share.'
 }
 
 const handler = async req => {

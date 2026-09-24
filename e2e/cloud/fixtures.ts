@@ -1,6 +1,6 @@
 import { test as base, expect, type Browser, type BrowserContext, type Locator, type Page, type TestInfo } from '@playwright/test'
 import type { View } from '../fixtures'
-import { stubApi, type ApiLog } from './api'
+import { stubApi, type ApiLog, type Notified } from './api'
 import { isLocalHost, type Stack } from './lane'
 import { createMember, makeHousehold, serverRow, type Member, type ServerRow } from './stack'
 
@@ -33,6 +33,8 @@ export interface Device {
   live: Live
   /** The top bar's sync pill: what is waiting, and whether the last round got an answer. */
   pill: Locator
+  /** What this device told /api/notify, in order, and whether the server had the record it named as it asked. */
+  readonly notified: readonly Notified[]
   /** Sign in through the form, as a person does, and wait for Home. */
   signIn(): Promise<void>
   /** One of the five tabs. */
@@ -185,6 +187,7 @@ async function openDevice(browser: Browser, stack: Stack, origin: string, who: M
     context,
     live,
     pill,
+    notified: log.notified,
     // GoTrue takes 30 sign-ins in five minutes from one address (supabase/config.toml,
     // [auth.rate_limit]); the lane signs in ten times, twice that when every test retries
     async signIn() {
