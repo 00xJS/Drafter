@@ -2,8 +2,9 @@
 // old ones go.
 //
 // A notice is its RECIPIENT's row (kind 'notice', personal). Two writers make
-// them — /api/notify, for a change to a task two members share, and the
-// hourly digest, for the morning digest and an alarm — and both write here.
+// them — /api/notify, for a change to a task two members share and for a
+// message to the household, and the hourly digest, for the morning digest and
+// an alarm — and both write here.
 //
 // How it is written matters as much as what. sync_posts under the service key
 // stores a NEW row as the site owner's (auth.uid() is null there), and the
@@ -86,18 +87,23 @@ function asData(notice) {
 
 /**
  * Write `notice` for `recipientId`: a new row under them, or news folded into
- * the one already under that id (mergeNotice — lines appended, unread again).
+ * the one already under that id — by `merge`, mergeNotice unless the caller
+ * has its own (a message notice's, shared/notices.mts mergeMessageNotice).
  * Resolves { ok: true, notice } with the notice as stored, or { ok: false,
  * reason } when nothing was written: the kind not stored yet, an id that is
- * somebody else's row, or a write the database refused twice.
+ * somebody else's row, or a write the database refused twice. A merge that
+ * hands the stored notice back as it was has nothing new: nothing is written,
+ * and { ok: true, notice, unchanged: true } says so.
  */
-export async function putNotice(notice, recipientId) {
+export async function putNotice(notice, recipientId, merge = mergeNotice) {
   if (!(await noticesStored())) return { ok: false, reason: 'the notices migration is not applied yet' }
   for (let attempt = 0; attempt < 2; attempt++) {
     const row = await readRow(notice.id)
     if (row && row.user_id !== recipientId) return { ok: false, reason: 'that id belongs to someone else' }
     if (row) {
-      const merged = asData({ ...mergeNotice(row.data, notice), updatedAt: newerStamp(row.data?.updatedAt) })
+      const next = merge(row.data, notice)
+      if (next === row.data) return { ok: true, notice: asData(row.data), unchanged: true }
+      const merged = asData({ ...next, updatedAt: newerStamp(row.data?.updatedAt) })
       const refused = await syncOne(merged)
       if (!refused) return { ok: true, notice: merged }
       // stale: a read mark landed in between; read it again and fold the news into that

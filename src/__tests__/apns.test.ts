@@ -33,6 +33,14 @@ describe('APNs payload', () => {
     })
   })
 
+  it('keeps one thread per sender for a household message, and a tap that opens the chat', () => {
+    // as /api/notify hands it over (netlify/functions/notify.mjs): the sender's name, their messages, their tag
+    expect(apnsPayload({ title: 'Maria', body: 'Home by six\nBring milk', tag: 'messages-u-maria', url: 'https://drafterz.netlify.app/?chat=household' })).toEqual({
+      aps: { alert: { title: 'Maria', body: 'Home by six\nBring milk' }, sound: 'default', 'thread-id': 'messages-u-maria' },
+      url: '/?chat=household',
+    })
+  })
+
   it('hands the app the path and query of a site link, and any other link as it is', () => {
     expect(appLink('https://drafterz.netlify.app/?plan=day')).toBe('/?plan=day')
     expect(appLink('https://drafterz.netlify.app/?view=review&plan=week')).toBe('/?view=review&plan=week')

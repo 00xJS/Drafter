@@ -110,13 +110,13 @@ describe('Settings offers the email switch only where email can go', () => {
 })
 
 describe('the test push promises only what every device gets', () => {
-  it('the digest, and word of a shared task someone else updated', () => {
+  it('the digest, the household’s messages, and word of a shared task someone else updated', () => {
     const body = testPushBody({})
-    expect(body).toBe('Push is on: a digest each morning, and word when someone updates a task you share.')
+    expect(body).toBe('Push is on: a digest each morning, messages from your household, and word when someone updates a task you share.')
     expect(body).not.toMatch(/due|timed/i)
   })
 
-  it('the digest alone when that word is switched off', () => {
-    expect(testPushBody({ notify_activity: false })).toBe('Push is on: a digest each morning.')
+  it('the digest and the messages, which have no switch, when that word is switched off', () => {
+    expect(testPushBody({ notify_activity: false })).toBe('Push is on: a digest each morning, and messages from your household.')
   })
 })

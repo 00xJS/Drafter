@@ -305,3 +305,230 @@ describe('what it takes', () => {
     expect(last).toBe(429)
   })
 })
+
+// ---- a household message: { messageId } -----------------------------------------
+
+describe('a household message reaches everyone else in the household', () => {
+  const SAM = '5a5a5a5a-0000-4000-8000-0000000000dd'
+  const message = (id: string, owner: string, body: string, createdAt = '2026-09-23T16:01:30.000Z', over: Record<string, unknown> = {}): Row => ({
+    user_id: owner,
+    data: { kind: 'message', id, body, createdAt, updatedAt: createdAt, ...over },
+  })
+  const say = (id: string, body: string, createdAt?: string) => rows.set(id, message(id, MARIA, body, createdAt))
+  const messageBucket = (iso: string) => noticeBucket(Date.parse(iso))
+  const joesNotice = (iso = '2026-09-23T16:01:30.000Z') => `notice~${JOE}~messages-${MARIA}~${messageBucket(iso)}`
+
+  it('a notice under Joe with the words as said, and a push headed with her name that opens the chat', async () => {
+    say('m1', 'Home by six')
+    const res = await call({ messageId: 'm1' })
+    expect(await res.json()).toEqual({ ok: true, notified: 1 })
+    expect(noticesOf(JOE)).toEqual([
+      {
+        user_id: JOE,
+        data: {
+          kind: 'notice',
+          id: joesNotice(),
+          // when she said it, which the thread shows it at
+          at: '2026-09-23T16:01:30.000Z',
+          type: 'message',
+          actorId: MARIA,
+          target: { kind: 'message', id: 'm1' },
+          title: 'Maria sent a message',
+          lines: ['Home by six'],
+          messageIds: ['m1'],
+          createdAt: NOW,
+          updatedAt: NOW,
+        },
+      },
+    ])
+    // never the one who said it
+    expect(noticesOf(MARIA)).toEqual([])
+    expect(pushes).toEqual([
+      { to: ['https://push.example.test/joe'], title: 'Maria', body: 'Home by six', tag: `messages-${MARIA}`, renotify: true, url: 'https://site.test/?chat=household' },
+    ])
+  })
+
+  it('the words are the stored message’s, never what the request says', async () => {
+    say('m1', 'Home by six')
+    await call({ messageId: 'm1', body: 'Bring me the car keys', lines: ['Bring me the car keys'] })
+    expect(noticesOf(JOE)[0].data.lines).toEqual(['Home by six'])
+    expect(pushes.map(p => p.body)).toEqual(['Home by six'])
+  })
+
+  it('the name is the caller’s own, from their session: her address’s first part when she has set none', async () => {
+    settings.get(MARIA)!.display_name = null
+    say('m1', 'Home by six')
+    await call({ messageId: 'm1' })
+    expect(noticesOf(JOE)[0].data.title).toBe(`${MARIA.slice(0, 4)} sent a message`)
+    expect(pushes[0].title).toBe(MARIA.slice(0, 4))
+  })
+
+  it('each member but the one who said it: a household of three hears it twice', async () => {
+    households.push({ household_id: 'h1', user_id: SAM })
+    settings.set(SAM, { user_id: SAM, display_name: 'Sam', push_subscriptions: [browser('sam')] })
+    say('m1', 'Pizza tonight?')
+    expect(await (await call({ messageId: 'm1' })).json()).toEqual({ ok: true, notified: 2 })
+    expect([...rows.values()].filter(r => r.data.kind === 'notice').map(r => r.user_id).sort()).toEqual([JOE, SAM].sort())
+    expect(pushes.map(p => p.to[0]).sort()).toEqual(['https://push.example.test/joe', 'https://push.example.test/sam'])
+    // with no other member, nobody at all
+    households = [{ household_id: 'h9', user_id: MARIA }]
+    rows.set('m2', message('m2', MARIA, 'Anyone?'))
+    expect(await (await call({ messageId: 'm2' })).json()).toEqual({ ok: true, notified: 0 })
+  })
+
+  it('more within the quarter hour is a new line in the same notice, counted, unread again, and one banner renewed', async () => {
+    say('m1', 'Home by six')
+    await call({ messageId: 'm1' })
+    // Joe reads it on one of his devices
+    const id = joesNotice()
+    rows.get(id)!.data = { ...rows.get(id)!.data, readAt: '2026-09-23T16:03:00.000Z', updatedAt: '2026-09-23T16:03:00.000Z' }
+    vi.setSystemTime(new Date('2026-09-23T16:05:00.000Z'))
+    say('m2', 'Bring milk', '2026-09-23T16:04:50.000Z')
+    expect(await (await call({ messageId: 'm2' })).json()).toEqual({ ok: true, notified: 1 })
+    // the same words again are a message of their own
+    say('m3', 'Bring milk', '2026-09-23T16:04:55.000Z')
+    await call({ messageId: 'm3' })
+    expect(noticesOf(JOE)).toHaveLength(1)
+    expect(noticesOf(JOE)[0].data).toMatchObject({
+      title: 'Maria sent 3 messages',
+      lines: ['Home by six', 'Bring milk', 'Bring milk'],
+      messageIds: ['m1', 'm2', 'm3'],
+      at: '2026-09-23T16:04:55.000Z',
+      target: { kind: 'message', id: 'm3' },
+      createdAt: NOW,
+    })
+    expect(noticesOf(JOE)[0].data.readAt).toBeUndefined()
+    expect(writes).toEqual([`insert ${id}`, `sync ${id}`, `sync ${id}`])
+    expect(pushes.map(p => [p.tag, p.title, p.body])).toEqual([
+      [`messages-${MARIA}`, 'Maria', 'Home by six'],
+      [`messages-${MARIA}`, 'Maria', 'Home by six\nBring milk'],
+      [`messages-${MARIA}`, 'Maria', 'Home by six\nBring milk\nBring milk'],
+    ])
+  })
+
+  it('the same message told twice — a retry, another tab — is added once and pushed once, even in the next quarter hour', async () => {
+    say('m1', 'Home by six', '2026-09-23T16:14:50.000Z')
+    vi.setSystemTime(new Date('2026-09-23T16:14:55.000Z'))
+    await call({ messageId: 'm1' })
+    const id = joesNotice('2026-09-23T16:14:50.000Z')
+    // Joe has read it since
+    rows.get(id)!.data = { ...rows.get(id)!.data, readAt: '2026-09-23T16:15:10.000Z', updatedAt: '2026-09-23T16:15:10.000Z' }
+    const before = structuredClone(rows.get(id))
+    // the answer never reached her phone, so it asks again, in the next quarter hour
+    vi.setSystemTime(new Date('2026-09-23T16:16:00.000Z'))
+    expect(await (await call({ messageId: 'm1' })).json()).toEqual({ ok: true, notified: 0 })
+    expect(noticesOf(JOE)).toHaveLength(1)
+    expect(rows.get(id)).toEqual(before)
+    expect(writes).toEqual([`insert ${id}`])
+    expect(pushes).toHaveLength(1)
+  })
+
+  it('a message said in another quarter hour is a notice of its own', async () => {
+    say('m1', 'Leaving now', '2026-09-23T15:40:00.000Z')
+    say('m2', 'Here', '2026-09-23T16:01:00.000Z')
+    await call({ messageId: 'm1' })
+    await call({ messageId: 'm2' })
+    expect(noticesOf(JOE).map(n => [n.data.id, n.data.title, n.data.lines])).toEqual([
+      [joesNotice('2026-09-23T15:40:00.000Z'), 'Maria sent a message', ['Leaving now']],
+      [joesNotice('2026-09-23T16:01:00.000Z'), 'Maria sent a message', ['Here']],
+    ])
+  })
+
+  it('a stamp from a clock that runs fast is dated now; one from days ago, a day back at most', async () => {
+    say('ahead', 'From the future', '2026-09-23T18:00:00.000Z')
+    say('stale', 'From last week', '2026-09-16T10:00:00.000Z')
+    await call({ messageId: 'ahead' })
+    await call({ messageId: 'stale' })
+    expect(noticesOf(JOE).map(n => n.data.at).sort()).toEqual(['2026-09-22T16:02:00.000Z', NOW])
+  })
+
+  it('a push service that says a device is gone takes it off the list', async () => {
+    pushState.gone = ['https://push.example.test/joe']
+    say('m1', 'Home by six')
+    await call({ messageId: 'm1' })
+    expect(settings.get(JOE)!.push_subscriptions).toEqual([])
+  })
+
+  it('writes nothing, and pushes nothing, until the database stores notices', async () => {
+    kindStored = false
+    say('m1', 'Home by six')
+    expect(await (await call({ messageId: 'm1' })).json()).toEqual({ ok: true, notified: 0 })
+    expect(noticesOf(JOE)).toEqual([])
+    expect(pushes).toEqual([])
+  })
+})
+
+describe('a message nobody may be told of', () => {
+  it('one not filed under the caller: a row under her name is no proof she said it', async () => {
+    // Joe's message, or one written under Joe by anyone: Maria cannot have it told as hers
+    rows.set('m1', { user_id: JOE, data: { kind: 'message', id: 'm1', body: 'Hi', createdAt: NOW, updatedAt: NOW } })
+    expect((await call({ messageId: 'm1' })).status).toBe(404)
+    // …and Joe cannot tell of a row filed under Maria either
+    rows.set('m2', { user_id: MARIA, data: { kind: 'message', id: 'm2', body: 'I owe you $100', createdAt: NOW, updatedAt: NOW } })
+    actor = JOE
+    expect((await call({ messageId: 'm2' })).status).toBe(404)
+    expect([...rows.values()].filter(r => r.data.kind === 'notice')).toEqual([])
+    expect(pushes).toEqual([])
+  })
+
+  it('from someone outside the household: nobody in it hears, whichever message they name', async () => {
+    households.push({ household_id: 'h2', user_id: STRANGER })
+    settings.set(STRANGER, { user_id: STRANGER, display_name: 'Stranger' })
+    actor = STRANGER
+    rows.set('m1', { user_id: MARIA, data: { kind: 'message', id: 'm1', body: 'Hi', createdAt: NOW, updatedAt: NOW } })
+    expect((await call({ messageId: 'm1' })).status).toBe(404)
+    // their own message goes to their own household, which is them alone
+    rows.set('s1', { user_id: STRANGER, data: { kind: 'message', id: 's1', body: 'Hello?', createdAt: NOW, updatedAt: NOW } })
+    expect(await (await call({ messageId: 's1' })).json()).toEqual({ ok: true, notified: 0 })
+    expect([...rows.values()].filter(r => r.data.kind === 'notice')).toEqual([])
+    expect(pushes).toEqual([])
+  })
+
+  it('a deleted one, one that is not there, and a row that is not a message', async () => {
+    rows.set('gone', { user_id: MARIA, data: { kind: 'message', id: 'gone', body: 'Oops', createdAt: NOW, updatedAt: NOW, deletedAt: NOW } })
+    rows.set('bins', task('bins', MARIA, { shared: true }))
+    rows.set('said-nothing', { user_id: MARIA, data: { kind: 'message', id: 'said-nothing', body: '  ', createdAt: NOW, updatedAt: NOW } })
+    for (const messageId of ['gone', 'nope', 'bins', 'said-nothing']) expect((await call({ messageId })).status, messageId).toBe(404)
+    expect([...rows.values()].filter(r => r.data.kind === 'notice')).toEqual([])
+    expect(pushes).toEqual([])
+  })
+
+  it('a message and nothing else: an id, and nothing of a task’s beside it', async () => {
+    rows.set('m1', { user_id: MARIA, data: { kind: 'message', id: 'm1', body: 'Hi', createdAt: NOW, updatedAt: NOW } })
+    for (const body of [{ messageId: '' }, { messageId: 42 }, { messageId: 'x'.repeat(201) }, { messageId: 'm1', taskId: 'bins' }, { messageId: 'm1', events: [] }]) {
+      expect((await call(body)).status, JSON.stringify(body).slice(0, 60)).toBe(400)
+    }
+    expect(pushes).toEqual([])
+  })
+})
+
+describe('a ceiling of its own for messages', () => {
+  // accounts of their own: the ceilings are per account, and outlive a test
+  const CHATTY = 'c0c0c0c0-0000-4000-8000-0000000000e1'
+  const BUSY = 'b0b0b0b0-0000-4000-8000-0000000000e2'
+
+  beforeEach(() => {
+    households.push({ household_id: 'h1', user_id: CHATTY }, { household_id: 'h1', user_id: BUSY })
+    rows.set('bins', task('bins', JOE, { assigneeId: MARIA, assignedBy: JOE, shared: true }))
+  })
+
+  it('a lively chat is held at sixty messages in ten minutes, and never holds up word of a task', async () => {
+    actor = CHATTY
+    rows.set('c1', { user_id: CHATTY, data: { kind: 'message', id: 'c1', body: 'Hi', createdAt: NOW, updatedAt: NOW } })
+    const statuses: number[] = []
+    for (let i = 0; i < 61; i++) statuses.push((await call({ messageId: 'c1' })).status)
+    expect(statuses.slice(0, 60).every(s => s === 200)).toBe(true)
+    expect(statuses[60]).toBe(429)
+    // the tasks' ceiling is untouched: a change to a task still goes
+    expect((await call({ taskId: 'bins', events: [{ type: 'comment', detail: 'On it' }] })).status).toBe(200)
+  })
+
+  it('and a run of task changes never holds up a message', async () => {
+    actor = BUSY
+    let last = 0
+    for (let i = 0; i < 31; i++) last = (await call({ taskId: 'bins', events: [{ type: 'comment', detail: `n${i}` }] })).status
+    expect(last).toBe(429)
+    rows.set('b1', { user_id: BUSY, data: { kind: 'message', id: 'b1', body: 'Done with the bins', createdAt: NOW, updatedAt: NOW } })
+    expect((await call({ messageId: 'b1' })).status).toBe(200)
+  })
+})
