@@ -379,15 +379,21 @@ describe('askDrafter', () => {
     return calls
   }
 
-  it('makes one /api/ai JSON call and keeps only citations of records it sent', async () => {
-    const calls = stubAI(JSON.stringify({ answer: `On 5 Sep [${docs[0].ref}] and [X9].`, cites: [docs[0].ref, 'X9', docs[1].ref.toLowerCase()] }))
+  it('makes one plain-text /api/ai call, without the thinking, and keeps only citations of records it sent', async () => {
+    const calls = stubAI(`On 5 Sep [${docs[0].ref}] and [X9].\n\n\`\`\`json\n${JSON.stringify({ cites: [docs[0].ref, 'X9', docs[1].ref.toLowerCase()] })}\n\`\`\``)
     const res = await askDrafter('When?', docs, ['Today is Saturday.'])
     expect(calls).toHaveLength(1)
     expect(calls[0].url).toBe('/api/ai')
-    expect(calls[0].body).toMatchObject({ maxTokens: 500, json: true })
+    // not NVIDIA's JSON mode, which answered {"":""}: the answer's words come first, to be shown as they arrive
+    expect(calls[0].body).toMatchObject({ maxTokens: 500, json: false, reasoning: 'off' })
     expect(String(calls[0].body.prompt)).not.toContain('id-')
     expect(res.answer).toBe(`On 5 Sep [${docs[0].ref}] and.`)
     expect(res.cites).toEqual([docs[0].ref, docs[1].ref])
+  })
+
+  it('reads the old all-JSON shape as it always did', async () => {
+    stubAI(JSON.stringify({ answer: `On 5 Sep [${docs[0].ref}].`, cites: [docs[1].ref] }))
+    expect(await askDrafter('When?', docs, [])).toEqual({ answer: `On 5 Sep [${docs[0].ref}].`, cites: [docs[1].ref, docs[0].ref] })
   })
 
   it('takes a plain-text answer from a model that ignored the JSON instruction', async () => {

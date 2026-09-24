@@ -198,7 +198,8 @@ describe('what the model is told', () => {
   it('gives it today, a calendar to read days off, and the names it may use — never a real id', () => {
     const ctx = context()
     const { system, prompt } = buildChatPrompt('Plan tacos for Friday dinner', DOCS, facts, [], ctx)
-    expect(system).toContain('Reply with ONLY JSON')
+    // the answer first, to be shown as it arrives, and then the details the app reads
+    expect(system).toContain('Write the answer first, as plain sentences for the user to read. After it, on new lines, add a ```json block with the details')
     expect(system).toContain('"actions"')
     expect(system).toContain('Nothing is changed until the user taps Apply')
     expect(system).toContain('At most 6 actions')
@@ -282,7 +283,7 @@ describe('an empty reply', () => {
     )
     const r = await askWithActions('Add paper towels', DOCS, facts, [], context())
     expect(calls).toHaveLength(2)
-    expect(String(calls[1].system)).toMatch(/Fill in "answer"/)
+    expect(String(calls[1].system)).toContain(CHAT_NUDGE)
     expect(r.actions).toEqual([{ type: 'add_grocery', items: ['paper towels'] }])
   })
 
@@ -352,11 +353,12 @@ describe('thinking out loud, told apart from a right answer', () => {
     expect(move).toHaveLength(1)
   })
 
-  it('asks once more, with reasoning off, when the reply is the rules said back — and says so when the second is too', async () => {
+  it('asks once more, with the nudge, when the reply is the rules said back — and says so when the second is too', async () => {
     const calls = replies([RULES_BACK, MOVE])
     expect((await askWithActions('Move the plumber to Friday at 3pm', DOCS, facts, [], context())).answer).toBe('I can move the plumber to Friday.')
     expect(calls).toHaveLength(2)
-    expect(calls[0]).not.toHaveProperty('reasoning')
+    // the chat asks without the thinking from the first try (ASSISTANT_REASONING)
+    expect(calls[0]).toMatchObject({ maxTokens: 900, json: false, reasoning: 'off' })
     expect(calls[1]).toMatchObject({ maxTokens: 900, json: false, reasoning: 'off' })
     expect(String(calls[1].system)).toContain(CHAT_NUDGE)
     replies([RULES_BACK])

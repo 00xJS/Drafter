@@ -1,6 +1,6 @@
 import type { AskDoc, AskKind, AskSources, ParsedQuestion } from './ask'
 import { buildAskPrompt, parseAskAnswer } from './ask'
-import { THOUGHT_OUT_LOUD, askDrafterChat, extractJSON } from './ai'
+import { THOUGHT_OUT_LOUD, askDrafterChat, replyParts, shownSoFar, type OnText } from './ai'
 import { CHAT_HELP, GENERAL_LABEL, isHelpQuestion } from './assistanthelp'
 import { newTurn } from './chat'
 import { blankNote, noteToSave } from './components/notes/model'
@@ -34,7 +34,7 @@ import {
   type TaskStatus,
 } from './types'
 import { fromLocalInput, uid } from './utils'
-import { looksLikeThinking, stripThinking } from '../shared/ai.mts'
+import { looksLikeThinking } from '../shared/ai.mts'
 import { makeClock } from '../shared/clock.mts'
 import { localMidnightIso, newerStamp } from '../shared/domain.mts'
 import { shiftDayKey } from '../shared/journal.mts'
@@ -45,8 +45,10 @@ import { isDayKey, weekKeyOf, weekStartKey } from '../shared/weeks.mts'
 //
 // The model sees what Ask's retrieval sent it — the records under made-up
 // references (T3, P1) — plus today's date, a short calendar and the names it
-// may use. It answers with JSON: its words, the references it leaned on, and
-// up to six suggestions. Everything it says is checked here before any of it
+// may use. It answers in two parts: its words, which the thread shows as they
+// arrive, then a block of JSON with the references it leaned on and up to six
+// suggestions (replyParts in src/ai.ts, which reads the old all-JSON shape
+// too). Everything it says is checked here before any of it
 // reaches the thread. An existing task can be named only through a reference
 // it was shown; a date has to be a real day near today; a person, recipe or
 // place is matched to a saved one by name, and one that matches nothing (or
@@ -437,7 +439,8 @@ export function buildChatPrompt(
     'Answer in under 60 words.',
   ]
   const shape = [
-    'Reply with ONLY JSON: {"answer": "...", "cites": ["T3"], "general": false, "actions": []}',
+    // the answer first, so the thread can show it as it arrives; what the app reads comes after it
+    'Write the answer first, as plain sentences for the user to read. After it, on new lines, add a ```json block with the details: {"cites": ["T3"], "general": false, "actions": []}',
     'Each action is one of these objects, with only the fields that apply:',
     '{"type":"create_task","title":"...","date":"YYYY-MM-DD","time":"HH:MM","priority":"low|normal|high|urgent","tags":["..."],"people":["..."],"notes":"..."}',
     '{"type":"update_task","ref":"T1","date":"YYYY-MM-DD","time":"HH:MM","status":"todo|done|canceled","priority":"low|normal|high|urgent"}',
@@ -826,23 +829,30 @@ export function withoutClaims(answer: string): string {
 }
 
 /**
- * What a reply says, and the JSON it came in (null when there was none):
- * thinking taken out by the rule the server uses (stripThinking, which also
- * reads a close with no open, or an open that never closes), then the JSON's
- * answer — or, for a reply that ignored the JSON altogether, all of it.
+ * What a reply says, and the details it came with (null when there were
+ * none), as replyParts reads them: thinking taken out by the rule the server
+ * uses (stripThinking, which also reads a close with no open, or an open that
+ * never closes), then the words before the details block — or, from a reply in
+ * the old all-JSON shape, its answer; from one with no JSON at all, all of it.
  */
-function replyWords(reply: string): { said: string; raw: Record<string, unknown> | null } {
-  const clean = stripThinking(reply)
-  let raw: Record<string, unknown> | null = null
-  try {
-    const value = extractJSON<unknown>(clean)
-    if (Array.isArray(value)) raw = { actions: value }
-    else if (value && typeof value === 'object') raw = value as Record<string, unknown>
-  } catch {
-    raw = null
-  }
-  const said = raw ? (typeof raw.answer === 'string' ? raw.answer : typeof raw.reply === 'string' ? raw.reply : '') : /^\s*[[{]/.test(clean) ? '' : clean
-  return { said, raw }
+function replyWords(reply: string): { said: string; raw: Record<string, unknown> | null; cutOff: boolean } {
+  const { said, details, cutOff } = replyParts(reply)
+  return { said, raw: details, cutOff }
+}
+
+/**
+ * What the thread shows of an answer still arriving: its words so far, as the
+ * finished answer will show them — a reference to a record that was not sent
+ * left out — and never the details after them (shownSoFar). Only ever shown:
+ * the answer that is kept is the whole reply, read by parseChatReply.
+ */
+export function chatSoFar(soFar: string, docs: readonly AskDoc[]): string {
+  const words = shownSoFar(soFar).slice(0, 1200)
+  if (!words) return ''
+  return parseAskAnswer(words, [...docs])
+    .parts.map(p => (typeof p === 'string' ? p : `[${p.ref}]`))
+    .join('')
+    .trim()
 }
 
 /**
@@ -860,18 +870,22 @@ export function chatReplyThinks(reply: string, rules: string): boolean {
   return looksLikeThinking(replyWords(reply).said, rules)
 }
 
-/** Added to the brief when a first reply said nothing, or said the brief back. */
-export const CHAT_NUDGE = 'Fill in "answer" with a sentence, and "actions" with any changes. Reply with the JSON only — no reasoning, and do not restate these instructions.'
+/** Added to the brief when a first reply said nothing, said the brief back, or stopped inside its details. */
+export const CHAT_NUDGE = 'Write the answer in a sentence or two, then the ```json block with "actions" for any changes — no reasoning, and do not restate these instructions.'
+
+/** What parseChatReply throws for a reply that stopped inside its details: whatever it was suggesting is lost. */
+export const CUT_OFF = 'The model’s answer was cut off — try again.'
 
 /**
- * The model's reply, read leniently and checked strictly: fences, a sentence
- * around the JSON, a trailing comma and stray thinking are all forgiven; a
- * reference to a record that was not sent is dropped from the answer, as Ask
- * drops one; every suggestion is checked (readAction). A reply that ignored the
- * JSON altogether is taken as the answer, with nothing to apply.
+ * The model's reply, read leniently and checked strictly: either shape, fences,
+ * a sentence around the JSON, a trailing comma and stray thinking are all
+ * forgiven; a reference to a record that was not sent is dropped from the
+ * answer, as Ask drops one; every suggestion is checked (readAction). A reply
+ * with no details at all is taken as the answer, with nothing to apply; one
+ * that stopped inside its details is not taken, since what it suggested is lost.
  */
 export function parseChatReply(reply: string, ctx: ChatActionContext): ChatReply {
-  const { said, raw } = replyWords(reply)
+  const { said, raw, cutOff } = replyWords(reply)
   const { parts, cites: inline } = parseAskAnswer(said.trim().slice(0, 1200), ctx.docs)
   let answer = parts
     .map(p => (typeof p === 'string' ? p : `[${p.ref}]`))
@@ -882,6 +896,7 @@ export function parseChatReply(reply: string, ctx: ChatActionContext): ChatReply
   const cites = [...new Set([...listedCites, ...inline.map(d => d.ref)])]
   const { actions, dropped } = readActions(raw?.actions, ctx)
   if (!answer && !actions.length) throw new Error(NO_ANSWER)
+  if (cutOff) throw new Error(CUT_OFF)
   // a suggestion is not a change: "Added paper towels to the list" before anyone tapped Apply is untrue
   if (actions.length) answer = withoutClaims(answer)
   if (!answer) answer = actions.length === 1 ? 'Here is a change you could make.' : 'Here are some changes you could make.'
@@ -897,8 +912,19 @@ export function parseChatReply(reply: string, ctx: ChatActionContext): ChatReply
  * reply that says nothing ({"":""} came back once) or says the rules back is
  * asked for once more, plainly and with reasoning off (complete() in ai.ts);
  * a second like it is an error, never an answer.
+ *
+ * `onText`, when given, hears the answer's words as they arrive (chatSoFar),
+ * for the thread to show while it waits. They are never the answer: what is
+ * returned is read from the whole reply, as it always was.
  */
-export async function askWithActions(question: string, docs: AskDoc[], facts: string[], history: readonly string[], ctx: ChatActionContext): Promise<ChatReply> {
+export async function askWithActions(
+  question: string,
+  docs: AskDoc[],
+  facts: string[],
+  history: readonly string[],
+  ctx: ChatActionContext,
+  onText?: OnText,
+): Promise<ChatReply> {
   // a question about the assistant itself is answered here, at once and the same way every time
   if (isHelpQuestion(question)) return { answer: CHAT_HELP, cites: [], actions: [], dropped: [] }
   const { system, prompt, rules } = buildChatPrompt(question, docs, facts, history, ctx)
@@ -911,7 +937,7 @@ export async function askWithActions(question: string, docs: AskDoc[], facts: st
       return false
     }
   }
-  const text = await askDrafterChat(system, prompt, { accept: usable, nudge: CHAT_NUDGE })
+  const text = await askDrafterChat(system, prompt, { accept: usable, nudge: CHAT_NUDGE, onText: onText && (soFar => onText(chatSoFar(soFar, docs))) })
   if (chatReplyThinks(text, rules)) throw new Error(THOUGHT_OUT_LOUD)
   return parseChatReply(text, ctx)
 }

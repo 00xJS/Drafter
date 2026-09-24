@@ -628,6 +628,12 @@
   font-size: 0.9375rem;
   line-height: 1.6;
 }
+/* the answer still arriving: a caret after its words says more is coming */
+.ask-arriving::after {
+  content: '▍';
+  margin-left: 2px;
+  color: var(--muted);
+}
 .ask-also {
   display: flex;
   flex-wrap: wrap;

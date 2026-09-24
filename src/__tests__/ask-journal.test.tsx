@@ -105,7 +105,8 @@ describe('askDrafter sends the journal as it sends any record', () => {
     const docs = prep(true).docs
     await askDrafter(QUESTION, docs, [])
     expect(bodies).toHaveLength(1)
-    expect(Object.keys(bodies[0]).sort()).toEqual(['json', 'maxTokens', 'prompt', 'system'])
+    // the assistant asks without the thinking first, and that is all it adds
+    expect(Object.keys(bodies[0]).sort()).toEqual(['json', 'maxTokens', 'prompt', 'reasoning', 'system'])
     expect(bodies[0].prompt).toContain(journalDocs(docs)[0].ref)
   })
 })
@@ -148,7 +149,9 @@ describe('the sheet’s one call', () => {
   it('carries the matching entries with the chip on, and only the question, records and facts', () => {
     const calls = open('1')
     expect(calls).toHaveLength(1)
-    expect(calls[0]).toHaveLength(3)
+    // and the sheet's own way to show the answer as it arrives, which sends nothing
+    expect(calls[0]).toHaveLength(4)
+    expect(typeof calls[0][3]).toBe('function')
     expect(journalDocs(calls[0][1] as AskDoc[]).map(d => d.id)).toEqual(['journal~2026-09-10~a'])
   })
 
