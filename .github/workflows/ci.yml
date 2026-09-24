@@ -132,15 +132,13 @@ jobs:
   # answered in the page (e2e/cloud/api.ts). A failure keeps the HTML report,
   # traces included.
   #
-  # Advisory until it has proven itself green: not among the deploy job's
-  # needs, and continue-on-error, since deploy-bot.yml deploys only after a
-  # CI run that succeeded as a whole. Once it has, drop continue-on-error and
-  # add it to the deploy job's needs, together.
+  # Required since its first run on main passed (728aca5, 7 of 7 in 3 min): a
+  # failure holds the deploy, and the bot too, since deploy-bot.yml deploys
+  # only after a CI run that succeeded as a whole.
   e2e-cloud:
     needs: check
     runs-on: ubuntu-latest
     timeout-minutes: 25
-    continue-on-error: true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -203,7 +201,7 @@ jobs:
   # itself, as before.
   deploy:
     name: Deploy (Netlify build hook)
-    needs: [check, bot, e2e]
+    needs: [check, bot, e2e, e2e-cloud]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 5
