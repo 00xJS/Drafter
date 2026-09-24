@@ -39,8 +39,12 @@ type Key = 'main' | 'second'
  * aborted.
  */
 type Piece = string | { gate: Promise<void> } | Error | 'hang'
-/** How NVIDIA answers a request: a status with a message, a whole JSON answer, or a stream of pieces. */
-type Plan = { status: number; message?: string } | { whole: string } | { pieces: Piece[] }
+/**
+ * How NVIDIA answers a request: a status with a message, a whole JSON answer,
+ * a stream of pieces (labelled as a stream unless `type` says otherwise), or
+ * a request that fails outright.
+ */
+type Plan = { status: number; message?: string } | { whole: string } | { pieces: Piece[]; type?: string } | { throws: Error }
 
 let plans: Record<Key, Plan[]>
 /** Each NVIDIA request: the key it carried and the body it sent. */
@@ -51,7 +55,7 @@ const chunk = (delta: Record<string, unknown>, finish: string | null = null) => 
 const words = (text: string) => chunk({ content: text })
 const END = `${chunk({ content: '' }, 'stop')}data: [DONE]\n\n`
 
-function streamed(pieces: Piece[], signal: AbortSignal | undefined): Response {
+function streamed(pieces: Piece[], signal: AbortSignal | undefined, type = 'text/event-stream'): Response {
   const encoder = new TextEncoder()
   const body = new ReadableStream<Uint8Array>({
     async pull(controller) {
@@ -71,7 +75,7 @@ function streamed(pieces: Piece[], signal: AbortSignal | undefined): Response {
   })
   // a real fetch's body fails when its request is aborted
   signal?.addEventListener('abort', () => body.cancel(signal.reason).catch(() => {}))
-  return new Response(body, { headers: { 'content-type': 'text/event-stream' } })
+  return new Response(body, { headers: { 'content-type': type } })
 }
 
 beforeEach(() => {
@@ -103,7 +107,8 @@ beforeEach(() => {
         const plan = plans[key].shift() ?? { pieces: [words(`from the ${key} key`), END] }
         if ('status' in plan) return Response.json({ error: { message: plan.message ?? `HTTP ${plan.status}` } }, { status: plan.status })
         if ('whole' in plan) return Response.json({ choices: [{ message: { content: plan.whole } }] })
-        return streamed([...plan.pieces], init?.signal ?? undefined)
+        if ('throws' in plan) throw plan.throws
+        return streamed([...plan.pieces], init?.signal ?? undefined, plan.type)
       }
       throw new Error(`unexpected fetch ${url}`)
     }),
@@ -292,6 +297,30 @@ describe('what is answered whole', () => {
       ['main', false],
     ])
     expect(String(spy.mock.calls[0][0])).toContain('refused to stream')
+  })
+
+  it('a stream NVIDIA labels as something else is still read as one', async () => {
+    plans.main = [{ pieces: [words('Two '), words('things.'), END], type: 'text/plain; charset=utf-8' }]
+    const res = await askAi({ prompt: 'x', stream: true })
+    expect(res.headers.get('content-type')).toBe('text/event-stream; charset=utf-8')
+    expect(shownFrom(await eventsOf(res.body))).toBe('Two things.')
+  })
+
+  it('what came back was no stream, or the streamed request failed outright: asked for whole instead, and answered whole', async () => {
+    const spy = logs()
+    plans.main = [{ pieces: ['OK'], type: 'text/plain' }, { whole: 'Asked whole.' }]
+    expect(await (await askAi({ prompt: 'x', stream: true })).json()).toEqual({ text: 'Asked whole.', provider: 'nvidia' })
+    expect(asked.map(a => a.body.stream)).toEqual([true, false])
+    expect(String(spy.mock.calls[0][0])).toContain('could not be streamed, so it is asked for the whole answer: the answer came back with no events in it')
+
+    asked = []
+    plans.main = [{ throws: new TypeError('fetch failed') }, { whole: 'Asked whole again.' }]
+    expect(await (await askAi({ prompt: 'x', stream: true })).json()).toEqual({ text: 'Asked whole again.', provider: 'nvidia' })
+    expect(asked.map(a => a.body.stream)).toEqual([true, false])
+    // and the next question streams again: a stream that failed once is not given up on
+    asked = []
+    expect(shownFrom(await eventsOf((await askAi({ prompt: 'x', stream: true })).body))).toBe('from the main key')
+    expect(asked.map(a => a.body.stream)).toEqual([true])
   })
 
   it('every call that does not ask to stream, as before', async () => {

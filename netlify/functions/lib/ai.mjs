@@ -289,10 +289,12 @@ function nvidiaWords(body) {
   let over = false
   let finished = false
   let said = false
+  let heard = false
   /** @param {import('../../../shared/sse.mts').SseEvent[]} list @param {{ text: string, reset: boolean }} piece */
   const take = (list, piece) => {
     for (const { data } of list) {
       if (over) return
+      heard = true
       if (data.trim() === '[DONE]') {
         over = true
         said = true
@@ -330,6 +332,8 @@ function nvidiaWords(body) {
         const { done, value } = await reader.read()
         if (done) {
           take([...events.push(decoder.decode()), ...events.end()], piece)
+          // a body with no event in it was never a stream (it is asked for whole)
+          if (!heard) throw new Error('the answer came back with no events in it')
           // Taken as the end all the same: a gateway that never says so would
           // otherwise fail every answer, and a connection that drops part way
           // fails the read instead of ending it.
@@ -383,7 +387,8 @@ async function callNvidiaStream(model, messages, maxTokens, { temperature, apiKe
       signal: ctrl.signal,
     })
     if (!res.ok) return { ok: false, status: res.status, message: await failureOf(res) }
-    if (!/^text\/event-stream/i.test(res.headers.get('content-type') ?? '') || !res.body) return { ok: true, data: await res.json() }
+    // asked to stream, a body is read as one unless it says it is JSON: the whole completion, from a gateway that would not
+    if (/json/i.test(res.headers.get('content-type') ?? '') || !res.body) return { ok: true, data: await res.json() }
     words = nvidiaWords(res.body)
     // the first words: blank space alone is not yet an answer to hand on
     while (!first.trim()) {
@@ -522,15 +527,19 @@ async function nvidiaOnKey({ system, prompt, maxTokens, json = false, reasoning,
    */
   const ask = async model => {
     const streams = stream && !refusedStream.has(model)
-    const send = extra =>
-      beforeDeadline(
-        deadline,
-        signal =>
-          streams
-            ? callNvidiaStream(model, messages, budget, { temperature, apiKey, signal, extra, deadline })
-            : callNvidia(model, messages, budget, { json, temperature, apiKey, signal, extra }),
-        null,
-      )
+    const whole = extra => beforeDeadline(deadline, signal => callNvidia(model, messages, budget, { json, temperature, apiKey, signal, extra }), null)
+    const send = async extra => {
+      if (!streams) return whole(extra)
+      try {
+        return await beforeDeadline(deadline, signal => callNvidiaStream(model, messages, budget, { temperature, apiKey, signal, extra, deadline }), null)
+      } catch (err) {
+        // a stream that broke before its first words in a way no status
+        // explains — a body that was no stream, a connection dropped — is asked
+        // for whole, as every answer was before streaming
+        console.error(`ai: ${model} could not be streamed, so it is asked for the whole answer: ${err instanceof Error ? err.message : String(err)}`)
+        return whole(extra)
+      }
+    }
     let extra = thinkingSwitch(model, reasoning)
     let attempt = await send(extra)
     if (extra && attempt && !attempt.ok && (attempt.status === 400 || attempt.status === 422) && NAMES_SWITCH.test(attempt.message)) {
@@ -542,7 +551,7 @@ async function nvidiaOnKey({ system, prompt, maxTokens, json = false, reasoning,
     if (!streams || !attempt || attempt.ok || (attempt.status !== 400 && attempt.status !== 422) || !NAMES_STREAM.test(attempt.message)) return attempt
     refusedStream.add(model)
     console.error(`ai: ${model} refused to stream, so it is asked for the whole answer: ${attempt.message}`)
-    return beforeDeadline(deadline, signal => callNvidia(model, messages, budget, { json, temperature, apiKey, signal, extra }), null)
+    return whole(extra)
   }
 
   const tried = []
