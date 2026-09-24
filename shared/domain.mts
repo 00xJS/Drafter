@@ -193,6 +193,9 @@ export interface HeldRecord {
  */
 export const CHECK_IN_PREFIX = 'task~checkin~'
 
+/** Whether a task is an occurrence of the weekly balance check-in. */
+export const isCheckIn = (t: { id?: unknown } | null | undefined): boolean => typeof t?.id === 'string' && t.id.startsWith(CHECK_IN_PREFIX)
+
 /** How many months apart the repeats that go by the month fall. */
 const MONTH_STEPS: Partial<Record<RecurrenceFreq, number>> = { monthly: 1, quarterly: 3, yearly: 12 }
 
@@ -219,7 +222,7 @@ export function nextOccurrence(task: Task, uidFn: () => string, held?: (id: stri
   if (!task.recurrence) return null
   const bill = task.bill && typeof task.bill === 'object' ? task.bill : null
   // the weekly balance check-in keeps its slot, as a bill keeps its day
-  const slot = typeof task.id === 'string' && task.id.startsWith(CHECK_IN_PREFIX)
+  const slot = isCheckIn(task)
   // A bill falls due on its own day however early or late it was paid; a chore
   // comes round again from when it was last done. Anchoring a bill on its
   // completion made it drift: due on the 15th, paid on the 12th, and the next

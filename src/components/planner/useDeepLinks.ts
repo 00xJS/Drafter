@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef } from 'react'
 import type { TaskStatus } from '../../types'
 import type { Store } from '../../store'
 import type { OAuthSettled } from '../../calendars'
-import { newerStamp } from '../../itemops'
+import { isCheckIn, newerStamp } from '../../itemops'
 import { closeExternal, isAppLockShowing, onAppLockCleared } from '../../native'
 import { paramsOf, parseLink } from '../../links'
 import { appendEntry, entryOn, localDayKey } from '../../journal'
@@ -35,6 +35,7 @@ interface Deps {
   openLens: Nav['openLens']
   openKitchen: Nav['openKitchen']
   openWardrobe: Nav['openWardrobe']
+  openFinanceCheckIn: Nav['openFinanceCheckIn']
   changeStatus: (id: string, status: TaskStatus) => void
   defer: (id: string, day: Date) => void
 }
@@ -74,6 +75,7 @@ export function useDeepLinks({
   openLens,
   openKitchen,
   openWardrobe,
+  openFinanceCheckIn,
   changeStatus,
   defer,
 }: Deps) {
@@ -283,6 +285,9 @@ export function useDeepLinks({
           tomorrow.setDate(tomorrow.getDate() + 1)
           defer(t.id, tomorrow)
         }
+      } else if (isCheckIn(t)) {
+        // the weekly check-in's reminder opens where it is done, not the editor
+        openFinanceCheckIn()
       } else setEditor({ task: t })
       return
     }

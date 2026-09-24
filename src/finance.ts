@@ -1,7 +1,7 @@
 import { formatMoney, isMoney, isPayday, isSaving, savedSoFar } from './bills'
 import { ACCOUNT_TYPE_META, OPEN_STATUSES, type Account, type BalanceCheck, type Bill, type RecurrenceFreq, type Task } from './types'
 import { dateKey } from './utils'
-import { CHECK_IN_PREFIX, nextOccurrence, seriesRoot } from '../shared/domain.mts'
+import { CHECK_IN_PREFIX, isCheckIn, nextOccurrence, seriesRoot } from '../shared/domain.mts'
 import { shiftDayKey } from '../shared/journal.mts'
 
 // Money, beyond the month of bills (v3.27).
@@ -376,6 +376,8 @@ export interface GoalView {
   projected?: number
   /** What each set-aside would have to be to get there by `by`. */
   needed?: number
+  /** Set-asides still to make at this amount, the next one included, to reach the target. */
+  toGo?: number
   status: GoalStatus
   /** 0–100, of the target. */
   pct: number
@@ -428,6 +430,7 @@ export function savingGoals(tasks: readonly Task[], now: Date): GoalView[] {
       status: 'open',
       pct: Math.max(0, Math.min(100, Math.round((saved / goal.target) * 100))),
     }
+    if (saved < goal.target && each) view.toGo = Math.ceil(round(goal.target - saved) / each)
     if (saved >= goal.target) view.status = 'reached'
     else if (goal.by) {
       const left = goal.by < today ? 0 : occurrencesUntil(task, goal.by)
@@ -475,7 +478,7 @@ export function slotOf(dueAt: string): { weekday: number; time: string } {
 export function openCheckIn(tasks: readonly Task[], myId?: string | null): Task | null {
   return (
     tasks
-      .filter(t => t.id.startsWith(CHECK_IN_PREFIX) && !t.deletedAt && !!t.recurrence && OPEN_STATUSES.includes(t.status) && (!myId || !t.ownerId || t.ownerId === myId))
+      .filter(t => isCheckIn(t) && !t.deletedAt && !!t.recurrence && OPEN_STATUSES.includes(t.status) && (!myId || !t.ownerId || t.ownerId === myId))
       .sort((a, b) => (a.dueAt ?? '').localeCompare(b.dueAt ?? ''))[0] ?? null
   )
 }

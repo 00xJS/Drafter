@@ -4,6 +4,8 @@ import { getSupabase } from '../supabase'
 import { clearLocalData } from '../idb'
 import { mediaReferences, retireDue, trackMediaInUse, trimMediaCache, watchPendingMedia, type MediaInUse } from '../media'
 import { projectById } from '../taskutils'
+import { isCheckIn } from '../itemops'
+import type { Task } from '../types'
 import { useHousehold } from '../household'
 import { ErrorBoundary } from './ErrorBoundary'
 import { PullToRefresh } from './PullToRefresh'
@@ -149,6 +151,9 @@ export default function Planner() {
     ...lifeActions,
     ...taskActions,
     ...focusActions,
+    // the weekly balance check-in opens where it is done, Finance's Check in
+    // sheet, wherever it is tapped: Home, the calendar, the list, search
+    openTask: (t: Task) => (isCheckIn(t) ? nav.openFinanceCheckIn() : overlays.openTask(t)),
   })
   // what the shell itself reads: the screen switch, pull to refresh, the toast
   const { view, pushed, manualSync, anyOpen, toaster } = p

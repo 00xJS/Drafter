@@ -296,6 +296,17 @@ export function useNavigation() {
     goKeepTab('wardrobe')
     setView('keep')
   }
+  /**
+   * Finance's Check in sheet, asked for from outside it: the weekly check-in's
+   * task wherever it is tapped (Home, the calendar, the list) and its reminder.
+   * Consumed by Finance, which opens the sheet as it mounts or at once if up.
+   */
+  const [financeCheckIn, setFinanceCheckIn] = useState(false)
+  const openFinanceCheckIn = () => {
+    setFinanceCheckIn(true)
+    goTasksTab('bills')
+    setView('tasks')
+  }
   /** A day for the Calendar to open, its day sheet up (the month calendar in People → Stats or Places → Stats); consumed by the view. */
   const [calendarOpenDay, setCalendarOpenDay] = useState<string | null>(null)
   const openCalendarDay = (day: string) => {
@@ -368,5 +379,8 @@ export function useNavigation() {
     calendarOpenDay,
     setCalendarOpenDay,
     openCalendarDay,
+    financeCheckIn,
+    setFinanceCheckIn,
+    openFinanceCheckIn,
   }
 }

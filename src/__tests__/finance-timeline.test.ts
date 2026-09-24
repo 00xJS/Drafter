@@ -199,7 +199,7 @@ describe('a savings goal', () => {
   it('is on track when what is saved and still to come reaches the target by its date', () => {
     const open = goal({ id: 'goal~monthly~2026-10-01' }, 1000, '2027-02-01')
     const [g] = savingGoals([open, done('goal', 100), done('goal~monthly~2026-09-01', 100)], NOW)
-    expect(g).toMatchObject({ saved: 200, count: 2, each: 100, left: 5, projected: 700, status: 'behind', needed: 160, pct: 20 })
+    expect(g).toMatchObject({ saved: 200, count: 2, each: 100, left: 5, projected: 700, status: 'behind', needed: 160, pct: 20, toGo: 8 })
     const [ok] = savingGoals([{ ...open, estimateCost: 160 }, done('goal', 100), done('goal~monthly~2026-09-01', 100)], NOW)
     expect(ok).toMatchObject({ projected: 1000, status: 'on-track' })
   })

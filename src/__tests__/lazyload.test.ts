@@ -142,6 +142,10 @@ const LAZY_ONLY = [
   // the paydays and the accounts rather than shipping as a second chunk
   component('Bills'),
   resolve(SRC, 'finance.ts'),
+  // …and its timeline, the sheets it opens and the bills + Bill fills in
+  ...['finance/Timeline', 'finance/CashLineChart', 'finance/CheckInSheet', 'finance/BillSheet', 'finance/GoalSheet', 'finance/ShareChoice'].map(component),
+  resolve(SRC, 'components', 'finance', 'labels.ts'),
+  resolve(SRC, 'billtemplates.ts'),
   // Kitchen → Stats' counting travels with it
   resolve(SRC, 'kitchenstats.ts'),
   // …and filling recipes in: ✨ Fill in, Fill them in, Import from a link

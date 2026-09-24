@@ -84,3 +84,699 @@
 .bill-list.runway .bill-amount {
   margin-left: auto;
 }
+
+/* ---------- the money timeline ----------
+   Finance opens on one screen: safe to spend until payday, the next 30 days
+   as a line, what falls due, the accounts and the goals. Every colour here is
+   a token, so it reads the same in the light theme and the dark; a phone's
+   rules sit under the width and pointer guards at the end. */
+.finance-seg {
+  margin: 0 0 14px;
+}
+.fin-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+/* safe to spend */
+.fin-hero {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 16px 18px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--accent) 5%, var(--surface));
+  box-shadow: var(--shadow);
+}
+.fin-hero-label {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.fin-hero-amount {
+  margin: 2px 0 0;
+  font-size: 2.5rem;
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.fin-hero.short .fin-hero-amount {
+  color: var(--danger);
+}
+.fin-hero-line {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 0.9375rem;
+}
+.fin-hero-asof {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 10px 0 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--hairline);
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+/* a week-old balance says so in the warning ink */
+.fin-hero-asof.stale > span {
+  color: var(--warn-text);
+  font-weight: 600;
+}
+.btn.subtle.fin-hero-checkin {
+  flex: none;
+  color: var(--accent-text);
+  font-weight: 600;
+}
+.fin-hero-prompt {
+  margin: 4px 0 12px;
+  color: var(--text-2);
+}
+.fin-hero.first .btn.primary {
+  justify-self: start;
+  min-width: 8rem;
+}
+
+/* + Bill · + Payday · Check in · + Goal */
+.fin-actions {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+.fin-actions .btn {
+  min-height: 40px;
+  padding-inline: 6px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* the cash line */
+.fin-card {
+  min-width: 0;
+  padding: 12px 14px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+.fin-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.fin-card-head h3 {
+  margin: 0;
+  font-size: 0.9375rem;
+}
+/* a small track: the heading beside it keeps its line. Specific enough to
+   outrank the native shell's full-width track (.native .segmented.seg-track) */
+.fin-card-head .segmented.seg-track.fin-span {
+  flex: none;
+  width: 8.5rem;
+  max-width: 8.5rem;
+}
+.fin-card-head .segmented.seg-track.fin-span .seg {
+  padding: 4px 6px;
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+.fin-chart {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.fin-plot {
+  position: relative;
+  display: block;
+  height: 118px;
+}
+.fin-plot svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.fin-area {
+  fill: var(--accent-soft);
+}
+.fin-area.under {
+  fill: color-mix(in srgb, var(--danger) 16%, transparent);
+}
+.fin-path {
+  fill: none;
+  stroke: var(--viz-series-1);
+  stroke-width: 2.25;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+.fin-path.under {
+  stroke: var(--danger);
+}
+.fin-zero {
+  stroke: var(--viz-baseline);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+  vector-effect: non-scaling-stroke;
+}
+.fin-low-dot {
+  position: absolute;
+  width: 11px;
+  height: 11px;
+  margin: -5.5px 0 0 -5.5px;
+  border: 2.5px solid var(--viz-series-1);
+  border-radius: 50%;
+  background: var(--surface);
+}
+.fin-low-dot.under {
+  border-color: var(--danger);
+}
+/* under the dot: it is the lowest point, so nothing of the line is down there */
+.fin-low-label {
+  position: absolute;
+  margin-top: 9px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  color: var(--text-2);
+  transform: translateX(-50%);
+}
+.fin-low-label.start {
+  transform: translateX(-6px);
+}
+.fin-low-label.end {
+  transform: translateX(calc(-100% + 6px));
+}
+.fin-low-label.under {
+  color: var(--danger);
+}
+.fin-axis {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.6875rem;
+}
+.fin-short {
+  margin: 8px 0 0;
+  font-size: 0.8125rem;
+}
+
+/* Coming up, the accounts and the goals */
+.fin-section {
+  min-width: 0;
+}
+.fin-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.fin-section-head .bills-head {
+  margin: 2px 0 8px;
+}
+.fin-empty {
+  margin: 0;
+  padding: 14px 16px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius);
+  color: var(--text-2);
+  font-size: 0.875rem;
+}
+.fin-rows .bill-main {
+  gap: 10px;
+}
+.fin-date {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 40px;
+  padding: 4px 0;
+  border-radius: 10px;
+  background: var(--surface-2);
+  line-height: 1.1;
+}
+.fin-date small {
+  color: var(--muted);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+.fin-date strong {
+  font-size: 1.05rem;
+  font-variant-numeric: tabular-nums;
+}
+.fin-row.overdue .fin-date {
+  background: var(--tone-rose-bg);
+}
+.fin-row.overdue .fin-date,
+.fin-row.overdue .fin-date small {
+  color: var(--danger);
+}
+.fin-row.income .fin-date {
+  background: var(--tone-green-bg);
+}
+.fin-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--tone-sky-bg);
+  color: var(--tone-sky);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  line-height: 1.5;
+}
+/* money kept reads apart from money spent, and a row with no amount stays quiet */
+.bill-amount.kept {
+  color: var(--tone-violet);
+}
+.bill-amount.none {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.fin-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.fin-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  height: 100%;
+  min-height: 78px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.fin-tile:hover {
+  border-color: var(--border-strong);
+}
+.fin-tile-name {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--text-2);
+  font-size: 0.8125rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fin-tile strong {
+  font-size: 1.15rem;
+  font-variant-numeric: tabular-nums;
+}
+.fin-tile strong.owed {
+  color: var(--danger);
+}
+.fin-tile small {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+.fin-tile small.stale {
+  color: var(--warn-text);
+}
+.fin-tile.add {
+  align-items: center;
+  justify-content: center;
+  border-style: dashed;
+  background: transparent;
+  color: var(--text-2);
+  font-weight: 600;
+}
+.fin-weekly {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.fin-weekly-on {
+  flex: 1 1 auto;
+  font-weight: 600;
+}
+.fin-weekly-when {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.fin-weekly > small {
+  flex-basis: 100%;
+}
+
+.fin-goals {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.fin-goal {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.fin-goal-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.fin-goal-head strong {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fin-goal-emoji {
+  font-size: 1.3rem;
+  line-height: 1;
+}
+.fin-status {
+  flex: none;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--tone-grey-bg);
+  color: var(--tone-grey);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+.fin-status.on-track,
+.fin-status.reached {
+  background: var(--tone-green-bg);
+  color: var(--tone-green);
+}
+.fin-status.behind {
+  background: var(--tone-amber-bg);
+  color: var(--tone-amber);
+}
+.fin-bar {
+  display: block;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--surface-3);
+}
+.fin-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--tone-mint);
+}
+.fin-goal.behind .fin-bar > span {
+  background: var(--tone-amber);
+}
+.fin-goal-line {
+  font-variant-numeric: tabular-nums;
+}
+.fin-goal small {
+  color: var(--muted);
+}
+
+.fin-month {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 0.875rem;
+}
+.fin-month strong {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.fin-month strong.owed {
+  color: var(--danger);
+}
+
+/* the sheets: Check in, + Bill's picker and its short form, + Goal */
+.fin-sheet .fin-sheet-hint {
+  margin: 0;
+}
+/* the check-in's amounts are typed, and a typed field is 16px or a phone zooms */
+.fin-amount-input {
+  font-size: max(16px, 1rem);
+  font-variant-numeric: tabular-nums;
+}
+.checkin-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.checkin-row {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.checkin-row.focus {
+  border-color: var(--accent-ring);
+  box-shadow: 0 0 0 3px var(--accent-softer);
+}
+.checkin-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(7.5rem, 10rem);
+  grid-template-areas: 'name input' 'last input';
+  align-items: center;
+  gap: 2px 12px;
+}
+.checkin-name {
+  grid-area: name;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.checkin-field > small {
+  grid-area: last;
+}
+.checkin-field > input {
+  grid-area: input;
+  text-align: right;
+}
+.checkin-add {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 8px;
+}
+.checkin-add-open,
+.fin-back,
+.fin-more {
+  align-self: flex-start;
+}
+.tpl-group .bills-head {
+  margin: 4px 0 6px;
+}
+.tpl-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.tpl {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 100%;
+  height: 100%;
+  min-height: 76px;
+  padding: 10px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+.tpl:hover {
+  border-color: var(--accent-ring);
+  background: var(--accent-softer);
+}
+.tpl-emoji {
+  font-size: 1.5rem;
+  line-height: 1;
+}
+.tpl-name {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.2;
+  text-align: center;
+}
+.fin-autopay {
+  align-self: end;
+  min-height: 40px;
+}
+.goal-emoji {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+.goal-emoji-pick {
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.goal-emoji-pick.on {
+  border-color: var(--accent);
+  background: var(--accent-softer);
+  box-shadow: 0 0 0 2px var(--accent-ring);
+}
+.fin-preview {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 0.875rem;
+}
+.fin-preview.behind {
+  background: var(--tone-amber-bg);
+  color: var(--tone-amber);
+}
+
+/* A wide screen has room for two columns: the money on the left, what falls
+   due on the right, then the accounts and the goals side by side. */
+@media (min-width: 1000px) {
+  .fin-timeline {
+    display: grid;
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+    grid-template-areas:
+      'hero coming'
+      'actions coming'
+      'line coming'
+      'accounts goals'
+      'month month';
+    align-items: start;
+    gap: 16px 24px;
+  }
+  .fin-hero {
+    grid-area: hero;
+  }
+  .fin-actions {
+    grid-area: actions;
+  }
+  .fin-line {
+    grid-area: line;
+  }
+  .fin-coming {
+    grid-area: coming;
+  }
+  .fin-accounts {
+    grid-area: accounts;
+  }
+  .fin-goals-section {
+    grid-area: goals;
+  }
+  .fin-month {
+    grid-area: month;
+  }
+}
+
+@media (max-width: 640px) {
+  .fin-hero {
+    padding: 14px 16px 10px;
+  }
+  .fin-hero-amount {
+    font-size: 2.2rem;
+  }
+  .fin-actions {
+    gap: 6px;
+  }
+  .fin-actions .btn {
+    padding-inline: 2px;
+    font-size: 0.875rem;
+  }
+  /* the name gets what the row can spare: a narrower day, and a Paid
+     button no wider than its word */
+  .fin-rows .bill-main {
+    gap: 8px;
+    padding: 8px 6px 8px 10px;
+  }
+  .fin-date {
+    width: 34px;
+  }
+  .fin-rows .bill-amount {
+    font-size: 0.9375rem;
+  }
+  .fin-rows .bill-pay {
+    margin-right: 6px;
+    padding-inline: 8px;
+  }
+  .fin-tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .tpl-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .checkin-add {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .checkin-add > select {
+    grid-column: 1 / -1;
+  }
+}
+@media (pointer: coarse) {
+  .fin-actions .btn,
+  .fin-hero-checkin,
+  .fin-tile,
+  .fin-goal,
+  .tpl,
+  .fin-autopay {
+    min-height: 44px;
+  }
+  .goal-emoji-pick {
+    width: 44px;
+    height: 44px;
+  }
+}
