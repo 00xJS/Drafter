@@ -80,8 +80,8 @@ const noRenderClock = {
 export default tseslint.config(
   // supabase/functions/bot is Deno: its own globals and jsr: imports, so
   // Deno lints and type-checks it (the bot job in .github/workflows/ci.yml).
-  // e2e/.dist and the two report folders are what `npm run e2e` builds and writes.
-  { ignores: ['dist/**', 'ios/**', 'node_modules/**', 'supabase/functions/**', 'e2e/.dist/**', 'playwright-report/**', 'test-results/**'] },
+  // e2e/.dist* and the report folders are what `npm run e2e` and `e2e:cloud` build and write.
+  { ignores: ['dist/**', 'ios/**', 'node_modules/**', 'supabase/functions/**', 'e2e/.dist*/**', 'playwright-report*/**', 'test-results*/**'] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
@@ -177,7 +177,7 @@ export default tseslint.config(
   {
     // The build's own configuration, run by Node through Vite, the Capacitor
     // CLI and Playwright (tsconfig.config.json and e2e/tsconfig.json type-check them).
-    files: ['vite.config.ts', 'capacitor.config.ts', 'playwright.config.ts'],
+    files: ['vite.config.ts', 'capacitor.config.ts', 'playwright.config.ts', 'playwright.cloud.config.ts'],
     languageOptions: { globals: globals.node },
     rules,
   },

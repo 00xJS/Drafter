@@ -1,9 +1,12 @@
 node_modules
 dist
-# npm run e2e: its build, and what Playwright writes
+# npm run e2e and e2e:cloud: their builds, and what Playwright writes
 /e2e/.dist/
+/e2e/.dist-cloud/
 /playwright-report/
+/playwright-report-cloud/
 /test-results/
+/test-results-cloud/
 .DS_Store
 *.local
 server/drafter.db
