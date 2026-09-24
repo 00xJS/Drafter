@@ -1,10 +1,10 @@
 import { weekDayKeys } from '../../../shared/weeks.mts'
-import type { Garment, Season, Wear } from '../../types'
-import { fitsOccasion, isPlanned, looksOn, pickWeighted, pieceTags, restWeight, type DayOccasion, type WearIndex } from '../../wardrobe'
+import { CORE_TYPES, type Garment, type GarmentType, type Season, type Wear } from '../../types'
+import { fitsOccasion, isPlanned, looksOn, pickWeighted, pieceTags, restWeight, seasonOf, type DayOccasion, type WearIndex } from '../../wardrobe'
 import { byName, heldBadge, ideaPool, type Rows, type Slot } from './composer'
 
 // The Outfit board's rules, with no React in them: the week strip's marks, the
-// picker's order and the ideas. Each is pure — a deal takes
+// picker's order, the ideas and the week's plan. Each is pure — a deal takes
 // its randomness from a seed (seeded) — so the board can work them out as it
 // draws, and a test can hold them to one answer.
 
@@ -12,9 +12,9 @@ import { byName, heldBadge, ideaPool, type Rows, type Slot } from './composer'
 
 /**
  * Math.random's shape from a seed: the same seed draws the same numbers. The
- * ideas are dealt from one, so the board deals them as it draws — the same
- * looks every time it draws, until New ideas moves the seed on — and never
- * reads a clock or a random source to do it.
+ * ideas and the week's plan are dealt from one, so the board deals them as it
+ * draws — the same looks every time it draws, until New ideas or Another moves
+ * the seed on — and never reads a clock or a random source to do it.
  */
 export function seeded(seed: string): () => number {
   // FNV-1a over the seed, then mulberry32 from it
@@ -145,7 +145,8 @@ const keyOf = (ids: readonly string[]): string => [...ids].sort().join('+')
  * No piece comes up twice while the day's pieces allow: a look whose pieces
  * are all fresh — in no look dealt before it here, and not in `avoid` — is
  * drawn first, then one with a fresh piece, then any. A look in `last` (the
- * deal before) comes only when nothing else can. The day's `coat` rides on every look. A held piece (retired, or in
+ * deal before, or the plan's look for the day) comes only when nothing else
+ * can. The day's `coat` rides on every look. A held piece (retired, or in
  * Trash) is never dealt. The draw is `seed`'s (seeded), or `random`.
  */
 export function dealIdeas(
@@ -181,4 +182,68 @@ export function dealIdeas(
     ideas.push({ key: look.key, core: look.core, ids: coat ? [...look.core, coat.id] : look.core })
   }
   return ideas
+}
+
+// ---- plan the week ---------------------------------------------------------------
+
+/**
+ * The days Plan the week offers: the shown week's days from today on — today
+ * among them while it has no look — up to the last day a plan can be made for,
+ * each with no look yet, worn or planned. Never a day gone by.
+ */
+export function daysToPlan(week: readonly string[], wears: readonly Wear[], todayKey: string, lastDay: string): string[] {
+  return week.filter(d => d >= todayKey && d <= lastDay && !hasLook(wears, d))
+}
+
+const CORE = new Set<GarmentType>(CORE_TYPES)
+
+/** The tops, bottoms and one-pieces the week's looks hold already, worn or planned: the plan steers round them. */
+export function weekTaken(week: readonly string[], wears: readonly Wear[], byId: ReadonlyMap<string, Garment>): Set<string> {
+  const ids = week.flatMap(d => looksWithPieces(wears, d).flatMap(w => w.garmentIds))
+  return new Set(ids.filter(id => CORE.has(byId.get(id)?.type as GarmentType)))
+}
+
+/** What a day of the plan is dealt from. */
+export interface PlanSource {
+  rows: Rows
+  ix: WearIndex
+  /** What a day is dressed for. */
+  occasionOf(day: string): DayOccasion
+  /** The coat a day's forecast asks for: only today has a forecast. */
+  coatOf?(day: string): Garment | undefined
+}
+
+/** One day's look for the plan: an idea for its occasion and season, steering round `avoid`; `deal` moves it on to another. */
+export function proposeDay(src: PlanSource, day: string, avoid: Iterable<string>, deal = 0, last: Iterable<string> = []): Idea | null {
+  const [idea] = dealIdeas(src.rows, src.ix, { occasion: src.occasionOf(day), season: seasonOf(day), count: 1, avoid, last, coat: src.coatOf?.(day), seed: `plan|${day}|${deal}` })
+  return idea ?? null
+}
+
+/**
+ * A look for each day, in order, with no top, bottom or one-piece twice in the
+ * week while the wardrobe allows: each day steers round what the days before
+ * it were given and what the week's looks already hold (`taken`).
+ */
+export function proposeWeek(src: PlanSource, days: readonly string[], taken: Iterable<string> = []): Record<string, Idea | null> {
+  const used = new Set(taken)
+  const plan: Record<string, Idea | null> = {}
+  for (const day of days) {
+    const idea = proposeDay(src, day, used)
+    plan[day] = idea
+    for (const id of idea?.core ?? []) used.add(id)
+  }
+  return plan
+}
+
+/**
+ * Another look for one day of the plan: round what the other days were given
+ * and what the week holds, and off the look it had — which it keeps only when
+ * the wardrobe has no other for that day.
+ */
+export function redealDay(src: PlanSource, plan: Readonly<Record<string, Idea | null>>, day: string, taken: Iterable<string>, deal: number): Idea | null {
+  const avoid = new Set(taken)
+  for (const [d, idea] of Object.entries(plan)) for (const id of idea?.core ?? []) if (d !== day) avoid.add(id)
+  const was = plan[day]
+  for (const id of was?.core ?? []) avoid.add(id)
+  return proposeDay(src, day, avoid, deal, was ? [was.key] : []) ?? was ?? null
 }

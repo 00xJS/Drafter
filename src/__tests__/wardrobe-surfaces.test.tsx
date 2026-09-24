@@ -317,6 +317,7 @@ describe('a saved outfit asked for from outside goes on the look card', () => {
         onDay={noop}
         onLog={noop}
         onRemoveLook={noop}
+        onPlanWeek={noop}
         onSaveOutfit={noop}
         onAdd={noop}
         onOpenPiece={noop}

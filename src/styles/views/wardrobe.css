@@ -360,7 +360,8 @@ button.cutout-pick {
 .wardrobe-week-mark.planned {
   box-shadow: inset 0 0 0 1.5px var(--accent-text);
 }
-/* the day: what it is dressed for, and today's weather */
+/* the day: what it is dressed for and today's weather, with Plan the week
+   at the end of the line */
 .wardrobe-dayline {
   display: flex;
   align-items: center;
@@ -368,6 +369,10 @@ button.cutout-pick {
   gap: 4px 8px;
   font-size: 0.875rem;
   color: var(--text-2);
+}
+.wardrobe-plan {
+  margin-left: auto;
+  white-space: nowrap;
 }
 .wardrobe-dayline .wardrobe-occasion {
   padding: 4px 10px;
@@ -800,6 +805,76 @@ button.cutout-pick {
 .pick-more {
   align-self: flex-start;
 }
+/* Plan the week: a day to a row, its look drawn small, ticked to plan it */
+.plan-week-sub {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--text-2);
+}
+.plan-week-days {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.plan-week-day {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--hairline);
+}
+.plan-week-day:last-child {
+  border-bottom: 0;
+}
+.plan-week-tick {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 44px;
+  cursor: pointer;
+}
+.plan-week-look {
+  flex: none;
+  width: 48px;
+  height: 64px;
+  border-radius: 8px;
+}
+.plan-week-look .collage-badge {
+  width: 18px;
+  height: 18px;
+}
+.plan-week-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.plan-week-when {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-2);
+}
+.plan-week-what {
+  font-size: 0.875rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.plan-week-day.off .plan-week-look,
+.plan-week-day.off .plan-week-what {
+  opacity: 0.55;
+}
+.plan-week-again {
+  flex: none;
+}
+.plan-week-foot {
+  justify-content: flex-end;
+}
 .clothes-sort {
   display: inline-flex;
   align-items: center;
@@ -1100,8 +1175,12 @@ button.cutout-pick {
   }
   .look-another,
   .look-note-add,
-  .board-refresh {
+  .board-refresh,
+  .plan-week-again {
     min-height: 44px;
+  }
+  .plan-week-again {
+    min-width: 44px;
   }
   /* the pill stays a pill; its target reaches 44pt round it */
   .wardrobe-dayline .wardrobe-occasion {

@@ -22,12 +22,13 @@ import type { Forecast } from '../../weather'
 import { ConfirmButton } from '../ConfirmButton'
 import { Icon } from '../Icon'
 import { Segmented } from '../stats/Segmented'
-import { dealIdeas } from './board'
+import { daysToPlan, dealIdeas, weekOf, weekRange, weekTaken, type PlanSource } from './board'
 import { chosenIn, heldBadge, heldPieces, load, loadIdea, OPTIONAL, pickSlot, rowsOf, shownIn, start, toggleAccessory, type Optional, type Selection, type Slot } from './composer'
 import { useCachedForecast } from './forecast'
 import { Collage, FavouriteMark, GarmentPhoto } from './GarmentPhoto'
 import { EmptySlot, FilledSlot } from './LookSlot'
 import { PiecePicker } from './PiecePicker'
+import { PlanWeekSheet } from './PlanWeekSheet'
 import { SavedOutfits } from './SavedOutfits'
 import { WeekStrip } from './WeekStrip'
 
@@ -78,6 +79,8 @@ interface Props {
   onLog(day: string, pieces: string[], opts: { shown: ReadonlySet<string>; another?: boolean; note?: string; wearId?: string }): void
   /** Remove the look being edited (`wearId`), or the day's latest if none is named. */
   onRemoveLook(day: string, wearId?: string): void
+  /** Plan the week: a planned look for each day, as one batch with one Undo. */
+  onPlanWeek(plans: { day: string; pieces: string[] }[]): void
   /** A way in from Today: this look of the day, or a new change. Consumed once. */
   focus?: { wearId?: string; another?: true } | null
   onFocusConsumed?(): void
@@ -99,8 +102,9 @@ interface Props {
 
 /**
  * Outfit: the day's whole look on one card. The week it is in runs across the
- * top — a dot on each day with a look worn, a ring on each with a plan — and
- * under it, what the day is dressed for and, today, the weather. The card holds a slot for each piece, top to toe: the top and
+ * top — a dot on each day with a look worn, a ring on each with a plan — with
+ * Plan the week beside it; under that, what the day is dressed for and, today,
+ * the weather. The card holds a slot for each piece, top to toe: the top and
  * the bottom (or a one-piece), outerwear and shoes when they are on, asked
  * for or suggested by a cold or wet forecast, and the accessories as chips.
  * A tap on a slot opens its picker; an empty slot is a slim row that asks for
@@ -116,8 +120,8 @@ interface Props {
  *
  * The day is a Work day (a work-day entry of yours is on the calendar) or a
  * Day off; a tap turns it the other way for this visit and saves nothing. The
- * picker leads with the pieces for it, or for any time; the ideas and the
- * coat keep to it.
+ * picker leads with the pieces for it, or for any time; the ideas, the plan
+ * and the coat keep to it.
  */
 export function OutfitComposer(props: Props) {
   const {
@@ -133,6 +137,7 @@ export function OutfitComposer(props: Props) {
     onDay,
     onLog,
     onRemoveLook,
+    onPlanWeek,
     onSaveOutfit,
     onAdd,
     onOpenPiece,
@@ -171,6 +176,7 @@ export function OutfitComposer(props: Props) {
   const forecast = props.forecast !== undefined ? props.forecast : cached
   /** The slot whose picker is open. */
   const [picking, setPicking] = useState<Slot | null>(null)
+  const [planning, setPlanning] = useState(false)
   /** The pieces shown by their other side, for this visit. */
   const [flipped, setFlipped] = useState<ReadonlySet<string>>(() => new Set())
   /** Today's coat, waved away for the visit. */
@@ -331,6 +337,19 @@ export function OutfitComposer(props: Props) {
   const moreIdeas = () => setIdeaDeal({ day, occasion, n: deal.n + 1, last: ideas.map(i => i.key), avoid: ideas.flatMap(i => i.core) })
   const ideasFor = day === todayKey ? 'today' : day === tomorrow ? 'tomorrow' : day === yesterday ? 'yesterday' : shortDay(day, todayKey)
 
+  // the shown week's days still to plan, and what they are dealt from
+  const week = weekOf(day)
+  const toPlan = daysToPlan(week, wears, todayKey, lastDay)
+  const canPlan = toPlan.length > 0 && canDress(garments)
+  const todayNeed = weatherNeed(forecast)
+  const occasionOf = (d: string): DayOccasion => (flip?.day === d ? flip.to : dayOccasion(d, workDays))
+  const planSource: PlanSource = {
+    rows,
+    ix,
+    occasionOf,
+    coatOf: d => (d === todayKey && todayNeed ? outerwearFor(garments, ix, todayNeed, undefined, occasionOf(d)) : undefined),
+  }
+
   const filled = (slot: Slot, clear: () => void) => {
     const g = rows[slot].find(x => x.id === chosen[slot])!
     return <FilledSlot key={slot} garment={g} ix={ix} occasion={occasion} flipped={flipped.has(g.id)} onFlip={() => flipSide(g.id)} onOpen={() => choose(slot)} onClear={clear} />
@@ -374,6 +393,15 @@ export function OutfitComposer(props: Props) {
             {DAY_OCCASION_LABEL[occasion]}
           </button>
           {sky && <span className="wardrobe-sky">{sky}</span>}
+          <button
+            type="button"
+            className="btn wardrobe-plan"
+            disabled={!canPlan}
+            title={canPlan ? 'A look for each day left this week' : 'Every day left this week has a look'}
+            onClick={() => setPlanning(true)}
+          >
+            Plan the week
+          </button>
         </div>
 
         <section ref={card} className="look-card" aria-label={`The look for ${dayName}`}>
@@ -551,6 +579,18 @@ export function OutfitComposer(props: Props) {
           }}
           onOpenPiece={onOpenPiece}
           onClose={() => setPicking(null)}
+        />
+      )}
+      {planning && (
+        <PlanWeekSheet
+          days={toPlan}
+          week={weekRange(week, todayKey)}
+          todayKey={todayKey}
+          source={planSource}
+          taken={weekTaken(week, wears, byId)}
+          byId={byId}
+          onPlan={onPlanWeek}
+          onClose={() => setPlanning(false)}
         />
       )}
     </div>

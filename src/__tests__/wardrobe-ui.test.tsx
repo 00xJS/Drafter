@@ -65,6 +65,7 @@ function composerProps(over: Partial<ComposerProps> = {}): ComposerProps {
     onDay: noop,
     onLog: noop,
     onRemoveLook: noop,
+    onPlanWeek: noop,
     onSaveOutfit: noop,
     onAdd: noop,
     onOpenPiece: noop,
@@ -315,6 +316,16 @@ describe('Outfit: the board', () => {
     expect(yesterday).not.toContain('wardrobe-sky')
     // a look with its coat on has one already
     expect(composer({ garments, forecast: cold, wears: [look(TODAY, ['navy-tee', 'jeans', 'mac'])] })).not.toContain('Add Mac')
+  })
+
+  it('offers Plan the week while the shown week has a day left with no look, and not once every one has', () => {
+    expect(composer()).toMatch(/<button type="button" class="btn wardrobe-plan" title="A look for each day left this week">Plan the week<\/button>/)
+    // Saturday 19 September, logged: nothing left of that week to plan
+    expect(composer({ todayKey: '2026-09-19', day: '2026-09-19', ix: wearIndex([look('2026-09-19', ['navy-tee', 'jeans'])], '2026-09-19'), wears: [look('2026-09-19', ['navy-tee', 'jeans'])] })).toMatch(
+      /<button type="button" class="btn wardrobe-plan" disabled="" title="Every day left this week has a look">Plan the week<\/button>/,
+    )
+    // and a week gone by has nothing to plan
+    expect(composer({ day: '2026-09-02' })).toContain('disabled="" title="Every day left this week has a look"')
   })
 
   it('lists the favourite saved outfits first, starred', () => {
@@ -697,6 +708,39 @@ describe('what the wardrobe writes', () => {
     expect(written().some(w => w.id === plan.id)).toBe(false)
   })
 
+  it('plans the week as one batch: a planned look for each day, one toast, and one Undo that takes every one back', () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date(2026, 8, 14, 10))
+    const onSave = vi.fn<(item: Item) => void>()
+    const onRemove = vi.fn<(id: string) => void>()
+    const showToast = vi.fn<(msg: string, undo?: () => void) => void>()
+    const worn = look('2026-09-16', ['grey-tee', 'cords'])
+    const tree = settled(Wardrobe, { garments: [...tops, ...bottoms], outfits: [], wears: [worn], onSave, onRemove, onRestore: noop, showToast, open: null, onOpenConsumed: noop })
+    propsOf(tree, OutfitComposer).onPlanWeek([
+      { day: '2026-09-15', pieces: ['navy-tee', 'jeans'] },
+      // a day that gained a look since the sheet opened keeps it
+      { day: '2026-09-16', pieces: ['white-shirt', 'chinos'] },
+      { day: '2026-09-17', pieces: ['black-tee', 'shorts'] },
+      // and a day gone by is never planned
+      { day: '2026-09-13', pieces: ['blue-shirt', 'cords'] },
+    ])
+    const written = onSave.mock.calls.map(c => c[0] as Wear)
+    expect(written.map(w => [w.date, w.garmentIds, w.planned])).toEqual([
+      ['2026-09-15', ['navy-tee', 'jeans'], true],
+      ['2026-09-17', ['black-tee', 'shorts'], true],
+    ])
+    expect(written.every(w => w.id.startsWith(`wear~${w.date}~`))).toBe(true)
+    expect(showToast).toHaveBeenCalledTimes(1)
+    expect(showToast).toHaveBeenLastCalledWith('Planned 2 days', expect.any(Function))
+    showToast.mock.lastCall![1]!()
+    expect(onRemove.mock.calls.map(c => c[0])).toEqual(written.map(w => w.id))
+    // one day is named; nothing to plan says nothing
+    propsOf(tree, OutfitComposer).onPlanWeek([{ day: '2026-09-18', pieces: ['navy-tee', 'jeans'] }])
+    expect(showToast).toHaveBeenLastCalledWith('Planned for Fri 18 Sep', expect.any(Function))
+    propsOf(tree, OutfitComposer).onPlanWeek([{ day: '2026-09-16', pieces: ['navy-tee', 'jeans'] }])
+    expect(showToast).toHaveBeenCalledTimes(2)
+  })
+
   it('puts a piece worn today into today’s look when that look was worn', () => {
     const worn = look(TODAY, ['grey-tee', 'cords'])
     const { tree, written, showToast } = shell([worn], { garmentId: 'trainers' })
@@ -707,7 +751,7 @@ describe('what the wardrobe writes', () => {
 })
 
 describe('the guards around the wardrobe', () => {
-  const files = ['Wardrobe', 'OutfitComposer', 'WeekStrip', 'LookSlot', 'PiecePicker', 'SavedOutfits', 'Clothes', 'GarmentSheet', 'PieceDetails', 'WardrobeStats', 'WardrobeCard', 'GarmentPhoto']
+  const files = ['Wardrobe', 'OutfitComposer', 'WeekStrip', 'LookSlot', 'PiecePicker', 'PlanWeekSheet', 'SavedOutfits', 'Clothes', 'GarmentSheet', 'PieceDetails', 'WardrobeStats', 'WardrobeCard', 'GarmentPhoto']
   const source = (f: string) => read(`../components/wardrobe/${f}.tsx`)
 
   it('never mentions a project: there is one, and it is not the wardrobe’s business', () => {

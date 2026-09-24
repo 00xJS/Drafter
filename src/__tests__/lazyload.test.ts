@@ -158,6 +158,7 @@ const LAZY_ONLY = [
     'wardrobe/WeekStrip',
     'wardrobe/LookSlot',
     'wardrobe/PiecePicker',
+    'wardrobe/PlanWeekSheet',
     'wardrobe/SavedOutfits',
     'wardrobe/Clothes',
     'wardrobe/GarmentSheet',

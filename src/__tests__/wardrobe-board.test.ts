@@ -1,11 +1,27 @@
 import { describe, expect, it } from 'vitest'
-import { dayLetter, dayMark, dealIdeas, hasLook, pickerGroups, pickerOrder, seeded, weekOf, weekRange } from '../components/wardrobe/board'
+import {
+  dayLetter,
+  dayMark,
+  daysToPlan,
+  dealIdeas,
+  hasLook,
+  pickerGroups,
+  pickerOrder,
+  proposeDay,
+  proposeWeek,
+  redealDay,
+  seeded,
+  weekOf,
+  weekRange,
+  weekTaken,
+  type PlanSource,
+} from '../components/wardrobe/board'
 import { heldPieces, rowsOf } from '../components/wardrobe/composer'
 import type { Garment, GarmentType, Wear } from '../types'
-import { dayWeather, wearIndex, type DayOccasion } from '../wardrobe'
+import { dayWeather, liveById, wearIndex, type DayOccasion } from '../wardrobe'
 
 // The Outfit board's rules: the week strip's marks, the picker's order and
-// groups, and the ideas. The owner's complaint was that the
+// groups, the ideas, and Plan the week. The owner's complaint was that the
 // pieces moved — by rest, frozen per visit, regrouped by the day — so what is
 // held here most of all is that the order is the same wherever it is asked
 // from, and says why a piece sits where it does.
@@ -244,6 +260,82 @@ describe('ideas for the day', () => {
     // six tops and six bottoms: none of the three before, and no piece of theirs either
     expect(next.map(i => i.key).filter(k => first.some(f => f.key === k))).toEqual([])
     expect(next.flatMap(i => i.core).filter(id => first.some(f => f.core.includes(id)))).toEqual([])
+  })
+})
+
+describe('plan the week', () => {
+  const suit = piece('suit', 'top', { occasion: 'work' })
+  const shirt = piece('shirt', 'top')
+  const tee = piece('tee', 'top')
+  const gym = piece('gym', 'top', { occasion: 'personal' })
+  const slacks = piece('slacks', 'bottom', { occasion: 'work' })
+  const jeans = piece('jeans', 'bottom')
+  const chinos = piece('chinos', 'bottom')
+  const joggers = piece('joggers', 'bottom', { occasion: 'personal' })
+  const mac = piece('mac', 'outerwear')
+  const trainers = piece('trainers', 'shoes')
+  const garments = [suit, shirt, tee, gym, slacks, jeans, chinos, joggers, mac, trainers]
+  const week = weekOf(TODAY)
+  const workDays = new Set(['2026-09-14', '2026-09-15', '2026-09-16', '2026-09-17', '2026-09-18'])
+  const source = (over: Partial<PlanSource> = {}): PlanSource => ({
+    rows: rowsOf(garments),
+    ix: wearIndex([], TODAY),
+    occasionOf: d => (workDays.has(d) ? 'work' : 'personal'),
+    ...over,
+  })
+
+  it('offers the shown week’s days from today, today among them while it has no look, and never a day gone or past the last', () => {
+    expect(daysToPlan(week, [], TODAY, '2027-09-14')).toEqual(week.slice(1))
+    const logged = [look(TODAY, ['tee', 'jeans']), look('2026-09-16', ['shirt', 'chinos'], { planned: true })]
+    expect(daysToPlan(week, logged, TODAY, '2027-09-14')).toEqual(['2026-09-15', '2026-09-17', '2026-09-18', '2026-09-19'])
+    // an empty look is no look
+    expect(daysToPlan(week, [look('2026-09-15', [])], TODAY, '2027-09-14')).toContain('2026-09-15')
+    expect(daysToPlan(week, [], TODAY, '2026-09-16')).toEqual(['2026-09-14', '2026-09-15', '2026-09-16'])
+    expect(daysToPlan(weekOf('2026-09-01'), [], TODAY, '2027-09-14')).toEqual([])
+  })
+
+  it('knows the tops, bottoms and one-pieces the week’s looks hold, worn or planned, and nothing else', () => {
+    const wears = [look('2026-09-13', ['tee', 'jeans', 'trainers']), look('2026-09-16', ['suit', 'slacks', 'mac'], { planned: true }), look('2026-09-20', ['gym', 'joggers'])]
+    expect([...weekTaken(week, wears, liveById(garments))].sort()).toEqual(['jeans', 'slacks', 'suit', 'tee'])
+  })
+
+  it('gives each day a look for its occasion, with no top or bottom twice in the week while the wardrobe allows', () => {
+    const days = daysToPlan(week, [], TODAY, '2027-09-14')
+    const plan = proposeWeek(source(), days)
+    expect(Object.keys(plan)).toEqual(days)
+    for (const d of days) {
+      const idea = plan[d]!
+      expect(idea, d).not.toBeNull()
+      if (workDays.has(d)) expect(idea.core, d).not.toContain('gym')
+      else expect(idea.core, d).not.toContain('suit')
+    }
+    // three tops and three bottoms fit a work day: its first three days share none
+    const firstThree = days.slice(0, 3).map(d => plan[d]!.core)
+    expect(new Set(firstThree.map(c => c[0])).size).toBe(3)
+    expect(new Set(firstThree.map(c => c[1])).size).toBe(3)
+  })
+
+  it('steers round what the week already holds, and puts today’s coat on today alone', () => {
+    const taken = ['suit', 'slacks']
+    const plan = proposeWeek(source({ coatOf: d => (d === TODAY ? mac : undefined) }), [TODAY, '2026-09-15'], taken)
+    expect(plan[TODAY]!.ids).toContain('mac')
+    expect(plan['2026-09-15']!.ids).not.toContain('mac')
+    for (const d of [TODAY, '2026-09-15']) expect(plan[d]!.core.filter(id => taken.includes(id)), d).toEqual([])
+  })
+
+  it('deals one day again round the other days, off the look it had, and keeps it when there is no other', () => {
+    const days = ['2026-09-15', '2026-09-16']
+    const plan = proposeWeek(source(), days)
+    const again = redealDay(source(), plan, '2026-09-15', [], 1)!
+    expect(again.key).not.toBe(plan['2026-09-15']!.key)
+    // the other day's pieces are steered round while another is free
+    expect(again.core.filter(id => plan['2026-09-16']!.core.includes(id))).toEqual([])
+    // one top and one bottom for a work day: the day keeps its only look
+    const small: PlanSource = { ...source(), rows: rowsOf([suit, slacks]) }
+    const only = proposeWeek(small, ['2026-09-15'])
+    expect(redealDay(small, only, '2026-09-15', [], 1)).toEqual(only['2026-09-15'])
+    // and a day with nothing to wear has nothing to deal
+    expect(proposeDay({ ...source(), rows: rowsOf([suit, slacks]) }, '2026-09-19', [])).toBeNull()
   })
 })
 

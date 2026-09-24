@@ -92,6 +92,7 @@ describe('a piece’s two sides', () => {
       'wardrobe/PieceDetails.tsx',
       'wardrobe/OutfitComposer.tsx',
       'wardrobe/PiecePicker.tsx',
+      'wardrobe/PlanWeekSheet.tsx',
       'wardrobe/WeekStrip.tsx',
     ]
     for (const f of small) expect(read(`../components/${f}`), f).not.toMatch(/GarmentView|GarmentInset/)
@@ -139,6 +140,7 @@ describe('the look card’s slots', () => {
       onDay: noop,
       onLog,
       onRemoveLook: noop,
+      onPlanWeek: noop,
       onSaveOutfit: noop,
       onAdd: noop,
       onOpenPiece: noop,

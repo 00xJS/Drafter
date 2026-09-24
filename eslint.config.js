@@ -151,6 +151,7 @@ export default tseslint.config(
       'src/components/wardrobe/LookSlot.tsx',
       'src/components/wardrobe/OutfitComposer.tsx',
       'src/components/wardrobe/PiecePicker.tsx',
+      'src/components/wardrobe/PlanWeekSheet.tsx',
       'src/components/wardrobe/Wardrobe.tsx',
       'src/components/wardrobe/WeekStrip.tsx',
       'src/components/wardrobe/WardrobeStats.tsx',

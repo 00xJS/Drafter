@@ -9,6 +9,7 @@ import { Icon } from '../Icon'
 import { WARDROBE_TABS, type WardrobeTab } from '../planner/routes'
 import { dayAfterRoll, useDayKey } from '../../useDayKey'
 import type { WardrobeOpen } from '../planner/useNavigation'
+import { hasLook } from './board'
 import { Clothes } from './Clothes'
 import { GarmentSheet, type SheetMode } from './GarmentSheet'
 import { OutfitComposer } from './OutfitComposer'
@@ -131,6 +132,22 @@ export function Wardrobe({ garments, inTrash = NONE, outfits, wears, myId = null
     const added = 'remove' in log.undo
     commit(log, planned ? (added ? `Planned for ${shortDay(d, todayKey)}` : 'Plan updated') : added || was?.planned ? loggedOn(d) : 'Look updated')
   }
+  /**
+   * Plan the week: a planned look for each day, as one batch — one toast, and
+   * one Undo that takes every one of them back. A day that has gained a look
+   * since the sheet opened (another device, a sync) keeps it: a plan is never
+   * written over one.
+   */
+  const planDays = (plans: readonly { day: string; pieces: readonly string[] }[]) => {
+    const written = plans
+      .filter(p => p.day >= todayKey && !hasLook(wears, p.day))
+      .map(p => logLook(wears, p.day, p.pieces, records, { another: true, planned: true }).write)
+    if (written.length === 0) return
+    for (const w of written) onSave(w)
+    showToast(written.length === 1 ? `Planned for ${shortDay(written[0].date, todayKey)}` : `Planned ${written.length} days`, () => {
+      for (const w of written) onRemove(w.id)
+    })
+  }
   const removeLook = (d: string, wearId?: string) => {
     const looks = looksOn(wears, d)
     const target = wearId ? looks.find(w => w.id === wearId) : lastOf(looks)
@@ -222,6 +239,7 @@ export function Wardrobe({ garments, inTrash = NONE, outfits, wears, myId = null
           onDay={d => setDay(dayOr(d, todayKey))}
           onLog={logDay}
           onRemoveLook={removeLook}
+          onPlanWeek={planDays}
           onSaveOutfit={saveCombo}
           onAdd={type => setSheet({ kind: 'add', type })}
           onOpenPiece={id => setSheet({ kind: 'edit', id })}

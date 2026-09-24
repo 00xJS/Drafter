@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { fireEvent, render, screen, within } from './dom'
+import { act, fireEvent, render, screen, within } from './dom'
 import { useState, type ComponentProps } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -13,9 +13,9 @@ import type { CalendarEntry, Garment, GarmentType, Item, Wear } from '../types'
 import { liveById, wearIndex } from '../wardrobe'
 
 // The Outfit board as a thumb uses it: a day chosen on the week strip, a piece
-// chosen through its slot's picker, Wearing this, and an idea put on the card
-// — with what each writes, or does not. The rules under it are in
-// wardrobe-board.test.ts; this is the board holding to them.
+// chosen through its slot's picker, Wearing this, an idea put on the card,
+// and Plan the week — with what each writes, or does not. The rules under it
+// are in wardrobe-board.test.ts; this is the board holding to them.
 
 const T0 = '2026-08-01T09:00:00.000Z'
 /** A Monday. */
@@ -161,6 +161,7 @@ describe('dressing a day through the picker', () => {
       onDay: noop,
       onLog: noop,
       onRemoveLook: noop,
+      onPlanWeek: noop,
       onSaveOutfit: noop,
       onAdd: noop,
       onOpenPiece: noop,
@@ -200,6 +201,7 @@ describe('dressing a day through the picker', () => {
         onDay={noop}
         onLog={noop}
         onRemoveLook={noop}
+        onPlanWeek={noop}
         onSaveOutfit={noop}
         onAdd={onAdd}
         onOpenPiece={noop}
@@ -271,5 +273,46 @@ describe('ideas for the day', () => {
     expect(toasts).toEqual([])
     fireEvent.click(screen.getByRole('button', { name: 'New ideas' }))
     expect(ideas()).not.toEqual(first)
+  })
+})
+
+describe('plan the week', () => {
+  it('plans the days left with no look as one batch, each dealt again or skipped, and one Undo takes the lot back', () => {
+    const { toasts, saved } = openWardrobe([...history, look(TODAY, ['navy-tee', 'jeans'])])
+    fireEvent.click(screen.getByRole('button', { name: 'Plan the week' }))
+    const sheet = screen.getByRole('dialog', { name: 'Plan the week' })
+    // today has its look: from tomorrow to Saturday
+    const boxes = within(sheet).getAllByRole('checkbox')
+    expect(boxes.map(b => b.getAttribute('aria-label'))).toEqual(['Plan Tue 15 Sep', 'Plan Wed 16 Sep', 'Plan Thu 17 Sep', 'Plan Fri 18 Sep', 'Plan Sat 19 Sep'])
+    expect(within(sheet).getByText('13 – 19 Sep · 5 days without a look')).toBeTruthy()
+    // Saturday is a day off: its look keeps to it
+    const saturday = boxes[4].closest('li')!
+    expect(saturday.textContent).toContain('Sat 19 Sep · Day off')
+    expect(saturday.textContent).not.toMatch(/white-shirt|slacks/)
+    // Tuesday's look again: another one, and the others as they were
+    const whatOf = (li: Element) => li.querySelector('.plan-week-what')!.textContent
+    const tuesday = boxes[0].closest('li')!
+    const others = boxes.slice(1).map(b => whatOf(b.closest('li')!))
+    const was = whatOf(tuesday)
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Another look for Tue 15 Sep' }))
+    expect(whatOf(tuesday)).not.toBe(was)
+    expect(boxes.slice(1).map(b => whatOf(b.closest('li')!))).toEqual(others)
+    // Thursday skipped
+    fireEvent.click(boxes[2])
+    expect(whatOf(boxes[2].closest('li')!)).toBe('Skipped')
+    expect(saved).toEqual([])
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Plan 4 days' }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(saved.map(w => (w as Wear).date)).toEqual(['2026-09-15', '2026-09-16', '2026-09-18', '2026-09-19'])
+    expect(saved.every(w => (w as Wear).planned === true)).toBe(true)
+    expect(toasts.map(t => t.msg)).toEqual(['Planned 4 days'])
+    for (const d of [/^Tue 15 Sep: a look planned$/, /^Wed 16 Sep: a look planned$/, /^Fri 18 Sep: a look planned$/, /^Sat 19 Sep: a look planned$/]) expect(day(d)).toBeTruthy()
+    expect(day(/^Thu 17 Sep$/)).toBeTruthy()
+    act(() => toasts[0].undo!())
+    for (const d of [/^Tue 15 Sep$/, /^Wed 16 Sep$/, /^Fri 18 Sep$/, /^Sat 19 Sep$/]) expect(day(d)).toBeTruthy()
+    // with every day left planned, there is nothing more to plan
+    fireEvent.click(screen.getByRole('button', { name: 'Plan the week' }))
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'Plan the week' })).getByRole('button', { name: 'Plan 5 days' }))
+    expect((screen.getByRole('button', { name: 'Plan the week' }) as HTMLButtonElement).disabled).toBe(true)
   })
 })

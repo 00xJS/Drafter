@@ -84,6 +84,7 @@ function composerProps(over: Partial<ComposerProps> = {}): ComposerProps {
     onDay: noop,
     onLog: noop,
     onRemoveLook: noop,
+    onPlanWeek: noop,
     onSaveOutfit: noop,
     onAdd: noop,
     onOpenPiece: noop,
@@ -162,8 +163,8 @@ describe('the day’s occasion', () => {
   })
 
   it('turns the other way at a tap, for the view alone: the ideas follow, and nothing is written', () => {
-    const [onLog, onSaveOutfit, onDay, onOpenPiece] = [vi.fn(), vi.fn(), vi.fn(), vi.fn()]
-    const props = composerProps({ onLog, onSaveOutfit, onDay, onOpenPiece })
+    const [onLog, onSaveOutfit, onDay, onOpenPiece, onPlanWeek] = [vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn()]
+    const props = composerProps({ onLog, onSaveOutfit, onDay, onOpenPiece, onPlanWeek })
     const before = ideaPieces(settled(OutfitComposer, props))
     expect(before.length).toBeGreaterThan(0)
     expect(before).not.toContain('gym-top')
@@ -175,7 +176,7 @@ describe('the day’s occasion', () => {
     expect(offIdeas.length).toBeGreaterThan(0)
     expect(offIdeas).not.toContain('suit')
     expect(offIdeas).not.toContain('slacks')
-    for (const f of [onLog, onSaveOutfit, onDay, onOpenPiece]) expect(f).not.toHaveBeenCalled()
+    for (const f of [onLog, onSaveOutfit, onDay, onOpenPiece, onPlanWeek]) expect(f).not.toHaveBeenCalled()
   })
 })
 
