@@ -2,15 +2,22 @@ import { describe, expect, it } from 'vitest'
 import { PERSONAL_KINDS, SYNC_KINDS, readableRow } from '../../shared/kinds.mts'
 import {
   NOTICE_LINES_MAX,
+  NOTICE_MESSAGES_MAX,
   activityLine,
   dueWords,
+  mergeMessageNotice,
   mergeNotice,
+  messageNotice,
+  messageNoticeTitle,
+  messageTime,
+  messagesAbout,
   noticeBucket,
   noticeId,
   noticeRecipients,
   noticeTitle,
   noticeTypeOf,
   type ActivityEvent,
+  type ToldMessage,
 } from '../../shared/notices.mts'
 import { inTrash } from '../itemops'
 import { sanitizeItem, sanitizeNotice, sanitizeTask } from '../schema'
@@ -75,6 +82,29 @@ describe('sanitizeNotice', () => {
   it('drops a target it cannot open', () => {
     expect(sanitizeNotice({ ...notice(), target: { kind: 'journal', id: 'x' } })?.target).toBeUndefined()
     expect(sanitizeNotice({ ...notice(), target: { kind: 'task' } })?.target).toBeUndefined()
+  })
+
+  it('keeps a household message’s notice whole: its kind, the thread it opens, and the messages it tells of', () => {
+    const said = notice({
+      id: noticeId(JOE, messagesAbout(MARIA), 1),
+      type: 'message',
+      target: { kind: 'message', id: 'message~2026-09-23T16:00:00.000Z~abcdefghij' },
+      title: 'Maria sent 2 messages',
+      lines: ['Home by six', 'Bring milk'],
+      messageIds: ['message~2026-09-23T15:59:00.000Z~abcdefghij', 'message~2026-09-23T16:00:00.000Z~abcdefghij'],
+      ownerId: JOE,
+    })
+    expect(sanitizeItem(said)).toEqual(said)
+    // through JSON, as a sync round and the device's copy carry it
+    expect(sanitizeItem(JSON.parse(JSON.stringify(said)))).toEqual(said)
+  })
+
+  it('keeps the newest fifty message ids, each an id, and nothing that is not one', () => {
+    const ids = Array.from({ length: 60 }, (_, i) => `m${i}`)
+    expect(sanitizeNotice({ ...notice({ type: 'message' }), messageIds: ids })?.messageIds).toEqual(ids.slice(-NOTICE_MESSAGES_MAX))
+    expect(sanitizeNotice({ ...notice({ type: 'message' }), messageIds: ['m1', 42, ' ', 'x'.repeat(201), null, ' m2 '] })?.messageIds).toEqual(['m1', 'm2'])
+    // a field this build knows, so a broken one is dropped rather than carried along
+    expect(sanitizeItem({ ...notice({ type: 'message' }), messageIds: 'm1' })).not.toHaveProperty('messageIds', 'm1')
   })
 })
 
@@ -218,5 +248,91 @@ describe('one notice per member, task and quarter of an hour', () => {
 
   it('a tombstone takes the news as new', () => {
     expect(mergeNotice(notice({ deletedAt: T, lines: ['old'] }), notice({ lines: ['new'] })).lines).toEqual(['new'])
+  })
+})
+
+describe('a household message’s notice', () => {
+  const NOW = new Date('2026-09-23T16:02:00.000Z')
+  const told = (over: Partial<ToldMessage> = {}): ToldMessage => ({
+    id: 'message~2026-09-23T16:01:30.000Z~abcdefghij',
+    body: 'Home by six',
+    createdAt: '2026-09-23T16:01:30.000Z',
+    senderId: MARIA,
+    senderName: 'Maria',
+    ...over,
+  })
+
+  it('a headline with the sender’s name, counting the messages', () => {
+    expect(messageNoticeTitle('Maria', 1)).toBe('Maria sent a message')
+    expect(messageNoticeTitle('Maria', 3)).toBe('Maria sent 3 messages')
+    expect(messageNoticeTitle('  ', 2)).toBe('Someone sent 2 messages')
+  })
+
+  it('dated when it was said, never later than now nor more than a day back', () => {
+    const now = NOW.getTime()
+    expect(messageTime('2026-09-23T16:01:30.000Z', now)).toBe(Date.parse('2026-09-23T16:01:30.000Z'))
+    expect(messageTime('2026-09-23T19:00:00.000Z', now)).toBe(now)
+    expect(messageTime('2026-09-01T00:00:00.000Z', now)).toBe(now - 24 * 3_600_000)
+    expect(messageTime('not a time', now)).toBe(now)
+    expect(messageTime(undefined, now)).toBe(now)
+  })
+
+  it('one line of the message’s words, in the notice for its sender and quarter of an hour', () => {
+    expect(messageNotice(JOE, told({ body: 'Home\n\nby   six' }), NOW)).toEqual({
+      kind: 'notice',
+      id: `notice~${JOE}~messages-${MARIA}~${noticeBucket(Date.parse('2026-09-23T16:01:30.000Z'))}`,
+      at: '2026-09-23T16:01:30.000Z',
+      type: 'message',
+      actorId: MARIA,
+      target: { kind: 'message', id: told().id },
+      title: 'Maria sent a message',
+      lines: ['Home by six'],
+      messageIds: [told().id],
+      createdAt: NOW.toISOString(),
+      updatedAt: NOW.toISOString(),
+    })
+    // a paragraph is clipped to a line a lock screen can show
+    expect(messageNotice(JOE, told({ body: 'x'.repeat(500) }), NOW).lines?.[0]).toHaveLength(160)
+    // filed by when it was said: told late, it still lands in its own quarter hour
+    const late = new Date('2026-09-23T16:40:00.000Z')
+    expect(messageNotice(JOE, told(), late).id).toBe(messageNotice(JOE, told(), NOW).id)
+  })
+
+  it('more messages fold in: a line each, counted, the later time, unread again', () => {
+    const first = { ...messageNotice(JOE, told(), NOW), readAt: '2026-09-23T16:03:00.000Z' }
+    const second = messageNotice(JOE, told({ id: 'm2', body: 'Bring milk', createdAt: '2026-09-23T16:04:00.000Z' }), new Date('2026-09-23T16:04:05.000Z'))
+    const merged = mergeMessageNotice(first, second, 'Maria')
+    expect(merged).toMatchObject({
+      title: 'Maria sent 2 messages',
+      lines: ['Home by six', 'Bring milk'],
+      messageIds: [told().id, 'm2'],
+      at: '2026-09-23T16:04:00.000Z',
+      target: { kind: 'message', id: 'm2' },
+      createdAt: first.createdAt,
+      readAt: undefined,
+    })
+    // one told late, after a newer one, keeps the newer time and target
+    const earlier = messageNotice(JOE, told({ id: 'm0', body: 'Leaving work', createdAt: '2026-09-23T16:00:10.000Z' }), new Date('2026-09-23T16:05:00.000Z'))
+    expect(mergeMessageNotice(merged, earlier, 'Maria')).toMatchObject({ title: 'Maria sent 3 messages', at: '2026-09-23T16:04:00.000Z', target: { kind: 'message', id: 'm2' } })
+  })
+
+  it('the same message twice is nothing new: the notice comes back as it was, read or not', () => {
+    const once = { ...messageNotice(JOE, told(), NOW), readAt: '2026-09-23T16:03:00.000Z' }
+    expect(mergeMessageNotice(once, messageNotice(JOE, told(), new Date('2026-09-23T16:09:00.000Z')), 'Maria')).toBe(once)
+    // the same words in another message are news
+    expect(mergeMessageNotice(once, messageNotice(JOE, told({ id: 'm2' }), NOW), 'Maria').lines).toEqual(['Home by six', 'Home by six'])
+  })
+
+  it('keeps the newest eight lines, and counts past them', () => {
+    let n = messageNotice(JOE, told({ id: 'm0', body: 'line 0' }), NOW)
+    for (let i = 1; i < 12; i++) n = mergeMessageNotice(n, messageNotice(JOE, told({ id: `m${i}`, body: `line ${i}` }), NOW), 'Maria')
+    expect(n.lines).toEqual(Array.from({ length: 8 }, (_, i) => `line ${i + 4}`))
+    expect(n.title).toBe('Maria sent 12 messages')
+    expect(n.messageIds).toHaveLength(12)
+  })
+
+  it('a tombstone takes the message as new', () => {
+    const tomb = { ...messageNotice(JOE, told(), NOW), deletedAt: T }
+    expect(mergeMessageNotice(tomb, messageNotice(JOE, told({ id: 'm2', body: 'Bring milk' }), NOW), 'Maria')).toMatchObject({ lines: ['Bring milk'], messageIds: ['m2'], title: 'Maria sent a message' })
   })
 })

@@ -81,7 +81,7 @@ import { CHAT_ACTIONS_MAX, CHAT_ACTION_TYPES, type ChatAction, type ChatNameRef,
 import { legacyPostToTask } from '../shared/domain.mts'
 import { MAX_SIDES } from '../shared/kitchen.mts'
 import { SYNC_KINDS } from '../shared/kinds.mts'
-import { NOTICE_LINE_MAX, NOTICE_LINES_MAX } from '../shared/notices.mts'
+import { NOTICE_LINE_MAX, NOTICE_LINES_MAX, NOTICE_MESSAGES_MAX } from '../shared/notices.mts'
 import { tidyPlaceAddress, tidyPlaceAliases } from '../shared/places.mts'
 import { isDayKey } from '../shared/weeks.mts'
 import { tidyCoords } from './geo'
@@ -1317,13 +1317,14 @@ export function sanitizeSnooze(raw: unknown): Snooze | null {
 }
 
 const NOTICE_TYPE_SET = new Set<string>(NOTICE_TYPES)
-const NOTICE_TARGET_KINDS = new Set<string>(['task', 'event', 'review'])
+// a message's target opens the household's thread (src/components/planner/hubRouting.ts)
+const NOTICE_TARGET_KINDS = new Set<string>(['task', 'event', 'review', 'message'])
 
 function noticeTarget(v: unknown): Notice['target'] {
   if (!v || typeof v !== 'object') return undefined
   const r = v as Record<string, unknown>
   const id = str(r.id)?.trim()
-  return typeof r.kind === 'string' && NOTICE_TARGET_KINDS.has(r.kind) && id ? { kind: r.kind as 'task' | 'event' | 'review', id } : undefined
+  return typeof r.kind === 'string' && NOTICE_TARGET_KINDS.has(r.kind) && id ? { kind: r.kind as NonNullable<Notice['target']>['kind'], id } : undefined
 }
 
 /**
@@ -1331,7 +1332,8 @@ function noticeTarget(v: unknown): Notice['target'] {
  * only marks one read. A tombstone — the nightly job's, 30 days on — carries
  * no words and is kept as one, or a device still holding the notice would
  * throw the tombstone away and go on showing it. Anything else needs a kind
- * the hub knows and a headline; the newest NOTICE_LINES_MAX lines are kept.
+ * the hub knows and a headline; the newest NOTICE_LINES_MAX lines are kept,
+ * and on a message notice the ids of the newest NOTICE_MESSAGES_MAX messages.
  */
 export function sanitizeNotice(raw: unknown): Notice | null {
   if (!raw || typeof raw !== 'object') return null
@@ -1345,6 +1347,10 @@ export function sanitizeNotice(raw: unknown): Notice | null {
     .map(l => str(l)?.trim().slice(0, NOTICE_LINE_MAX))
     .filter((l): l is string => !!l)
     .slice(-NOTICE_LINES_MAX)
+  // what a message notice tells of already, so the same message told twice is added once
+  const messageIds = strList(r.messageIds)
+    .filter(m => m.length <= 200)
+    .slice(-NOTICE_MESSAGES_MAX)
   const now = new Date().toISOString()
   const at = isoDate(r.at) ?? isoDate(r.createdAt) ?? now
   return {
@@ -1356,6 +1362,7 @@ export function sanitizeNotice(raw: unknown): Notice | null {
     target: noticeTarget(r.target),
     title: (title ?? '').slice(0, 200),
     lines: lines.length > 0 ? lines : undefined,
+    messageIds: messageIds.length > 0 ? messageIds : undefined,
     readAt: isoDate(r.readAt),
     ownerId: idOrUndefined(r.ownerId),
     createdAt: isoDate(r.createdAt) ?? at,

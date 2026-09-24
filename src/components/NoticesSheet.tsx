@@ -13,6 +13,7 @@ const ICONS: Record<NoticeType | 'reminder', IconName> = {
   done: 'checkbox',
   comment: 'chat',
   changed: 'refresh',
+  message: 'chat',
   digest: 'today',
   alarm: 'alert',
   reminder: 'bell',
@@ -30,8 +31,10 @@ interface Props extends ReminderSources {
 
 /**
  * The notification hub, opened from the bell on Home: what the other member
- * did to a task you share, the morning digest, alarms, and each reminder this
- * device rang in the last week — so one swiped away unread can still be read.
+ * did to a task you share, what they said in the household's chat, the
+ * morning digest, alarms, and each reminder this device rang in the last week
+ * — so one swiped away unread can still be read. A message row is headed with
+ * the sender's name, a line a message, and opens the chat on its Household side.
  * Newest first, under Today, Yesterday and then the date.
  *
  * A notice stays unread until it is tapped (or all are marked read); a
@@ -70,7 +73,8 @@ export function NoticesSheet({ notices, onRead, onReadAll, onOpen, onClose, ...s
             <Icon name="bell" size={28} />
             <p>You’re all caught up.</p>
             <p className="field-hint">
-              When someone finishes, comments on or changes a task you share, it shows here — with the morning digest, and each reminder this device rings, for a week.
+              When someone messages the household, or finishes, comments on or changes a task you share, it shows here — with the morning digest, and each reminder this
+              device rings, for a week.
             </p>
           </div>
         ) : (

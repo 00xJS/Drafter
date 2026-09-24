@@ -34,6 +34,11 @@
   background: var(--tone-sky-bg);
   color: var(--tone-sky);
 }
+/* the household's chat: the chat's own bubble, in a tone of its own beside a task's comment */
+.notice-icon.is-message {
+  background: var(--tone-indigo-bg);
+  color: var(--tone-indigo);
+}
 .notice-icon.is-assigned {
   background: var(--tone-violet-bg);
   color: var(--tone-violet);
