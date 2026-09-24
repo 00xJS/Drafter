@@ -573,10 +573,18 @@ export function proposeWeek(
   const people = proposePeople({ days, people: ofKind('person'), tasks, seen, now, tz, eveningLoad, dueCount, skip })
   const overdue = proposeResched({ days, todayKey, tasks, userId, dueCount, dayOf, skip })
 
+  // bills proper: a payday is money coming in and a set-aside is money kept
+  // (src/types.ts isIncomeKind, isSavingKind), so neither is a bill falling due
   const bills = tasks
     .filter(
       (t): t is Task & { bill: NonNullable<Task['bill']>; dueAt: string } =>
-        !!t.bill && OPEN.includes(t.status) && !!t.dueAt && inWeek.has(dayOf(t.dueAt)) && !skip.has(`bill:${t.id}`),
+        !!t.bill &&
+        t.bill.kind !== 'income' &&
+        t.bill.kind !== 'saving' &&
+        OPEN.includes(t.status) &&
+        !!t.dueAt &&
+        inWeek.has(dayOf(t.dueAt)) &&
+        !skip.has(`bill:${t.id}`),
     )
     .map(t => ({
       key: `bill:${t.id}`,

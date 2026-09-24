@@ -217,6 +217,15 @@ describe('bills and Top 3', () => {
     expect(plan.bills).toEqual([{ key: 'bill:b-water', taskId: 'b-water', title: 'Water', dueDay: '2026-09-24', amount: 45, autopay: true }])
   })
 
+  it('leaves out a payday and a set-aside: money in, and money kept, are not bills due', () => {
+    const money = [
+      ...items(),
+      task('b-pay', { title: 'Payday', dueAt: utc('2026-09-25', '00:00'), estimateCost: 1800, bill: { kind: 'income' } }),
+      task('b-save', { title: 'Emergency fund', dueAt: utc('2026-09-23', '00:00'), estimateCost: 100, bill: { kind: 'saving', goal: { target: 1000 } } }),
+    ]
+    expect((proposeWeek(money, opts) as WeekPlan).bills.map(b => b.taskId)).toEqual(['b-water'])
+  })
+
   it('proposes a Top 3 from Next up only while last week’s review has none', () => {
     expect(plan.top3.map(t => [t.key, t.taskId])).toEqual([
       ['top:0', 's2'],
