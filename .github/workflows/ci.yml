@@ -2,10 +2,11 @@
 # before a deploy), then the two database smoke tests Netlify cannot run
 # because it has no Postgres. scripts/lib/pgtest.sh boots its own throwaway
 # cluster from the binaries on PATH, so there is no service container. Once
-# all that has passed, the browser tests, in a job of their own. On main, once
-# every job has passed: the site's deploy, when the owner has switched gated
-# deploys on (the deploy job, below), and the bot's (deploy-bot.yml follows
-# this workflow).
+# all that has passed, the browser tests, in a job of their own, and the cloud
+# lane's against a local Supabase stack, in another. On main, once every job
+# the deploy job needs has passed: the site's deploy, when the owner has
+# switched gated deploys on (the deploy job, below), and the bot's
+# (deploy-bot.yml follows this workflow).
 #
 # The repository is public, so every action below is pinned to a commit, not
 # a tag: a tag can be moved to other code, a commit cannot. The version is in
@@ -123,12 +124,83 @@ jobs:
           path: playwright-report/
           retention-days: 14
 
-  # Gated deploys (README → Deploy): once main has passed everything above,
-  # Netlify is asked to build it through the site's build hook. Only while the
-  # owner has switched the gate on: the NETLIFY_BUILD_HOOK secret here, and
-  # DRAFTER_GATED_DEPLOYS=1 on Netlify, which then skips the build a push
-  # starts (scripts/netlify-ignore.mjs). Without the secret this does nothing,
-  # and Netlify builds each push to main itself, as before.
+  # The cloud lane (npm run e2e:cloud): the app built in cloud mode against a
+  # real Supabase stack on the runner — sign-in, the sync_posts round, the
+  # last-write-wins trigger and Realtime, two members of one household in two
+  # browsers. `supabase start` applies every migration to a fresh database
+  # first, and fails here if one does not apply. Netlify's functions are
+  # answered in the page (e2e/cloud/api.ts). A failure keeps the HTML report,
+  # traces included.
+  #
+  # Advisory until it has proven itself green: not among the deploy job's
+  # needs, and continue-on-error, since deploy-bot.yml deploys only after a
+  # CI run that succeeded as a whole. Once it has, drop continue-on-error and
+  # add it to the deploy job's needs, together.
+  e2e-cloud:
+    needs: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      # pinned, as in deploy-db.yml: the version the owner's Mac runs
+      - uses: supabase/setup-cli@ab058987d8d6c725971f6cf9d0b5c98467e30bd1 # v1.7.1
+        with:
+          version: 2.109.0
+
+      # Only what the lane talks to: Postgres, GoTrue, PostgREST, Realtime,
+      # Kong in front of them, and Storage, whose tables the migrations put
+      # policies on. No dashboard, image resizing, mail, functions, logs or pooler.
+      - name: Start a local Supabase stack
+        run: supabase start -x studio -x imgproxy -x mailpit -x edge-runtime -x logflare -x vector -x postgres-meta -x supavisor
+
+      # The four settings e2e/cloud/lane.ts declares, each of which must be
+      # there. The legacy JWT keys, which every local service takes, while the
+      # CLI prints them; else the new ones (src/supabase.ts and keyHeaders take both).
+      - name: Point the lane at it
+        run: |
+          stack="$(supabase status -o json)"
+          put() {
+            local value
+            value="$(jq -er "$2" <<<"$stack")"
+            echo "$1=$value" >> "$GITHUB_ENV"
+          }
+          put E2E_SUPABASE_URL .API_URL
+          put E2E_SUPABASE_ANON_KEY '.ANON_KEY // .PUBLISHABLE_KEY'
+          put E2E_SUPABASE_SERVICE_ROLE_KEY '.SERVICE_ROLE_KEY // .SECRET_KEY'
+          put E2E_DATABASE_URL .DB_URL
+
+      # the lane writes its households with psql (e2e/cloud/stack.ts); the runner image has a client
+      - run: psql --version || { sudo apt-get update && sudo apt-get install -y --no-install-recommends postgresql-client; }
+
+      - run: npm ci
+
+      - run: npx playwright install --with-deps chromium
+
+      - run: npm run e2e:cloud
+
+      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        if: failure()
+        with:
+          name: playwright-report-cloud
+          path: playwright-report-cloud/
+          retention-days: 14
+
+  # Gated deploys (README → Deploy): once main has passed everything above but
+  # the advisory cloud lane, Netlify is asked to build it through the site's
+  # build hook. Only while the owner has switched the gate on: the
+  # NETLIFY_BUILD_HOOK secret here, and DRAFTER_GATED_DEPLOYS=1 on Netlify,
+  # which then skips the build a push starts (scripts/netlify-ignore.mjs).
+  # Without the secret this does nothing, and Netlify builds each push to main
+  # itself, as before.
   deploy:
     name: Deploy (Netlify build hook)
     needs: [check, bot, e2e]

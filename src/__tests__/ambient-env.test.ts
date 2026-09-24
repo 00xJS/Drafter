@@ -3,38 +3,66 @@
 // whose build carries the site's real settings. Twice a variable the setup did
 // not name failed only the build that ships: BACKUP_PASSPHRASE on 2026-09-21,
 // ANTHROPIC_API_KEY on 2026-09-23. A new read now fails here, on every machine.
-import { readdirSync, readFileSync } from 'node:fs'
+import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { LANE_ENV } from '../../e2e/cloud/lane'
 import { NVIDIA_KEY_NAME } from '../../netlify/functions/lib/ai.mjs'
 import { decidedHere, NVIDIA_KEYS_DECIDED_HERE } from './setup'
 
 /** Where the app's code lives: the functions, what they share with the app, the connector, the scripts, the app, the bot. */
 const ROOTS = ['netlify/functions', 'shared', 'mcp', 'scripts', 'src', 'supabase/functions']
 
+/**
+ * The browser tests and their configs. They are not the app's code and the
+ * setup does not clear what they read: each lane reads only what it declares
+ * — CI, and the cloud lane's four (e2e/cloud/lane.ts) — so a variable a
+ * laptop, GitHub or Netlify happens to hold cannot steer them.
+ */
+const BROWSER_TESTS = ['e2e', 'playwright.config.ts', 'playwright.cloud.config.ts']
+const LANES_DECLARE = new Set<string>(['CI', ...LANE_ENV])
+
 /** process.env.NAME, process.env['NAME'], and Netlify's and Deno's env.get('NAME'). */
 const READS = /process\.env\.([A-Z][A-Z0-9_]*)|process\.env\[['"]([A-Z][A-Z0-9_]*)['"]\]|(?:Netlify|Deno)\.env\.get\(['"]([A-Z][A-Z0-9_]*)['"]\)/g
 
 function* sources(dir: string): Generator<string> {
+  if (!statSync(dir).isDirectory()) {
+    yield dir
+    return
+  }
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const path = join(dir, entry.name)
     if (entry.isDirectory()) {
-      if (entry.name !== '__tests__' && entry.name !== 'node_modules') yield* sources(path)
+      // a build (e2e/.dist) is not source
+      if (entry.name !== '__tests__' && entry.name !== 'node_modules' && !entry.name.startsWith('.')) yield* sources(path)
     } else if (/\.(?:m?[jt]s|tsx)$/.test(entry.name)) yield path
   }
 }
 
+/** Every variable read in these files or folders, with the first file that reads it. */
+function readsIn(roots: string[]): Map<string, string> {
+  const reads = new Map<string, string>()
+  for (const root of roots)
+    for (const file of sources(root))
+      for (const match of readFileSync(file, 'utf8').matchAll(READS)) {
+        const name = match[1] ?? match[2] ?? match[3]
+        if (!reads.has(name)) reads.set(name, file)
+      }
+  return reads
+}
+
 describe('the environment a test sees', () => {
   it('is decided by the setup for every variable the code reads', () => {
-    const reads = new Map<string, string>()
-    for (const root of ROOTS)
-      for (const file of sources(root))
-        for (const match of readFileSync(file, 'utf8').matchAll(READS)) {
-          const name = match[1] ?? match[2] ?? match[3]
-          if (!reads.has(name)) reads.set(name, file)
-        }
+    const reads = readsIn(ROOTS)
     expect(reads.size).toBeGreaterThan(20)
     expect([...reads].filter(([name]) => !decidedHere(name)).map(([name, file]) => `${name}, read in ${file}`)).toEqual([])
+  })
+
+  it('reaches the browser tests only through what their lanes declare', () => {
+    const reads = readsIn(BROWSER_TESTS)
+    expect([...reads].filter(([name]) => !LANES_DECLARE.has(name)).map(([name, file]) => `${name}, read in ${file}`)).toEqual([])
+    // and the cloud lane reads each of its four by name, where this test can see it
+    expect(LANE_ENV.filter(name => !reads.has(name))).toEqual([])
   })
 
   it('names the NVIDIA keys as the server reads them', () => {

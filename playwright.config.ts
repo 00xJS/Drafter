@@ -17,6 +17,8 @@ const OUT = 'e2e/.dist'
 
 export default defineConfig<AppOptions>({
   testDir: 'e2e',
+  // the cloud lane's tests, which need a Supabase stack (playwright.cloud.config.ts)
+  testIgnore: 'cloud/**',
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
