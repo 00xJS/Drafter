@@ -40,6 +40,107 @@ export function stripThinking(text: unknown): string {
     .trim()
 }
 
+/** The tags stripThinking takes out: angle-bracket ones in any case, NIM's triangle ones as written. */
+const ANGLE_TAG = /<(\/?)(think|thinking|reasoning)>/i
+const TRIANGLE_TAG = /◁(\/?)(think|thinking)▷/
+const TAG_TEXTS = [
+  ...['think', 'thinking', 'reasoning'].flatMap(n => [`<${n}>`, `</${n}>`]),
+  ...['think', 'thinking'].flatMap(n => [`◁${n}▷`, `◁/${n}▷`]),
+]
+
+type Style = 'angle' | 'triangle'
+
+/** The first whole tag in `s`, if there is one. */
+function firstTag(s: string): { at: number; length: number; name: string; close: boolean; style: Style } | null {
+  const angle = ANGLE_TAG.exec(s)
+  const triangle = TRIANGLE_TAG.exec(s)
+  const [m, style] = angle && (!triangle || angle.index <= triangle.index) ? [angle, 'angle' as const] : triangle ? [triangle, 'triangle' as const] : [null, null]
+  if (!m || !style) return null
+  return { at: m.index, length: m[0].length, name: m[2].toLowerCase(), close: m[1] === '/', style }
+}
+
+/** How many characters at the end of `s` could be the start of one of `tags`, cut off by the end of a piece. */
+function tagStart(s: string, tags: readonly string[]): number {
+  for (let n = Math.min(s.length, 11); n > 0; n--) {
+    const tail = s.slice(-n)
+    if (tags.some(t => t.length > n && t.startsWith(t.startsWith('<') ? tail.toLowerCase() : tail))) return n
+  }
+  return 0
+}
+
+/**
+ * stripThinking for text that is still arriving, a piece at a time: what of
+ * each piece can be shown now. A block that opens is held back until it
+ * closes, however its tags are cut across pieces, and one that never closes
+ * holds back everything after it. A close with no open means everything
+ * before it was the thinking (the chat template opened the block in the
+ * prompt), so what was shown is taken back (`reset`) — once of each kind, as
+ * stripThinking takes out one. A piece that ends in what may be the start of a
+ * tag keeps that much back until the next piece says.
+ *
+ * What it shows is only ever a preview. The answer that counts is
+ * stripThinking over the whole text, and the two agree for every shape a model
+ * writes; tags mismatched inside a block, which none does, can read differently.
+ */
+export function thinkingFilter(): { push(text: string): { text: string; reset: boolean }; end(): string } {
+  let pending = ''
+  let inside: { name: string; style: Style } | null = null
+  const loneSeen: Record<Style, boolean> = { angle: false, triangle: false }
+  // what has been handed out since the last reset
+  let shown = 0
+  return {
+    push(text) {
+      let buf = pending + text
+      pending = ''
+      let out = ''
+      let reset = false
+      for (;;) {
+        if (inside) {
+          const close = inside.style === 'angle' ? `</${inside.name}>` : `◁/${inside.name}▷`
+          const at = (inside.style === 'angle' ? buf.toLowerCase() : buf).indexOf(close)
+          if (at < 0) {
+            const keep = tagStart(buf, [close])
+            pending = keep ? buf.slice(-keep) : ''
+            break
+          }
+          buf = buf.slice(at + close.length)
+          inside = null
+          continue
+        }
+        const tag = firstTag(buf)
+        if (!tag) {
+          const keep = tagStart(buf, TAG_TEXTS)
+          out += buf.slice(0, buf.length - keep)
+          pending = buf.slice(buf.length - keep)
+          break
+        }
+        if (!tag.close) {
+          out += buf.slice(0, tag.at)
+          inside = { name: tag.name, style: tag.style }
+        } else if (loneSeen[tag.style]) {
+          // a second close with no open stays in the text, as it does in stripThinking's
+          out += buf.slice(0, tag.at + tag.length)
+        } else {
+          loneSeen[tag.style] = true
+          if (shown > 0) reset = true
+          shown = 0
+          out = ''
+        }
+        buf = buf.slice(tag.at + tag.length)
+      }
+      shown += out.length
+      return { text: out, reset }
+    },
+    end() {
+      // a tag that never finished was text after all; a block that never closed keeps the rest
+      const rest = inside ? '' : pending
+      pending = ''
+      shown += rest.length
+      return rest
+    },
+  }
+}
+
 /**
  * Whether a plain-text reply is the model thinking rather than answering.
  *
