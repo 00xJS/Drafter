@@ -22,8 +22,10 @@
 @media (min-width: 641px) {
   .topbar {
     background: color-mix(in srgb, var(--surface) 82%, transparent);
-    backdrop-filter: saturate(1.4) blur(16px);
+    /* the prefixed one first: the build's CSS minifier keeps only the last of
+       the pair, and Chrome and Firefox read only the standard one */
     -webkit-backdrop-filter: saturate(1.4) blur(16px);
+    backdrop-filter: saturate(1.4) blur(16px);
   }
 }
 

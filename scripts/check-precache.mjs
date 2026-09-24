@@ -99,6 +99,15 @@ if (preloadedAssistant.length) {
   console.error(`check-precache: index.html loads the assistant's code before first paint:\n  ${preloadedAssistant.join('\n  ')}`)
   process.exit(1)
 }
+// Nor anything but the entry, the two vendor chunks and Rolldown's runtime
+// helpers, which it always keeps in a chunk of their own (0.7 KiB). Anything
+// else is the entry split apart again — vite.config.ts keeps what it imports
+// statically in it — and one more file to fetch before the first paint.
+const strays = firstLoad.filter(url => !/^assets\/(index|vendor-react|vendor-supabase|rolldown-runtime)-[\w-]+\.js$/.test(url))
+if (strays.length) {
+  console.error(`check-precache: index.html loads more than its entry, the vendor chunks and the bundler's runtime before first paint:\n  ${strays.join('\n  ')}`)
+  process.exit(1)
+}
 const planner = assets.filter(url => /^assets\/Planner-[\w-]+\.js$/.test(url))
 if (planner.length !== 1) {
   console.error(`check-precache: expected one assets/Planner-*.js, found ${planner.length} — a signed-in launch cannot be checked (has assistant code been pulled into it?)`)
