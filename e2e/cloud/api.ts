@@ -1,6 +1,6 @@
 import type { Page, Route } from '@playwright/test'
 import type { Stack } from './lane'
-import { lit, sqlJson } from './stack'
+import { lit, sql, sqlJson } from './stack'
 
 // Netlify's functions, answered in the page: `vite preview` serves the built
 // app and nothing under /api. Each answer is the one the function gives a
@@ -20,6 +20,15 @@ export interface ApiLog {
   unexpected: string[]
   /** What the app sent /api/log: the client errors it would have reported to the owner. */
   reports: unknown[]
+  /** What the app told /api/notify, in order. */
+  notified: Notified[]
+}
+
+/** One call to /api/notify: the record it named, and whether the server held that record, live, as the call arrived. */
+export interface Notified {
+  messageId?: string
+  taskId?: string
+  onServer: boolean
 }
 
 /** The signed-in account a request is made as, from its bearer token (src/api.ts sends it). */
@@ -68,13 +77,28 @@ function householdStatus(stack: Stack, me: Caller): Promise<unknown> {
 }
 
 /** A POST's JSON body, or null when it has none that parses. */
-function bodyOf(text: string | null): { action?: unknown; reports?: unknown } | null {
+function bodyOf(text: string | null): Record<string, unknown> | null {
   try {
     const body = JSON.parse(text ?? '') as unknown
-    return body && typeof body === 'object' ? (body as { action?: unknown; reports?: unknown }) : null
+    return body && typeof body === 'object' && !Array.isArray(body) ? (body as Record<string, unknown>) : null
   } catch {
     return null
   }
+}
+
+/**
+ * The characters a record's id is made of. An id the page sent is asked about
+ * in SQL only when it is nothing but these, so nothing it carries can be SQL.
+ */
+const RECORD_ID = /^[A-Za-z0-9][A-Za-z0-9~:._-]{0,199}$/
+
+/** What a call to /api/notify named, and whether the stack held that record, not deleted, when the call arrived. */
+async function notified(stack: Stack, body: Record<string, unknown> | null): Promise<Notified> {
+  const messageId = typeof body?.messageId === 'string' ? body.messageId : undefined
+  const taskId = typeof body?.taskId === 'string' ? body.taskId : undefined
+  const id = messageId ?? taskId
+  const onServer = !!id && RECORD_ID.test(id) && (await sql(stack, `select count(*) from public.posts where id = ${lit(id)} and not deleted;`)) === '1'
+  return { ...(messageId ? { messageId } : {}), ...(taskId ? { taskId } : {}), onServer }
 }
 
 /**
@@ -122,7 +146,8 @@ async function answer(stack: Stack, method: string, name: string, action: string
     // Settings → Assistants
     case 'GET agents':
       return { json: { configured: true, connections: [] } }
-    // what changed on a shared task, told to the other member (src/activity.ts); the hub's notice is not written here
+    // what changed on a shared task, or a message sent the household, told to
+    // the other member (src/activity.ts); the hub's notice is not written here
     case 'POST notify':
       return { json: { ok: true, notified: 0 } }
     default:
@@ -132,7 +157,7 @@ async function answer(stack: Stack, method: string, name: string, action: string
 
 /** Answer /api/* on the app's origin for this page, and keep a log of what was asked. */
 export async function stubApi(page: Page, stack: Stack, origin: string): Promise<ApiLog> {
-  const log: ApiLog = { calls: [], unexpected: [], reports: [] }
+  const log: ApiLog = { calls: [], unexpected: [], reports: [], notified: [] }
   await page.route(
     url => url.origin === origin && url.pathname.startsWith('/api/'),
     async (route: Route) => {
@@ -154,6 +179,8 @@ export async function stubApi(page: Page, stack: Stack, origin: string): Promise
       if (!me) return route.fulfill({ status: 401, json: { error: 'Sign in first.' } })
       let out: { json: unknown } | undefined
       try {
+        // what the app told the other member of, and whether the server had it yet
+        if (method === 'POST' && name === 'notify') log.notified.push(await notified(stack, body))
         out = await answer(stack, method, name, action, me, origin)
       } catch (e) {
         // the lane's own failure (psql, say), not the app's: listed, so the test says so
