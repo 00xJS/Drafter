@@ -290,7 +290,19 @@ export function useItems(myId: string | null = null): Store {
   // Telling the other member what you changed on a task you share
   // (src/activity.ts): these two are where a local edit is made, so they note
   // it; a pull from the server never comes through here, so it never does.
-  useEffect(() => (myId && getSupabase() ? watchActivity({ myId, pending: id => e.unconfirmed().ids.has(id) }) : undefined), [e, myId])
+  // A household message is noted by the chat that sends it, and told once the
+  // server has it, unless it is deleted first.
+  useEffect(
+    () =>
+      myId && getSupabase()
+        ? watchActivity({
+            myId,
+            pending: id => e.unconfirmed().ids.has(id),
+            live: id => e.getState().items.some(i => i.id === id && !i.deletedAt),
+          })
+        : undefined,
+    [e, myId],
+  )
   const upsert = useCallback(
     (item: Item) => {
       const before = item.kind === 'task' ? e.getState().items.find(i => i.id === item.id) : undefined

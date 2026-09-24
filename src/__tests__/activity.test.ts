@@ -1,10 +1,24 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { DEBOUNCE_MS, MAX_AGE_MS, PENDING_RECHECK_MS, coalesce, createActivityQueue, taskActivity, worthTelling, type ActivityDeps, type QueuedEvent } from '../activity'
+import {
+  DEBOUNCE_MS,
+  MAX_AGE_MS,
+  MESSAGE_RECHECK_MS,
+  MESSAGE_WAIT_MS,
+  PENDING_RECHECK_MS,
+  coalesce,
+  createActivityQueue,
+  taskActivity,
+  worthTelling,
+  type ActivityDeps,
+  type QueuedEvent,
+} from '../activity'
+import { newMessage } from '../chat'
 import { cookTaskId } from '../kitchen'
 import type { ActivityEvent } from '../../shared/notices.mts'
-import type { Task } from '../types'
+import type { Message, Task } from '../types'
+import { plannerSource } from './source'
 
 // What a member changes on a task they share is told to the other member
 // (/api/notify), from the device that made the change, once the task has been
@@ -118,21 +132,30 @@ describe('changes that cancel out while they wait', () => {
   })
 })
 
-/** A queue on a clock the test moves, a storage the test reads, and a server that answers as told. */
-function world(answer: (body: { taskId: string; events: ActivityEvent[] }) => number | Promise<number> = () => 200) {
+type Told = { taskId: string; events: ActivityEvent[] } | { messageId: string }
+
+/**
+ * A queue on a clock the test moves, a storage the test reads, and a server
+ * that answers as told. `sent` is what went about tasks, `told` the messages;
+ * `gone` holds the records deleted on this device.
+ */
+function world(answer: (body: Told) => number | Promise<number> = () => 200, store = new Map<string, string>()) {
   let now = Date.parse(T)
   const timers: { at: number; fn: () => void; id: number }[] = []
   let n = 0
-  const store = new Map<string, string>()
   const sent: { taskId: string; events: ActivityEvent[] }[] = []
+  const told: string[] = []
   const pending = new Set<string>()
+  const gone = new Set<string>()
   const deps: ActivityDeps = {
     storage: { getItem: k => store.get(k) ?? null, setItem: (k, v) => void store.set(k, v), removeItem: k => void store.delete(k) },
     send: async body => {
-      sent.push(body)
+      if ('messageId' in body) told.push(body.messageId)
+      else sent.push(body)
       return answer(body)
     },
     pending: id => pending.has(id),
+    live: id => !gone.has(id),
     now: () => now,
     setTimeout: (fn, ms) => {
       const id = ++n
@@ -159,7 +182,7 @@ function world(answer: (body: { taskId: string; events: ActivityEvent[] }) => nu
     }
     now = until
   }
-  return { q, sent, pending, store, advance, setNow: (ms: number) => (now = ms) }
+  return { q, sent, told, pending, gone, store, advance, setNow: (ms: number) => (now = ms) }
 }
 
 describe('the queue', () => {
@@ -272,6 +295,146 @@ describe('the queue', () => {
   })
 })
 
+describe('a household message', () => {
+  const said = (body = 'Home by six', at = new Date(T)): Message => newMessage(body, undefined, at)!
+  const KEY = `drafter:activity:messages:${ME}`
+
+  it('is told as soon as the server has it — no quiet time — and once', async () => {
+    const w = world()
+    const m = said()
+    w.pending.add(m.id)
+    w.q.noteMessage(m)
+    // the engine writes it two seconds after it is sent; until the server has it, nothing goes
+    await w.advance(MESSAGE_WAIT_MS + MESSAGE_RECHECK_MS * 2)
+    expect(w.told).toEqual([])
+    w.pending.delete(m.id)
+    await w.advance(MESSAGE_RECHECK_MS)
+    expect(w.told).toEqual([m.id])
+    expect(w.q.waitingMessages()).toEqual({})
+    expect(w.store.has(KEY)).toBe(false)
+    await w.advance(60_000)
+    expect(w.told).toEqual([m.id])
+  })
+
+  it('goes within a second or two of the server having it, never a task’s ten seconds', async () => {
+    const w = world()
+    const m = said()
+    w.q.noteMessage(m)
+    await w.advance(MESSAGE_WAIT_MS - 1)
+    expect(w.told).toEqual([])
+    await w.advance(1)
+    expect(w.told).toEqual([m.id])
+    expect(MESSAGE_WAIT_MS + MESSAGE_RECHECK_MS).toBeLessThan(DEBOUNCE_MS)
+  })
+
+  it('noted twice before it goes, it goes once', async () => {
+    const w = world()
+    const m = said()
+    w.q.noteMessage(m)
+    w.q.noteMessage(m)
+    await w.advance(MESSAGE_WAIT_MS)
+    expect(w.told).toEqual([m.id])
+  })
+
+  it('offline, it is kept in storage and tried again, backing off, until it goes', async () => {
+    let online = false
+    const w = world(() => (online ? 200 : 0))
+    const m = said()
+    w.q.noteMessage(m)
+    await w.advance(MESSAGE_WAIT_MS)
+    expect(w.told).toHaveLength(1)
+    // kept where a reload finds it, apart from the tasks'
+    expect(Object.keys(JSON.parse(w.store.get(KEY)!))).toEqual([m.id])
+    expect(w.store.has(`drafter:activity:${ME}`)).toBe(false)
+    await w.advance(29_000)
+    expect(w.told).toHaveLength(1)
+    await w.advance(1_000)
+    expect(w.told).toHaveLength(2)
+    online = true
+    await w.advance(60_000)
+    expect(w.told).toEqual([m.id, m.id, m.id])
+    expect(w.q.waitingMessages()).toEqual({})
+  })
+
+  it('survives a reload while offline, and goes from the next launch once the server has it', async () => {
+    const before = world(() => 0)
+    const m = said()
+    before.q.noteMessage(m)
+    before.q.stop()
+    // the app is closed before anything went; the next launch reads the same storage
+    const again = world(() => 200, before.store)
+    again.pending.add(m.id)
+    await again.q.flush()
+    await again.advance(MESSAGE_WAIT_MS)
+    expect(again.told).toEqual([])
+    again.pending.delete(m.id)
+    await again.advance(PENDING_RECHECK_MS)
+    expect(again.told).toEqual([m.id])
+    expect(again.store.has(KEY)).toBe(false)
+  })
+
+  it('deleted before it went, it is never told', async () => {
+    const w = world()
+    const m = said()
+    w.pending.add(m.id)
+    w.q.noteMessage(m)
+    await w.advance(MESSAGE_WAIT_MS)
+    // deleted while it waited: the tombstone reaches the server, and nothing is said of it
+    w.gone.add(m.id)
+    w.pending.delete(m.id)
+    await w.advance(60_000)
+    expect(w.told).toEqual([])
+    expect(w.q.waitingMessages()).toEqual({})
+  })
+
+  it('a tombstone is never noted at all', async () => {
+    const w = world()
+    w.q.noteMessage({ ...said(), deletedAt: T })
+    await w.advance(60_000)
+    expect(w.told).toEqual([])
+    expect(w.store.size).toBe(0)
+  })
+
+  it('what the server will never take is let go, and a day unsent is no longer news', async () => {
+    const gone = world(() => 404)
+    gone.q.noteMessage(said())
+    await gone.advance(MESSAGE_WAIT_MS)
+    expect(gone.q.waitingMessages()).toEqual({})
+
+    const none = world(() => 501)
+    none.q.noteMessage(said())
+    none.q.note(task(), task({ status: 'done' }))
+    await none.advance(MESSAGE_WAIT_MS)
+    // a site that keeps no notices: nothing waiting ever will go, task or message
+    expect(none.told).toHaveLength(1)
+    expect(none.q.waitingMessages()).toEqual({})
+    expect(none.q.waiting()).toEqual({})
+
+    const late = world(() => 0)
+    late.q.noteMessage(said())
+    await late.advance(MAX_AGE_MS + 60_000)
+    const tries = late.told.length
+    expect(late.q.waitingMessages()).toEqual({})
+    await late.advance(MAX_AGE_MS)
+    expect(late.told).toHaveLength(tries)
+  })
+
+  it('goes ahead of a task waiting on a slow answer, and a task still goes after it', async () => {
+    let release: (n: number) => void = () => {}
+    const w = world(body => ('messageId' in body ? 200 : new Promise<number>(r => (release = r))))
+    w.q.note(task(), task({ status: 'done' }))
+    const m = said()
+    w.q.noteMessage(m)
+    await w.advance(MESSAGE_WAIT_MS)
+    expect(w.told).toEqual([m.id])
+    await w.advance(DEBOUNCE_MS)
+    expect(w.sent.map(x => x.taskId)).toEqual(['bins'])
+    release(200)
+    for (let i = 0; i < 10; i++) await Promise.resolve()
+    expect(w.q.waiting()).toEqual({})
+  })
+})
+
 describe('where edits are noted', () => {
   const store = readFileSync(fileURLToPath(new URL('../store.ts', import.meta.url)), 'utf8')
 
@@ -282,5 +445,13 @@ describe('where edits are noted', () => {
     // the views get the noting upsert, never the engine's own
     expect(store).toMatch(/\n\s*upsert,\n/)
     expect(store).not.toMatch(/upsert: e\.upsert/)
+  })
+
+  it('a household message at the chat’s Send alone, with somebody to tell: the one place one is written', () => {
+    const planner = plannerSource()
+    expect(planner.match(/noteMessageSent\(/g)).toHaveLength(1)
+    expect(planner).toMatch(/onSendMessage=\{m => \{\s*upsert\(m\)[\s\S]{0,300}if \(p\.inHousehold\) noteMessageSent\(m, store\.myId\)/)
+    // the store notes none: what a pull brings never passes the chat's Send
+    expect(store).not.toMatch(/noteMessageSent/)
   })
 })

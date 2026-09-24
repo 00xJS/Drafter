@@ -1,4 +1,5 @@
 import { Suspense, useState, type ReactNode } from 'react'
+import { noteMessageSent } from '../../activity'
 import type { CalendarEntry, Meal, Task } from '../../types'
 import type { ChatOpen, ChatShell } from '../Chat'
 import { ErrorBoundary } from '../ErrorBoundary'
@@ -33,6 +34,9 @@ function Layer({ name, children }: { name: string; children: ReactNode }) {
  * status change's GitHub write-back — so a change made from the chat behaves
  * as the same change made anywhere else. Edit opens the app's own task and
  * event editors here, over the chat, and saving one is the apply.
+ *
+ * A household message sent from here is told to the rest of the household
+ * once the server has it (src/activity.ts).
  */
 export function ChatScreen({ p }: { p: PlannerCtx }) {
   const { store, upsert, remove, restore, household, allEvents, setPushed, chatSide, setChatSide, markChatSeen, showToast } = p
@@ -128,7 +132,12 @@ export function ChatScreen({ p }: { p: PlannerCtx }) {
           myId: store.myId,
         }}
         tz={Intl.DateTimeFormat().resolvedOptions().timeZone}
-        onSendMessage={m => upsert(m)}
+        onSendMessage={m => {
+          upsert(m)
+          // told to the rest of the household once the server has it: from
+          // here, the device that wrote it, and only with somebody to tell
+          if (p.inHousehold) noteMessageSent(m, store.myId)
+        }}
         onRemoveMessage={id => {
           remove(id)
           showToast('Message deleted', () => restore([id]))
