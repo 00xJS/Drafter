@@ -173,8 +173,10 @@ if (runtimes.length !== 1 || whole.length !== 1) {
 // client out and reads about 200 KiB lighter. Raised from 2048 when the React
 // Compiler took on the screens it had been leaving as written: its caching is
 // app code, about 90 KiB of it (38 KiB gzipped) for the first 47 of them, with
-// room for the rest.
-const PRECACHE_BUDGET_KIB = 2176
+// room for the rest. Raised again from 2176 for the wardrobe's outfit board and
+// Finance's money timeline, about 85 KiB more app code between them: 2178 KiB
+// with both, so the budget sat at the app's own size with no room left.
+const PRECACHE_BUDGET_KIB = 2304
 const entries = [...sw.matchAll(/\burl:\s*"([^"]+)"|"url":\s*"([^"]+)"/g)].map(m => m[1] ?? m[2])
 const absent = entries.filter(url => !existsSync(join(dist, url)))
 if (absent.length) {
