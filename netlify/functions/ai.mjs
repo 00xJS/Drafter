@@ -2,12 +2,20 @@
 // reasoning } and gets back { text, provider }. Provider selection and fallback
 // live in lib/ai.mjs.
 //
+// With `stream: true` (the chat and Ask) the answer comes back as it is
+// written, as server-sent events: `delta`s of its words, a `reset` when what
+// was sent turned out to be the model's thinking, and `done` with the whole
+// answer — the same text the ordinary answer would have carried — or `error`
+// if it breaks off. Until the first words are ready everything is as before,
+// failures included, so an app that cannot read a stream is answered as
+// before too. JSON, and a host that names Anthropic, are answered whole.
+//
 // The owner's AI keys sit behind this, so it fails closed: no valid session is
 // a 401, and a host missing its auth settings answers 503. It used to skip the
 // session check in that case, which would have opened the keys to anyone.
 
 import { withCors } from './lib/cors.mjs'
-import { complete, resolveProvider } from './lib/ai.mjs'
+import { complete, completeStream, resolveProvider } from './lib/ai.mjs'
 import { sharedWindow } from './lib/ratelimit.mjs'
 import { requireUser } from './lib/session.mjs'
 
@@ -24,6 +32,17 @@ const MAX_TEXT_BYTES = 64 * 1024
 // (lib/ratelimit.mjs, public.rate_limit_take), so a runaway loop or a leaked
 // session cannot drain the provider's quota by landing on fresh cold starts.
 const perUser = sharedWindow({ bucket: 'ai', limit: 30, windowMs: 10 * 60_000 })
+
+/**
+ * How a streamed answer goes out: as events, and never held back — no cache,
+ * and no proxy between here and the app may transform (compress) it, which
+ * would wait for the whole answer before sending any of it.
+ */
+const STREAMED = {
+  'content-type': 'text/event-stream; charset=utf-8',
+  'cache-control': 'no-cache, no-transform',
+  'x-accel-buffering': 'no',
+}
 
 const handler = async req => {
   // the AI budget counts from here: checking the session spends some of it
@@ -54,9 +73,11 @@ const handler = async req => {
   }
   const maxTokens = Math.min(Math.max(Number(body?.maxTokens) || 2048, 256), MAX_TOKENS)
   const json = !!body?.json
-  // the utility calls (tags, steps, a capture, a recipe) ask for an answer
-  // without the model's thinking first; anything else is not a setting
+  // the utility calls (tags, steps, a capture, a recipe) and the assistant ask
+  // for an answer without the model's thinking first; anything else is not a setting
   const reasoning = body?.reasoning === 'off' || body?.reasoning === 'on' ? body.reasoning : undefined
+  // JSON has nothing worth showing until it is whole
+  const stream = body?.stream === true && !json
 
   // counted only for a call that would actually reach the provider
   const slot = await perUser.take(user.id)
@@ -68,14 +89,17 @@ const handler = async req => {
     )
   }
 
+  /** @type {import('./lib/ai.mjs').StreamedCompletion} */
   let result
   try {
-    result = await complete({ system, prompt, maxTokens, json, reasoning, startedAt })
+    // counted once above, however many words it streams
+    result = stream ? await completeStream({ system, prompt, maxTokens, reasoning, startedAt }) : await complete({ system, prompt, maxTokens, json, reasoning, startedAt })
   } catch (err) {
     console.error(`ai: the request failed: ${err instanceof Error ? err.message : String(err)}`)
     return Response.json({ error: 'The assistant couldn’t answer — try again in a moment.' }, { status: 502 })
   }
   if (result.error) return Response.json({ error: result.error }, { status: result.status ?? 502 })
+  if (result.body) return new Response(result.body, { status: 200, headers: STREAMED })
   return Response.json({ text: result.text, provider: result.provider })
 }
 

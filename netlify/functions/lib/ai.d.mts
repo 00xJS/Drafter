@@ -59,3 +59,27 @@ export function anthropicRequest(input: CompletionInput & { model: string }): An
 export function completeNvidia(input: CompletionInput & { keyName?: NvidiaKeyName }): Promise<Completion>
 export function completeAnthropic(input: CompletionInput): Promise<Completion>
 export function complete(input: CompletionInput): Promise<Completion>
+
+/** An answer NVIDIA has begun to stream (lib/ai.mjs): its first words, the rest as they come, and its own clock. */
+export interface AnswerOnItsWay {
+  first: string
+  words: { next(): Promise<{ text: string; reset: boolean } | null>; raw(): string; close(): void }
+  /** Whether the answer's own clock ran out. */
+  late(): boolean
+  close(): void
+}
+
+/** What one attempt that may stream answers, inside lib/ai.mjs: a Completion, or an answer on its way. */
+export type Attempted =
+  | (Completion & { stream?: undefined; model?: undefined })
+  | { stream: AnswerOnItsWay; provider: 'nvidia'; model: string; text?: undefined; status?: undefined; error?: undefined; upstream?: undefined }
+
+/**
+ * What completeStream answers: a failure, or a whole answer where NVIDIA would not stream one (or the host names
+ * Anthropic), as complete() answers them; or `body`, the answer's event stream for the app, with the model writing it.
+ */
+export type StreamedCompletion =
+  | (Completion & { body?: undefined; model?: undefined })
+  | { body: ReadableStream<Uint8Array>; provider: 'nvidia'; model: string; text?: undefined; status?: undefined; error?: undefined; upstream?: undefined }
+
+export function completeStream(input: Omit<CompletionInput, 'json' | 'background'>): Promise<StreamedCompletion>
