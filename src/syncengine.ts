@@ -847,7 +847,7 @@ export function createSyncEngine(deps: SyncEngineDeps) {
 
   /** The journal a page going away left for this account, taken out of storage; another account's is thrown away. */
   function takeJournal(myId: string | null): Journal | null {
-    let raw: string | null = null
+    let raw: string | null
     try {
       raw = kv.getItem(JOURNAL_KEY)
     } catch {
@@ -948,7 +948,7 @@ export function createSyncEngine(deps: SyncEngineDeps) {
     // migration from the old localStorage cache — non-destructive: the legacy
     // key is only removed after the IndexedDB cache has persisted real data.
     // One that does not parse is no cache at all, not a failed read.
-    let legacy: Item[] | null = null
+    let legacy: Item[] | null
     try {
       const raw = kv.getItem(LEGACY_LS_KEY)
       legacy = raw === null ? null : migrateStored(JSON.parse(raw))

@@ -373,7 +373,7 @@ function useMirrorSync(
             }
           })
           window.clearTimeout(retry.current.timer)
-          let delay = 0
+          let delay: number
           if (pass.failed) delay = retry.current.delay = Math.min(30 * 60_000, retry.current.delay ? retry.current.delay * 2 : 60_000)
           else {
             retry.current.delay = 0

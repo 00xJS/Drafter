@@ -456,7 +456,7 @@ export async function askDrafter(question: string, docs: AskDoc[], facts: string
  * a lone string is the answer whatever it is called.
  */
 function askAnswerIn(text: string): { said: string; raw: Record<string, unknown> | null } {
-  let raw: Record<string, unknown> | null = null
+  let raw: Record<string, unknown> | null
   try {
     const value = extractJSON<unknown>(text)
     raw = value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null

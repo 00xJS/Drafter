@@ -1,4 +1,5 @@
 import js from '@eslint/js'
+import { defineConfig } from 'eslint/config'
 import globals from 'globals'
 import reactHooks from 'eslint-plugin-react-hooks'
 import tseslint from 'typescript-eslint'
@@ -77,7 +78,7 @@ const noRenderClock = {
   },
 }
 
-export default tseslint.config(
+export default defineConfig(
   // supabase/functions/bot is Deno: its own globals and jsr: imports, so
   // Deno lints and type-checks it (the bot job in .github/workflows/ci.yml).
   // e2e/.dist and the two report folders are what `npm run e2e` builds and writes.

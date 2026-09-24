@@ -73,7 +73,7 @@ export function nextUp<T extends Task>(
 
   const scored = open.map(t => {
     let score = 0
-    let reason = ''
+    let reason: string
     const due = t.dueAt ? Date.parse(t.dueAt) : NaN
     const days = Number.isFinite(due) ? Math.round((due - nowMs) / DAY_MS) : null
 

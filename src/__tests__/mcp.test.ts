@@ -722,6 +722,7 @@ describe('notes, focus and the week plan over MCP', () => {
     sent = serveHousehold(withPhoto)
     await expect(tool('update_note').run({ id: 'n1', text: 'Start again' }, ctxFor())).rejects.toThrow(/has photos/)
     await expect(tool('update_note').run({ id: 'n1', title: '', text: '' }, ctxFor())).rejects.toThrow(/has photos/)
+    expect(sent).toEqual([])
     sent = serveHousehold(household())
     await expect(tool('update_note').run({ id: 'n1', title: '', text: '' }, ctxFor())).rejects.toThrow(/blank/)
     await expect(tool('update_note').run({ id: 't1', title: 'Not a note' }, ctxFor())).rejects.toThrow(/is a task, not a note/)

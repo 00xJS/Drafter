@@ -145,7 +145,7 @@ export function guardChunkLoads(): void {
   })
   window.addEventListener('vite:preloadError', () => {
     if (leaving || warming > 0 || navigator.onLine === false) return
-    let storage: Storage | null = null
+    let storage: Storage | null
     try {
       storage = window.sessionStorage
     } catch {

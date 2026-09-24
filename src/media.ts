@@ -94,7 +94,7 @@ export async function uploadPending(deps: {
   let sent = 0
   for (const item of await deps.items()) {
     if (!item.pending) continue
-    let ok = false
+    let ok: boolean
     try {
       ok = await deps.upload(item)
     } catch {
