@@ -1,5 +1,5 @@
-import { formatMoney, isPayday } from './bills'
-import { ACCOUNT_TYPE_META, type Account, type BalanceCheck, type Task } from './types'
+import { formatMoney, isMoney, isPayday, isSaving } from './bills'
+import { ACCOUNT_TYPE_META, OPEN_STATUSES, type Account, type BalanceCheck, type Bill, type Task } from './types'
 import { dateKey } from './utils'
 
 // Money, beyond the month of bills (v3.27).
@@ -95,42 +95,81 @@ export function moneyTotals(accounts: readonly Account[]): MoneyTotals {
   return { net: round(net), liquid: round(liquid), owed: round(owed), unknown, asOf }
 }
 
-/** One dated money movement the forecast counts: a payday in, or a bill out. */
+/** One dated money movement the forecast counts: a payday in, a bill or a set-aside out. */
 export interface MoneyDay {
   day: string
   /** Positive in, negative out. */
   change: number
   /** Running liquid balance at the end of that day. */
   balance: number
-  rows: { title: string; amount: number; income: boolean }[]
+  rows: { title: string; amount: number; income: boolean; saving?: boolean }[]
+}
+
+/**
+ * One open bill, payday or set-aside with a date, as the timeline reads it:
+ * Coming up lists them, and the runway, the cash line and "safe to spend" add
+ * up the ones with an amount.
+ */
+export interface MoneyRow {
+  task: Task & { bill: Bill }
+  /** YYYY-MM-DD it counts on. One already overdue is owed NOW, so it lands on today. */
+  day: string
+  /** YYYY-MM-DD it was due. */
+  due: string
+  /** Its day is over and it is still open (shared/due.mts: a day is overdue once it has gone). */
+  overdue: boolean
+  income: boolean
+  saving: boolean
+  /** Undefined when no amount is written down: such a row is listed, and never counted. */
+  amount?: number
+}
+
+const byTitle = (a: MoneyRow, b: MoneyRow) => (a.task.title || '').localeCompare(b.task.title || '') || a.task.id.localeCompare(b.task.id)
+
+/**
+ * Every open bill, payday and set-aside due up to `days` from `now`, overdue
+ * ones first, then by day — money in before money out on the same day, the
+ * order the runway nets them in.
+ *
+ * Open is to do, doing or blocked: one still on the Wishlist, or cancelled, is
+ * not money anybody owes (the rule the Stats lens and the month of bills keep).
+ */
+export function moneyRows(tasks: readonly Task[], now: Date, days: number): MoneyRow[] {
+  const start = dateKey(now)
+  const end = dateKey(new Date(now.getFullYear(), now.getMonth(), now.getDate() + days))
+  const out: MoneyRow[] = []
+  for (const t of tasks) {
+    if (!isMoney(t) || !t.dueAt || !OPEN_STATUSES.includes(t.status)) continue
+    const due = dateKey(new Date(t.dueAt))
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(due)) continue
+    const overdue = due < start
+    const day = overdue ? start : due
+    if (day > end) continue
+    const amount = t.estimateCost !== undefined && Number.isFinite(t.estimateCost) ? t.estimateCost : undefined
+    out.push({ task: t, day, due, overdue, income: isPayday(t), saving: isSaving(t), amount })
+  }
+  return out.sort((a, b) => Number(b.overdue) - Number(a.overdue) || a.due.localeCompare(b.due) || Number(b.income) - Number(a.income) || byTitle(a, b))
 }
 
 /**
  * Liquid cash, day by day, from today to `days` out.
  *
- * Built from what is already written down: every open bill and payday with a
- * due date in the window, counted once, against the liquid balance as it
- * stands now. It does not invent a repeat — a series has exactly one open
- * occurrence at a time (bills.ts), so a fortnightly wage shows its next
- * payment and not the three after it. That is a floor, not a projection, and
- * it is the honest one: it can only be better than it says.
+ * Built from what is already written down: every open bill, payday and
+ * set-aside with a due date in the window, counted once, against the liquid
+ * balance as it stands now. A set-aside goes OUT here: it is money moved to
+ * where it will not be spent, which is exactly what this is about, even though
+ * no figure calls it spending. It does not invent a repeat — a series has
+ * exactly one open occurrence at a time (bills.ts), so a fortnightly wage shows
+ * its next payment and not the three after it. That is a floor, not a
+ * projection, and it is the honest one: it can only be better than it says.
  */
 export function cashRunway(accounts: readonly Account[], tasks: readonly Task[], days = 60, now = new Date()): MoneyDay[] {
-  const start = dateKey(now)
-  const end = dateKey(new Date(now.getFullYear(), now.getMonth(), now.getDate() + days))
-  const byDay = new Map<string, { title: string; amount: number; income: boolean }[]>()
-  for (const t of tasks) {
-    if (!t.bill || t.deletedAt || !t.dueAt || t.status === 'done' || t.status === 'canceled') continue
-    const amount = t.estimateCost
-    if (amount === undefined || !Number.isFinite(amount)) continue
-    const day = dateKey(new Date(t.dueAt))
-    // anything already overdue is owed NOW, so it lands on today rather than in the past
-    const on = day < start ? start : day
-    if (on > end) continue
-    const income = isPayday(t)
-    const rows = byDay.get(on) ?? []
-    rows.push({ title: t.title || (income ? 'Payday' : 'Bill'), amount, income })
-    byDay.set(on, rows)
+  const byDay = new Map<string, MoneyDay['rows']>()
+  for (const r of moneyRows(tasks, now, days)) {
+    if (r.amount === undefined) continue
+    const rows = byDay.get(r.day) ?? []
+    rows.push({ title: r.task.title || (r.income ? 'Payday' : r.saving ? 'Savings' : 'Bill'), amount: r.amount, income: r.income, ...(r.saving ? { saving: true } : {}) })
+    byDay.set(r.day, rows)
   }
   let balance = moneyTotals(accounts).liquid
   const out: MoneyDay[] = []

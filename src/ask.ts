@@ -21,7 +21,7 @@ import {
   WORK_MODE_META,
   Wear,
 } from './types'
-import { formatMoney, monthlyCost } from './bills'
+import { formatMoney, isSaving, monthlyCost, monthlyIncome, monthlySetAside, savedSoFar } from './bills'
 import { localDayKey, shiftDayKey } from './journal'
 import { countOf, personStats, seenTasks, upcomingOccasions } from './people'
 import { matchPlace, normalisePlaceText, outingsAt } from './places'
@@ -262,6 +262,10 @@ export function buildCorpus(src: AskSources, o: { now: Date; includeJournal: boo
       t.placeId && places.get(t.placeId) && `at: ${places.get(t.placeId)}`,
       money(bill ? 'amount' : 'estimate', t.estimateCost),
       money('paid', t.actualCost),
+      // a set-aside is money kept, and says what it is saving towards
+      bill?.kind === 'saving' && 'set aside into savings, not spent',
+      bill?.goal && money('saving towards', bill.goal.target),
+      bill?.goal?.by && `by ${bill.goal.by}`,
     )
     docs.push({
       kind: bill ? 'bill' : 'task',
@@ -458,7 +462,7 @@ const INTENT_WORDS: Record<AskIntent, string[]> = {
   meals: ['eat', 'ate', 'eaten', 'eating', 'dinner', 'dinners', 'lunch', 'breakfast', 'cook', 'cooked', 'cooking', 'meal', 'meals', 'recipe', 'recipes', 'food', 'takeaway', 'takeaways', 'dish'],
   people: ['saw', 'see', 'seen', 'seeing', 'visit', 'visited', 'visiting', 'call', 'called', 'rang', 'met', 'meet', 'catch'],
   journal: ['feel', 'felt', 'feeling', 'mood', 'wrote', 'write', 'written', 'journal', 'diary'],
-  money: ['pay', 'paid', 'paying', 'bill', 'bills', 'cost', 'costs', 'spend', 'spent', 'price', 'money', 'owe', 'subscription', 'subscriptions', 'afford', 'expensive'],
+  money: ['pay', 'paid', 'paying', 'bill', 'bills', 'cost', 'costs', 'spend', 'spent', 'price', 'money', 'owe', 'subscription', 'subscriptions', 'afford', 'expensive', 'payday', 'paydays', 'saving', 'savings'],
   places: ['went', 'go', 'gone', 'going', 'restaurant', 'restaurants', 'cafe', 'pub', 'bar', 'outing', 'outings'],
   tasks: ['task', 'tasks', 'todo', 'due', 'overdue', 'finish', 'finished', 'done', 'chore', 'chores', 'project', 'projects'],
   events: ['event', 'events', 'meeting', 'meetings', 'appointment', 'appointments', 'calendar', 'booked', 'party'],
@@ -847,6 +851,18 @@ export function factsFor(pq: ParsedQuestion, src: AskSources, now: Date, tz: str
   if (pq.intents.has('money')) {
     const monthly = monthlyCost(src.tasks)
     facts.push(monthly > 0 ? `Repeating bills come to about ${formatMoney(monthly)} a month.` : 'No repeating bill has an amount saved.')
+    // paydays and set-asides are the facet's other two signs: money in, and
+    // money kept. Neither is a bill, and the model is told which is which.
+    const paidIn = monthlyIncome(src.tasks)
+    if (paidIn > 0) facts.push(`Paydays bring in about ${formatMoney(paidIn)} a month.`)
+    const kept = monthlySetAside(src.tasks)
+    if (kept > 0) facts.push(`About ${formatMoney(kept)} a month is set aside into savings; that is saving, not spending.`)
+    const goals = src.tasks.filter(isSaving).filter(t => t.bill.goal && t.status !== 'done' && t.status !== 'canceled')
+    for (const g of goals.slice(0, 5)) {
+      const { saved } = savedSoFar(src.tasks, g)
+      const goal = g.bill.goal!
+      facts.push(`Saving towards ${g.title || 'a goal'}: ${formatMoney(saved)} of ${formatMoney(goal.target)} so far${goal.by ? `, to reach by ${goal.by}` : ''}.`)
+    }
   }
   return facts.map(maskContacts)
 }

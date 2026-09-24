@@ -1,4 +1,5 @@
 import { CalendarEntry, Person, Place, Project, Task } from './types'
+import { isSpending } from './bills'
 import { DAY_MS, isOverdue, startOfDay } from './taskutils'
 import { seenTasks, visitDays } from './people'
 import { outingsAt } from './places'
@@ -131,9 +132,12 @@ export function buildReview(range: Range, tasks: Task[], projects: Project[], pe
   const touched = new Set<string>()
   for (const t of tasks) if (t.projectId && inRange(t.updatedAt, range)) touched.add(t.projectId)
   const stalled = projects.filter(p => p.status === 'active' && !touched.has(p.id) && !inRange(p.updatedAt, range) && Date.parse(p.createdAt) < range.start.getTime())
+  // Spend is what went OUT on something: a payday received is money in, and a
+  // set-aside moved into savings is money kept, so neither is spent (isSpending)
+  const spent = done.filter(isSpending)
   const costs = {
-    estimate: done.reduce((s, t) => s + (t.estimateCost ?? 0), 0),
-    actual: done.reduce((s, t) => s + (t.actualCost ?? 0), 0),
+    estimate: spent.reduce((s, t) => s + (t.estimateCost ?? 0), 0),
+    actual: spent.reduce((s, t) => s + (t.actualCost ?? 0), 0),
   }
   const days = Math.round((range.end.getTime() - range.start.getTime()) / DAY_MS)
   const doneByDay = Array.from({ length: days }, () => 0)

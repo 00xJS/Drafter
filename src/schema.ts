@@ -50,6 +50,7 @@ import {
   Bill,
   BillKind,
   BILL_KINDS,
+  SavingGoal,
   Mood,
   Template,
   TemplateMilestone,
@@ -256,6 +257,16 @@ function urlOrUndefined(v: unknown): string | undefined {
 
 const BILL_KIND_SET = new Set<string>(BILL_KINDS)
 
+/** What a set-aside series saves towards: an amount over nothing, and a real day, or no goal at all. */
+function savingGoal(v: unknown): SavingGoal | undefined {
+  if (!v || typeof v !== 'object') return undefined
+  const r = v as Record<string, unknown>
+  const target = money(r.target)
+  if (target === undefined || target <= 0) return undefined
+  const by = dayKeyOnly(r.by)
+  return by ? { target, by } : { target }
+}
+
 /** A task's payment facet, or nothing: an unknown kind is dropped rather than guessed. */
 function bill(v: unknown): Bill | undefined {
   if (!v || typeof v !== 'object') return undefined
@@ -270,6 +281,10 @@ function bill(v: unknown): Bill | undefined {
     // whose payday it is, and where the money lands (v3.27)
     forMemberId: idOrUndefined(r.forMemberId),
     accountId: str(r.accountId)?.trim() || undefined,
+    // a template's or a goal's own emoji, and what a set-aside series saves
+    // towards: listed here or a sync strips them, as it would anything unlisted
+    emoji: str(r.emoji)?.trim() || undefined,
+    goal: r.kind === 'saving' ? savingGoal(r.goal) : undefined,
   }
 }
 

@@ -1,4 +1,4 @@
-import { isBill, withPaidDefault } from './bills'
+import { isBill, isSpending, withPaidDefault } from './bills'
 import { habitsConsistency, isDueOn, streakOf } from './habits'
 import { isVisit } from './review'
 import { dayOffset } from './taskutils'
@@ -168,11 +168,16 @@ export interface MoneyReport {
   dueNowTotal: number
 }
 
-/** A payment, as the dated mark a chart counts: what a task actually cost, filed when it was finished. */
+/**
+ * A payment, as the dated mark a chart counts: what a task actually cost,
+ * filed when it was finished. A payday received and a set-aside moved are
+ * not payments — one is money in and the other money kept (isSpending) — and
+ * counting them made a wage read as the biggest thing you paid for.
+ */
 function paidMarks(tasks: readonly Task[]): (Dated & { amount: number; payee: string })[] {
   const out: (Dated & { amount: number; payee: string })[] = []
   for (const raw of tasks) {
-    if (raw.deletedAt || raw.status !== 'done' || !raw.completedAt) continue
+    if (raw.deletedAt || raw.status !== 'done' || !raw.completedAt || !isSpending(raw)) continue
     const t = raw.bill ? withPaidDefault(raw) : raw
     const amount = t.actualCost
     if (amount === undefined || !Number.isFinite(amount) || amount <= 0) continue
