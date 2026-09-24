@@ -14,6 +14,18 @@ updates:
     # a release gets a week to be found out before it is offered
     cooldown:
       default-days: 7
+    # held on purpose, each until what its line names changes
+    ignore:
+      # Node is pinned to 22 (.nvmrc, engines): its types follow the runtime
+      - dependency-name: '@types/node'
+        update-types: ['version-update:semver-major']
+      # Babel 8 leaves 66 components uncompiled by the React Compiler: default
+      # props fail as an AssignmentPattern (DEVELOPMENT.md, 2026-09-23)
+      - dependency-name: '@babel/core'
+        update-types: ['version-update:semver-major']
+      # typescript-eslint supports TypeScript below 6.1
+      - dependency-name: 'typescript'
+        versions: ['>=6.1.0']
     groups:
       # Capacitor and its plugins come on their own: a bump changes the iOS
       # Swift packages, patch-package pins two of them (patches/), and only a
