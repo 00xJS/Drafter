@@ -176,8 +176,8 @@ export function Admin({ initialGroup = 'users', initial }: Props) {
   const [backupReport, setBackupReport] = useState<BackupReport | null>(null)
   const [link, setLink] = useState<SnapshotLink | null>(null)
   const [aiTest, setAiTest] = useState<AiTest | null>(null)
-  /** The assistant check: one reply per kind of answer, as each lands. */
-  const [chatCheck, setChatCheck] = useState<{ results: (EvalResult | undefined)[]; of: number } | null>(null)
+  /** The assistant check: one reply per kind of answer as each lands, how long each took, and the run's speed once it is over. */
+  const [chatCheck, setChatCheck] = useState<{ results: ((EvalResult & { timing: string }) | undefined)[]; of: number; speed?: string } | null>(null)
   const [pushTest, setPushTest] = useState<PushTest | null>(null)
   const [digestTest, setDigestTest] = useState<DigestTest | null>(null)
   /** Why opening Admin could not load everything. */
@@ -303,18 +303,19 @@ export function Admin({ initialGroup = 'users', initial }: Props) {
       .finally(() => setPending(''))
   }
 
-  /** Ask the chat one question of each kind through the real model (src/chateval.ts), showing each verdict as it lands. */
+  /** Ask the chat one question of each kind through the real model (src/chateval.ts), showing each verdict and its timing as it lands. */
   const checkAssistant = () =>
     runNamed('chatCheck', async () => {
-      const { CHAT_EVAL, runChatEval } = await loadChatEval()
-      const results: (EvalResult | undefined)[] = []
+      const { CHAT_EVAL, runChatEval, speedLine, timingLine } = await loadChatEval()
+      const results: ((EvalResult & { timing: string }) | undefined)[] = []
       setChatCheck({ results: [], of: CHAT_EVAL.length })
       await runChatEval({
         onResult: (r, i) => {
-          results[i] = r
+          results[i] = { ...r, timing: timingLine(r) }
           setChatCheck({ results: [...results], of: CHAT_EVAL.length })
         },
       })
+      setChatCheck({ results: [...results], of: CHAT_EVAL.length, speed: speedLine(results) })
     })
 
   const isOwnerRow = (u: AdminUser) => !!ownerEmail && u.email.toLowerCase() === ownerEmail.toLowerCase()
@@ -848,17 +849,18 @@ export function Admin({ initialGroup = 'users', initial }: Props) {
                 <Failed error={failed.chatCheck} />
                 <p className="field-hint">
                   Asks the chat one question of each kind it should handle (about itself, a general question, a thank-you, a change) through the real model, with nothing
-                  from anyone's planner, and says which came back as they should. About a minute.
+                  from anyone's planner, and says which came back as they should — and how long each took to show its first words, and to finish. Under a minute.
                 </p>
                 {chatCheck?.results.map(
                   r =>
                     r && (
                       <p key={r.case.question} className="field-hint">
-                        <span className={r.pass ? 'sync-ok' : 'warn'}>{r.pass ? 'OK' : 'Off'}</span> {r.case.label}: “{r.case.question}” — {r.why}
+                        <span className={r.pass ? 'sync-ok' : 'warn'}>{r.pass ? 'OK' : 'Off'}</span> {r.case.label}: “{r.case.question}” — {r.why} · {r.timing}
                         {!r.pass && r.answer && <> · said “{r.answer.length > 160 ? `${r.answer.slice(0, 157)}…` : r.answer}”</>}
                       </p>
                     ),
                 )}
+                {chatCheck?.speed && <p className="field-hint">{chatCheck.speed}</p>}
               </HealthCard>
 
               <HealthCard title="GitHub" piece={status.github} optional>

@@ -37,21 +37,36 @@ export const test = base.extend<AppOptions & { app: App }>({
   },
 })
 
+/** One server-sent event, as /api/ai writes it (shared/sse.mts). */
+const sse = (event: string, data: unknown) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`
+
 /**
  * /api/ai answered here, never by a model: the one proxy every assistant call
  * goes through (src/ai.ts). A request is told apart by its system prompt, and
  * anything unexpected fails the test rather than getting a made-up answer.
+ * An answer with `stream: true` is sent as the server streams one, to a call
+ * that asks for a stream — its words in pieces, then the whole — and every
+ * other answer whole, as a server from before streaming sends it. `streamed`
+ * says which each call got.
  */
-export async function stubAssistant(page: Page, answers: { system: string; reply: unknown }[]): Promise<{ asked: string[] }> {
+export async function stubAssistant(page: Page, answers: { system: string; reply: unknown; stream?: boolean }[]): Promise<{ asked: string[]; streamed: boolean[] }> {
   const asked: string[] = []
+  const streamed: boolean[] = []
   await page.route('**/api/ai', async (route: Route) => {
-    const body = route.request().postDataJSON() as { system?: string }
+    const body = route.request().postDataJSON() as { system?: string; stream?: boolean }
     const hit = answers.find(a => body.system?.includes(a.system))
     asked.push(hit?.system ?? `unexpected: ${body.system?.slice(0, 80)}`)
     if (!hit) return route.fulfill({ status: 500, json: { error: 'unexpected assistant call in a test' } })
-    await route.fulfill({ json: { text: typeof hit.reply === 'string' ? hit.reply : JSON.stringify(hit.reply) } })
+    const text = typeof hit.reply === 'string' ? hit.reply : JSON.stringify(hit.reply)
+    streamed.push(!!(hit.stream && body.stream))
+    if (!hit.stream || !body.stream) return route.fulfill({ json: { text } })
+    const words = text.match(/[\s\S]{1,12}/g) ?? []
+    await route.fulfill({
+      headers: { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-cache, no-transform' },
+      body: [...words.map(piece => sse('delta', { text: piece })), sse('done', { text, provider: 'nvidia', model: 'test' })].join(''),
+    })
   })
-  return { asked }
+  return { asked, streamed }
 }
 
 /**

@@ -5,7 +5,8 @@ import type { CalendarEntry, Meal, MealSlot, Person, Recipe, Task } from './type
 import { dateKey, excerpt } from './utils'
 import { deterministicCapture, modelDueAt, type CaptureCtx, type CapturedFields } from './capture'
 import { mealHistory } from '../shared/weekplan.mts'
-import { JSON_ONLY, NO_THINKING, REVIEW_SYSTEM, extractJSON, looksLikeThinking, parseLooseJSON, scanJSON } from '../shared/ai.mts'
+import { JSON_ONLY, NO_THINKING, REVIEW_SYSTEM, extractJSON, looksLikeThinking, parseLooseJSON, scanJSON, stripThinking } from '../shared/ai.mts'
+import { sseReader, type SseEvent } from '../shared/sse.mts'
 import type { MealHistory, WeekPlan } from '../shared/weekplan.mts'
 
 // All AI calls go through the session-gated /api/ai proxy (the Netlify
@@ -29,8 +30,26 @@ interface AIRequest {
   reasoning?: Reasoning
 }
 
-/** One call to the proxy. Returns the model's text, which may be empty. */
-async function request({ system, prompt, maxTokens, json, reasoning }: AIRequest): Promise<string> {
+/** An answer's text, as the proxy sends it whole: { text, provider }. */
+const textOf = (data: unknown): string => {
+  const text = data && typeof data === 'object' ? (data as { text?: unknown }).text : null
+  return typeof text === 'string' ? text : ''
+}
+
+/** Why the proxy answered with an error: its own words, or the status. */
+async function refusal(res: Response): Promise<AIError> {
+  if (res.status === 401) return new AIError('Session expired — sign in again and retry.')
+  // 501 = no provider key on the host; the server names the env vars to set.
+  const body = await res.json().catch(() => null)
+  return new AIError((body as { error?: string } | null)?.error ?? `AI request failed (HTTP ${res.status}).`)
+}
+
+/** One call to the proxy, streamed when `onText` is watching (requestStream). Returns the model's text, which may be empty. */
+async function request({ system, prompt, maxTokens, json, reasoning }: AIRequest, onText?: OnText): Promise<string> {
+  if (onText) {
+    const streamed = await requestStream({ system, prompt, maxTokens, json, reasoning }, onText)
+    if (streamed !== null) return streamed
+  }
   let res: Response
   try {
     res = await apiFetch('/api/ai', {
@@ -43,15 +62,103 @@ async function request({ system, prompt, maxTokens, json, reasoning }: AIRequest
   } catch (e) {
     throw new AIError((e as Error).message)
   }
-  if (res.status === 401) throw new AIError('Session expired — sign in again and retry.')
-  if (!res.ok) {
-    // 501 = no provider key on the host; the server names the env vars to set.
-    const body = await res.json().catch(() => null)
-    throw new AIError((body as { error?: string } | null)?.error ?? `AI request failed (HTTP ${res.status}).`)
+  if (!res.ok) throw await refusal(res)
+  return textOf(await res.json())
+}
+
+/**
+ * What a streamed answer tells whoever is watching it arrive: its words so
+ * far, whole each time — '' when what was shown has been taken back (it was
+ * the model thinking after all, or a second try is starting afresh).
+ */
+export type OnText = (soFar: string) => void
+
+/** Said when a streamed answer stops part way: the words shown are not an answer, and none is kept. */
+export const CUT_SHORT = 'The answer stopped part way through — try again.'
+
+/**
+ * One call to the proxy, asking for the answer as it is written (the server's
+ * `stream: true`, netlify/functions/ai.mjs): each word goes to `onText` as it
+ * comes, and what is returned is the `done` event's text — the same text the
+ * ordinary answer would carry, whole, so every check a caller runs on it holds.
+ *
+ * Null when there was no stream to read after all, and the caller asks the
+ * ordinary way: the answer broke off, or ended, before a word of it came, or
+ * what came back was neither a stream nor an answer. A server that answers
+ * whole — a deploy from before streaming, or one that answers this call as
+ * JSON — is read as the ordinary answer is, with no second request, and a web
+ * view that cannot read a response as it arrives reads it at the end.
+ *
+ * A request that got no answer at all fails as the ordinary one does (asked
+ * again it would meet the same connection), and so does an error the server
+ * answered with. One part way through the answer is said too, and nothing of
+ * that answer is returned.
+ */
+async function requestStream({ system, prompt, maxTokens, json, reasoning }: AIRequest, onText: OnText): Promise<string | null> {
+  let res: Response
+  try {
+    res = await apiFetch('/api/ai', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'text/event-stream' },
+      body: JSON.stringify({ system, prompt, maxTokens, json, ...(reasoning ? { reasoning } : {}), stream: true }),
+      timeoutMs: 180_000,
+    })
+  } catch (e) {
+    throw new AIError((e as Error).message)
   }
-  const data: unknown = await res.json()
-  const text = data && typeof data === 'object' ? (data as { text?: unknown }).text : null
-  return typeof text === 'string' ? text : ''
+  if (!res.ok) throw await refusal(res)
+  if (!/^text\/event-stream/i.test(res.headers.get('content-type') ?? '')) {
+    const data: unknown = await res.json().catch(() => undefined)
+    return data === undefined ? null : textOf(data)
+  }
+
+  const events = sseReader()
+  // what has come so far: the words, the whole answer once `done` says it, and whether anything was heard at all
+  const got: { soFar: string; done: string | null; heard: boolean } = { soFar: '', done: null, heard: false }
+  const take = (list: SseEvent[]) => {
+    for (const { event, data } of list) {
+      let body: Record<string, unknown>
+      try {
+        body = (JSON.parse(data) ?? {}) as Record<string, unknown>
+      } catch {
+        continue
+      }
+      got.heard = true
+      if (event === 'delta' && typeof body.text === 'string') {
+        got.soFar += body.text
+        onText(got.soFar)
+      } else if (event === 'reset') {
+        got.soFar = ''
+        onText('')
+      } else if (event === 'done') {
+        got.done = typeof body.text === 'string' ? body.text : ''
+      } else if (event === 'error') {
+        throw new AIError(typeof body.error === 'string' ? body.error : 'The assistant couldn’t answer — try again in a moment.')
+      }
+    }
+  }
+
+  const reader = res.body?.getReader()
+  try {
+    if (!reader) take([...events.push(await res.text()), ...events.end()])
+    else {
+      const decoder = new TextDecoder()
+      for (;;) {
+        const { done, value } = await reader.read()
+        if (done) break
+        take(events.push(decoder.decode(value, { stream: true })))
+      }
+      take([...events.push(decoder.decode()), ...events.end()])
+    }
+  } catch (e) {
+    reader?.cancel().catch(() => {})
+    if (e instanceof AIError) throw e
+    if (!got.heard) return null
+    throw new AIError(CUT_SHORT)
+  }
+  if (got.done !== null) return got.done
+  if (!got.heard) return null
+  throw new AIError(CUT_SHORT)
 }
 
 /**
@@ -63,6 +170,16 @@ async function request({ system, prompt, maxTokens, json, reasoning }: AIRequest
  */
 export type Reasoning = 'off' | 'on'
 
+/**
+ * How the assistant — the chat and Ask — asks: without the model's thinking
+ * first. Thinking was most of the twenty seconds before the chat's first word,
+ * and nothing it answers needs it: the records it reads are retrieved on the
+ * device, and every date and suggestion is checked here, not trusted. One
+ * place to change it back: undefined asks as it used to, 'on' asks for the
+ * thinking outright.
+ */
+export const ASSISTANT_REASONING: Reasoning | undefined = 'off'
+
 export interface CompleteOptions {
   reasoning?: Reasoning
   /**
@@ -73,6 +190,12 @@ export interface CompleteOptions {
   accept?(text: string): boolean
   /** Added to the brief for the one retry a refused reply gets (by default JSON_ONLY or NO_THINKING). */
   nudge?: string
+  /**
+   * Stream the reply, and say it as it comes (requestStream). What is shown
+   * is never the answer: that is still the whole reply, checked as it always
+   * was, and a second try starts the words afresh ('').
+   */
+  onText?: OnText
 }
 
 /**
@@ -91,9 +214,11 @@ export interface CompleteOptions {
  */
 export async function complete(system: string, prompt: string, maxTokens = 2048, json = false, opts: CompleteOptions = {}): Promise<string> {
   const accept = opts.accept ?? (json ? hasWholeJSON : (t: string) => !!t.trim() && !looksLikeThinking(t, system))
-  let text = await request({ system, prompt, maxTokens, json, reasoning: opts.reasoning })
+  let text = await request({ system, prompt, maxTokens, json, reasoning: opts.reasoning }, opts.onText)
   if (!accept(text)) {
-    text = await request({ system: `${system}\n\n${opts.nudge ?? (json ? JSON_ONLY : NO_THINKING)}`, prompt, maxTokens, json, reasoning: 'off' })
+    // what was shown is not an answer: the second try's words start afresh
+    opts.onText?.('')
+    text = await request({ system: `${system}\n\n${opts.nudge ?? (json ? JSON_ONLY : NO_THINKING)}`, prompt, maxTokens, json, reasoning: 'off' }, opts.onText)
     if (!json && !opts.accept && looksLikeThinking(text, system)) throw new AIError(THOUGHT_OUT_LOUD)
   }
   if (!text.trim()) throw new AIError('The model returned an empty response — try again in a moment.')
@@ -427,17 +552,194 @@ export async function summarizeReview(input: {
   )
 }
 
+// ---- the assistant's reply: the answer, then its details -----------------------
+//
+// The chat and Ask used to ask for the whole reply as JSON — {"answer": …,
+// "cites": …} — which is nothing to show until it is whole. They ask for the
+// answer first now, in plain words that can be shown as they arrive, and a
+// ```json block after it with what the app reads: the references, and the
+// chat's suggestions and general flag. A reply is read in either shape, since
+// a model set in its ways may still answer in the old one.
+
+/** A reply as the chat and Ask read it. */
+export interface ReplyParts {
+  /** The answer's words: the part before the details, or — a reply in the old all-JSON shape — its "answer". */
+  said: string
+  /** The details block, or the old shape's whole object; null when there was none. */
+  details: Record<string, unknown> | null
+  /** A details block was begun and never finished: the reply stopped short, and whatever it held is lost. */
+  cutOff: boolean
+}
+
+/** The fields a reply's details carry: an object with none of them is not the details, and {"":""} is nothing at all. */
+const DETAIL_KEYS = ['answer', 'reply', 'cites', 'general', 'actions']
+
+/** A JSON value as a reply's details, when it is one: an object with one of their fields, or — the old shape at its barest — a list of suggestions. */
+function detailsOf(v: unknown): Record<string, unknown> | null {
+  if (Array.isArray(v)) return v.length > 0 && v.every(x => !!x && typeof x === 'object' && !Array.isArray(x)) ? { actions: v } : null
+  if (!v || typeof v !== 'object') return null
+  const o = v as Record<string, unknown>
+  return DETAIL_KEYS.some(k => Object.prototype.hasOwnProperty.call(o, k)) ? o : null
+}
+
+/** Text that is JSON from its first character: an object, or a list — not an answer that opens with a reference, "[T3] is due". */
+const JSON_START = /^\s*(?:\{|\[\s*(?:[[{"\]\d-]|$))/
+
+/** A fence, opening or closing: ```, ```json. */
+const FENCE = /```[a-zA-Z]*[ \t]*\n?/g
+
+/** The JSON value `text` opens with (its first character is { or [), read leniently: the value and where it ends; 'cut' when it never finishes; null when it is no JSON. */
+function jsonAt(text: string): { value: unknown; end: number } | 'cut' | null {
+  const { end } = scanJSON(text)
+  if (end < 0) return 'cut'
+  try {
+    return { value: parseLooseJSON<unknown>(text.slice(0, end + 1)), end: end + 1 }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * A reply read into the answer's words and its details. The thinking comes
+ * out first, by the rule the server uses (stripThinking). The details are the
+ * last fenced block that holds them, else the first object after the words
+ * that does, fenced or not; the words are what comes before them — after
+ * them, when the details came first — and a reply in the old shape carries its
+ * words inside. A reply with no details at all is all words, unless it is
+ * JSON from its first character, which says nothing. A block begun and never
+ * finished is `cutOff`, the words before it kept.
+ */
+export function replyParts(reply: string): ReplyParts {
+  const clean = stripThinking(reply)
+  let cutAt = -1
+  const cut = (at: number) => {
+    if (cutAt < 0 || at < cutAt) cutAt = at
+  }
+  const found = (details: Record<string, unknown>, from: number, to: number): ReplyParts => {
+    // the old shape's words are inside it; an empty "answer" beside words written out is no answer
+    const inside = typeof details.answer === 'string' ? details.answer : typeof details.reply === 'string' ? details.reply : ''
+    if (inside.trim()) return { said: inside, details, cutOff: false }
+    const before = clean.slice(0, from).trim()
+    return { said: before || clean.slice(to).replace(FENCE, '').trim(), details, cutOff: false }
+  }
+
+  // fenced, from the last block back: an answer can hold a block of its own (a formula, say) before its details
+  const fences = [...clean.matchAll(FENCE)]
+  for (let i = fences.length % 2 ? fences.length - 1 : fences.length - 2; i >= 0; i -= 2) {
+    const open = fences[i]
+    const close = fences[i + 1]
+    const from = open.index ?? 0
+    const inner = clean.slice(from + open[0].length, close ? close.index : clean.length).trim()
+    // an empty block never closed was begun and stopped
+    if (!inner) {
+      if (!close) cut(from)
+      continue
+    }
+    if (!/^[[{]/.test(inner)) continue
+    const read = jsonAt(inner)
+    if (read === 'cut') {
+      cut(from)
+      continue
+    }
+    const details = read && detailsOf(read.value)
+    if (details) return found(details, from, close ? (close.index ?? 0) + close[0].length : clean.length)
+  }
+
+  // not fenced: the first object that is the details, on a line of its own or not
+  for (let at = clean.indexOf('{'); at >= 0; at = clean.indexOf('{', at + 1)) {
+    const read = jsonAt(clean.slice(at))
+    if (read === 'cut') {
+      // only one that opens a line: "{" in the middle of a sentence is just a brace
+      if (/(?:^|\n)[ \t]*$/.test(clean.slice(0, at))) cut(at)
+      continue
+    }
+    const details = read && detailsOf(read.value)
+    if (details) return found(details, at, at + read.end)
+  }
+
+  const bare = clean.replace(FENCE, '').trim()
+  if (cutAt < 0 && JSON_START.test(bare)) {
+    // a bare list of suggestions, whole or cut off after its last whole one
+    try {
+      const details = detailsOf(extractJSON<unknown>(bare))
+      if (details) return { said: '', details, cutOff: false }
+    } catch {
+      /* no JSON after all: said as nothing, below */
+    }
+  }
+  if (cutAt >= 0) return { said: clean.slice(0, cutAt).trim(), details: null, cutOff: true }
+  return { said: JSON_START.test(bare) ? '' : clean, details: null, cutOff: false }
+}
+
+/**
+ * What of a reply still arriving can be shown: the answer's words so far, and
+ * never the details — cut where a fence or a JSON object begins, with a
+ * backtick or two, or a brace, at the very end held back in case the details
+ * are starting. A reply in the old all-JSON shape shows its "answer" as it
+ * grows; one that opens with any other JSON shows nothing until it is whole.
+ */
+export function shownSoFar(soFar: string): string {
+  const text = soFar.trimStart()
+  const unfenced = text.replace(/^```[a-zA-Z]*\s*/, '')
+  if (unfenced !== text || JSON_START.test(text)) return answerSoFar(unfenced)
+  const cut = text.search(/```|\n[ \t]*\{|\{\s*"/)
+  return (cut < 0 ? text : text.slice(0, cut)).replace(/(?:`{1,2}|\{\s*)$/, '').trimEnd()
+}
+
+/** The old shape's "answer" as far as it has come: {"answer": "Two things are du… */
+function answerSoFar(text: string): string {
+  const m = /^\{\s*"(?:answer|reply)"\s*:\s*"((?:[^"\\]|\\[\s\S])*)/.exec(text)
+  if (!m) return ''
+  // a \u escape cut in half waits for the rest of it (an odd run of backslashes before the u is an escape; an even one, escaped backslashes)
+  const half = /(\\+)u[0-9a-fA-F]{0,3}$/.exec(m[1])
+  const whole = half && half[1].length % 2 === 1 ? m[1].slice(0, half.index + half[1].length - 1) : m[1]
+  // and a line break written raw is read as one
+  const body = whole
+    .replace(/\n/g, '\\n')
+    .replace(/\r/g, '\\r')
+    .replace(/\t/g, '\\t')
+  try {
+    return String(JSON.parse(`"${body}"`)).trim()
+  } catch {
+    return ''
+  }
+}
+
+/** Added to Ask's brief when a first reply said nothing, or said the brief back. */
+export const ASK_NUDGE = 'Write the answer in a sentence or two, then the ```json block — no reasoning, and do not restate these instructions.'
+
 /**
  * Ask Drafter's one model call. The question, the retrieved records and the
  * facts go out; an answer comes back with the references it rests on. Only
  * references to records that were sent survive — the answer is rebuilt without
  * any other — so an invented citation can never become a chip.
+ *
+ * Plain text in the two-part shape (replyParts), not JSON mode, so the answer
+ * can be shown as it arrives (`onText`, its words only) — and JSON mode, which
+ * answered {"":""}, is out of it. A reply that says nothing, or says the rules
+ * back, is asked for once more, and a second that says the rules back is an
+ * error, never an answer.
  */
-export async function askDrafter(question: string, docs: AskDoc[], facts: string[], history: readonly string[] = []): Promise<{ answer: string; cites: string[] }> {
-  const { system, prompt } = buildAskPrompt(question, docs, facts, history)
-  // {"":""} and {"answer": ""} are whole and say nothing: asked once more, plainly
-  const text = await complete(system, prompt, 500, true, { accept: t => !!askAnswerIn(t).said.trim(), nudge: 'Reply with the JSON only, with "answer" filled in — no reasoning and no commentary.' })
+export async function askDrafter(
+  question: string,
+  docs: AskDoc[],
+  facts: string[],
+  history: readonly string[] = [],
+  onText?: OnText,
+): Promise<{ answer: string; cites: string[] }> {
+  const { system, prompt, rules } = buildAskPrompt(question, docs, facts, history)
+  const usable = (t: string) => {
+    const said = askAnswerIn(t).said.trim()
+    return !!said && !looksLikeThinking(said, rules)
+  }
+  const text = await complete(system, prompt, 500, false, {
+    reasoning: ASSISTANT_REASONING,
+    accept: usable,
+    nudge: ASK_NUDGE,
+    onText: onText && (soFar => onText(shownSoFar(soFar))),
+  })
   const { said, raw } = askAnswerIn(text)
+  if (looksLikeThinking(said, rules)) throw new AIError(THOUGHT_OUT_LOUD)
   const { parts, cites: inline } = parseAskAnswer(said.trim().slice(0, 1200), docs)
   const answer = parts
     .map(p => (typeof p === 'string' ? p : `[${p.ref}]`))
@@ -450,21 +752,23 @@ export async function askDrafter(question: string, docs: AskDoc[], facts: string
 }
 
 /**
- * The words of an Ask reply, and the object they came in. A model that ignored
- * the JSON instruction still answered; one that broke off mid-object did not.
- * JSON mode sometimes names the one field something else ({"response": "…"}):
- * a lone string is the answer whatever it is called.
+ * The words of an Ask reply, and the details that came with them
+ * (replyParts). A reply in the old JSON shape is read as it always was: JSON
+ * mode sometimes named the one field something else ({"response": "…"}), and
+ * a lone string is the answer whatever it is called. A details block cut off
+ * costs Ask nothing but the references in it, so the words stand.
  */
 function askAnswerIn(text: string): { said: string; raw: Record<string, unknown> | null } {
+  const parts = replyParts(text)
+  if (parts.said.trim() || parts.details) return { said: parts.said, raw: parts.details }
   let raw: Record<string, unknown> | null = null
   try {
-    const value = extractJSON<unknown>(text)
+    const value = extractJSON<unknown>(stripThinking(text))
     raw = value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null
   } catch {
     raw = null
   }
-  if (!raw) return { said: /^\s*[[{]/.test(text) ? '' : text, raw }
-  if (typeof raw.answer === 'string') return { said: raw.answer, raw }
+  if (!raw) return { said: '', raw }
   const strings = Object.values(raw).filter((v): v is string => typeof v === 'string' && !!v.trim())
   return { said: strings.length === 1 ? strings[0] : '', raw }
 }
@@ -472,19 +776,20 @@ function askAnswerIn(text: string): { said: string; raw: Record<string, unknown>
 /**
  * The assistant chat's one model call (Home → Chat), beside Ask's: the same
  * retrieved records and facts, and the reply may also suggest changes to the
- * planner. src/chatactions.ts writes the prompt and reads the reply — JSON with
- * an answer, its citations and the suggestions — and says which replies it can
- * use and how to ask again (`accept`, `nudge`), so this is only the call: 900
- * tokens, through complete() like every call here (NVIDIA first, and one more
- * ask when the reply cannot be used). A failure throws, and the chat says so
- * without saving it.
+ * planner. src/chatactions.ts writes the prompt and reads the reply — the
+ * answer, then a block with its citations and the suggestions — and says which
+ * replies it can use and how to ask again (`accept`, `nudge`), so this is only
+ * the call: 900 tokens, without the thinking first (ASSISTANT_REASONING),
+ * through complete() like every call here (NVIDIA first, and one more ask when
+ * the reply cannot be used), and streamed when someone is watching it arrive
+ * (`onText`). A failure throws, and the chat says so without saving it.
  */
-export async function askDrafterChat(system: string, prompt: string, opts: Pick<CompleteOptions, 'accept' | 'nudge'> = {}): Promise<string> {
+export async function askDrafterChat(system: string, prompt: string, opts: Pick<CompleteOptions, 'accept' | 'nudge' | 'onText'> = {}): Promise<string> {
   // Plain text, not NVIDIA's JSON mode: forced to JSON, the default reasoning
   // model answered this prompt with {"":""} — whole, valid and empty, so
-  // nothing retried it. The prompt asks for the JSON, and parseChatReply takes
-  // it out of whatever fences or sentences come with it.
-  return complete(system, prompt, 900, false, opts)
+  // nothing retried it. The prompt asks for the answer and then its details,
+  // and parseChatReply reads either that or the old all-JSON shape.
+  return complete(system, prompt, 900, false, { ...opts, reasoning: ASSISTANT_REASONING })
 }
 
 export interface DraftedPlan {

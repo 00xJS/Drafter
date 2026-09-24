@@ -58,6 +58,33 @@ test('the assistant proposes a task: Apply adds it, Undo takes it away', async (
   await expect(page.getByRole('button', { name: 'Book the dentist', exact: true })).toBeHidden()
 })
 
+test('the assistant’s answer streams in, with its details kept out of sight, and its suggestion applies like any other', async ({ page, app }) => {
+  const details = { cites: [], general: false, actions: [{ type: 'create_task', title: 'Call the bank', priority: 'normal' }] }
+  const ai = await stubAssistant(page, [
+    {
+      system: "You are the assistant inside a household's own planner.",
+      reply: `I can add a task to call the bank.\n\n\`\`\`json\n${JSON.stringify(details)}\n\`\`\``,
+      stream: true,
+    },
+  ])
+  await app.open()
+  await page.getByRole('button', { name: 'Chat', exact: true }).click()
+  await page.getByRole('tab', { name: 'Assistant' }).click()
+  await page.getByPlaceholder('Ask about your week…').fill('Remind me to call the bank')
+  await page.getByRole('button', { name: 'Send', exact: true }).click()
+
+  await expect(page.getByText('I can add a task to call the bank.', { exact: true })).toBeVisible()
+  // the block the app reads is never on screen
+  await expect(page.getByText(/```|"actions"/)).toHaveCount(0)
+  const card = page.getByRole('list', { name: 'Suggested changes' }).getByRole('listitem').filter({ hasText: 'Call the bank' })
+  await card.getByRole('button', { name: 'Apply', exact: true }).click()
+  await expect(card).toContainText('Applied')
+  expect(ai.streamed).toEqual([true])
+
+  await app.go('Tasks')
+  await expect(page.getByRole('button', { name: 'Call the bank', exact: true })).toBeVisible()
+})
+
 test('a task filed a moment before the page reloads is still there after it', async ({ page, app }) => {
   await app.open()
   await page.keyboard.press('ControlOrMeta+K')

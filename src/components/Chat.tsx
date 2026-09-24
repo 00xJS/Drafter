@@ -45,6 +45,11 @@ import { useNow } from '../useNow'
 // suggest changes — a task, a meal, the shopping, a visit, a note, an event —
 // each as a card under its answer (ChatCards.tsx), and nothing is written
 // until one of them is tapped (src/chatactions.ts).
+//
+// Its words show as they arrive, in a bubble of their own where the answer
+// will be. That bubble is only this screen's: the turn written, and synced, is
+// the whole reply once it has been read and checked, and a reply that fails
+// part way leaves nothing behind but the failure line and Try again.
 
 export type ChatSide = 'household' | 'assistant'
 
@@ -272,8 +277,27 @@ function dataOf(sources: AskSources): ChatData {
   }
 }
 
-/** The model call: the question, what retrieval picked, the thread so far, and what the reply is read against. */
-type Ask = (question: string, docs: AskDoc[], facts: string[], history: readonly string[], ctx: ChatActionContext) => Promise<ChatReply>
+/**
+ * The model call: the question, what retrieval picked, the thread so far, and
+ * what the reply is read against; `onText` hears the answer's words as they
+ * arrive, for the screen alone.
+ */
+type Ask = (question: string, docs: AskDoc[], facts: string[], history: readonly string[], ctx: ChatActionContext, onText?: (shown: string) => void) => Promise<ChatReply>
+
+/** Close enough to the foot of the thread to be following it down (px). */
+const FOLLOWING = 160
+
+/**
+ * Whether the thread's newest line, the app's own lines aside, is a question:
+ * its answer is still to come. An empty thread is waiting too, as far as it can
+ * tell. Read off the thread rather than off `busy`: the store draws a turn the
+ * moment it is written, and `busy` goes a render later, so for a frame the
+ * answer and the words that became it were both on screen.
+ */
+function awaitingAnswer(turns: readonly ChatTurn[]): boolean {
+  for (let i = turns.length - 1; i >= 0; i--) if (!turns[i].outcomes?.length) return turns[i].role === 'you'
+  return true
+}
 
 /** You and Drafter, about your own planner. */
 function AssistantThread({
@@ -300,6 +324,9 @@ function AssistantThread({
   const [busy, setBusy] = useState(false)
   const [applying, setApplying] = useState(false)
   const [docs, setDocs] = useState<AskDoc[]>([])
+  /** The answer's words so far, while it arrives: shown here, never written as a turn. */
+  const [arriving, setArriving] = useState('')
+  const arrivingLine = useRef<HTMLLIElement>(null)
   /** The last question that got no answer, said here and nowhere else: a failure is not a turn, and never syncs. */
   const [failed, setFailed] = useState<{ question: string; asked: ChatTurn | null; text: string; retry: boolean } | null>(null)
   /** The question in flight (askInThread): an Enter pressed again while it is out is the same question. */
@@ -332,6 +359,7 @@ function AssistantThread({
       ask: () => {
         setBusy(true)
         setFailed(null)
+        setArriving('')
         // retrieval is local and instant: the records a question is about are
         // picked here, and only those go to the model
         const at = clock()
@@ -339,14 +367,24 @@ function AssistantThread({
         setDocs(prep.docs)
         // a question asked again is already the last line of the thread: it is the question, not the conversation before it
         const history = recentContext(asked ? turns.filter(t => t.id !== asked.id) : turns)
-        return ask(question, prep.docs, prep.facts, history, chatActionContext(prep.question, prep.docs, sources, { now: at, tz }))
+        return ask(question, prep.docs, prep.facts, history, chatActionContext(prep.question, prep.docs, sources, { now: at, tz }), setArriving)
       },
     })
     // null: pressed again while the first was out, which is still being answered
     if (!done) return
     setBusy(false)
+    setArriving('')
     if ('error' in done) setFailed({ question, asked: done.asked, ...chatFailure(done.error) })
   }
+
+  // An answer arriving grows at the foot of the thread: it is followed down
+  // there, unless the reader has scrolled up to read something else.
+  useLayoutEffect(() => {
+    const line = arrivingLine.current
+    if (!line || !arriving) return
+    const box = scrollerOf(line)
+    if (box.scrollHeight - box.scrollTop - box.clientHeight < FOLLOWING + line.offsetHeight) box.scrollTo({ top: box.scrollHeight })
+  }, [arriving])
 
   /** A card's words as it was suggested, for the line that settles it. */
   const lineOf = (turn: ChatTurn, index: number) => {
@@ -492,6 +530,8 @@ function AssistantThread({
   const byRef = new Map(docs.map(d => [d.ref, d]))
   // the app's own lines are a speaker of their own, so an answer after one still says who it is from
   const rows = thread(turns, t => (t.outcomes?.length ? 'app' : t.role))
+  // an answer on its way: its words, or the line that says it is coming, until the answer itself is in the thread
+  const answerDue = busy && awaitingAnswer(turns)
   return (
     <>
       {turns.length === 0 ? (
@@ -546,9 +586,16 @@ function AssistantThread({
               </li>
             ),
           )}
+          {answerDue && arriving && (
+            // where the answer will be, drawn as it will be drawn: the turn replaces it once the whole reply is read
+            <li ref={arrivingLine} className="chat-line theirs drafter chat-arriving" aria-busy="true">
+              <span className="chat-who">✈ Drafter</span>
+              <span className="chat-bubble">{arriving}</span>
+            </li>
+          )}
         </ul>
       )}
-      {busy && <p className="chat-thinking">Reading your planner…</p>}
+      {answerDue && !(arriving && turns.length > 0) && <p className="chat-thinking">Reading your planner…</p>}
       {failed && !busy && (
         <p className="chat-thinking ask-failed" role="status">
           {failed.text}{' '}

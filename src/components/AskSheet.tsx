@@ -10,7 +10,8 @@ import { Modal, ModalHead } from './Modal'
 // Ask Drafter: a question answered from your own planner. Retrieval runs on the
 // device and its sources show at once, so the sheet is useful even when the
 // model is busy or not there at all; the one /api/ai call only writes the
-// answer, and a reference it invents never becomes a chip (src/ask.ts).
+// answer, and a reference it invents never becomes a chip (src/ask.ts). The
+// answer's words show as they arrive, and the answer itself once it is whole.
 
 /** Whether Ask may read the journal: off until turned on, and remembered. */
 export const ASK_JOURNAL_KEY = 'drafter:ask-journal'
@@ -116,6 +117,12 @@ type Phase =
 
 type Answer = { answer: string; cites: string[] }
 
+/** The model call, with the answer's words as they arrive for the sheet to show meanwhile. */
+type AskCall = (question: string, docs: AskDoc[], facts: string[], onText?: (shown: string) => void) => Promise<Answer>
+
+/** Ask's own call: askDrafter with no thread before it, streamed. */
+const askStreamed: AskCall = (question, docs, facts, onText) => askDrafter(question, docs, facts, [], onText)
+
 /**
  * What a question starts as. One about Ask itself is answered at once, with
  * no model call: matched against the planner it found nothing, and said so.
@@ -134,12 +141,12 @@ interface Props {
   onOpen(doc: AskDoc): void
   onClose(): void
   /** The model call. Defaults to askDrafter's one /api/ai request; tests pass their own. */
-  ask?(question: string, docs: AskDoc[], facts: string[]): Promise<Answer>
+  ask?: AskCall
   /** The moment the question is asked about. Defaults to now. */
   now?: Date
 }
 
-export function AskSheet({ initialQuestion = '', sources, tz, onOpen, onClose, ask = askDrafter, now }: Props) {
+export function AskSheet({ initialQuestion = '', sources, tz, onOpen, onClose, ask = askStreamed, now }: Props) {
   const [draft, setDraft] = useState(initialQuestion)
   const [journal, setJournal] = useState(readAskJournal)
   const [all, setAll] = useState(false)
@@ -151,6 +158,8 @@ export function AskSheet({ initialQuestion = '', sources, tz, onOpen, onClose, a
     return question ? { id: 1, question, prep: prepare(question, journal) } : null
   })
   const [phase, setPhase] = useState<Phase>(() => (req ? firstPhase(req) : { kind: 'idle' }))
+  /** The answer's words so far, for the question they belong to: shown while it arrives. */
+  const [arriving, setArriving] = useState<{ id: number; text: string } | null>(null)
   const askRef = useRef(ask)
   useLayoutEffect(() => {
     askRef.current = ask
@@ -166,7 +175,10 @@ export function AskSheet({ initialQuestion = '', sources, tz, onOpen, onClose, a
 
   useEffect(() => {
     if (!req || isHelpQuestion(req.question) || !worthAsking(req.prep)) return
-    if (inflight.current?.id !== req.id) inflight.current = { id: req.id, answer: askRef.current(req.question, req.prep.docs, req.prep.facts) }
+    if (inflight.current?.id !== req.id) {
+      const id = req.id
+      inflight.current = { id, answer: askRef.current(req.question, req.prep.docs, req.prep.facts, text => setArriving({ id, text })) }
+    }
     const pending = inflight.current.answer
     let live = true
     pending.then(
@@ -249,8 +261,16 @@ export function AskSheet({ initialQuestion = '', sources, tz, onOpen, onClose, a
         )}
 
         {req && (
-          <section className="ask-answer-wrap" aria-live="polite">
-            {phase.kind === 'busy' && <p className="ask-note">Reading your planner…</p>}
+          // busy while the answer arrives: a screen reader waits for the whole of it rather than reading every word
+          <section className="ask-answer-wrap" aria-live="polite" aria-busy={phase.kind === 'busy'}>
+            {phase.kind === 'busy' &&
+              (arriving?.id === req.id && arriving.text ? (
+                <p className="ask-answer ask-arriving">
+                  {parseAskAnswer(arriving.text, docs).parts.map((p, i) => (typeof p === 'string' ? <span key={i}>{p}</span> : <Cite key={i} doc={p} onOpen={onOpen} />))}
+                </p>
+              ) : (
+                <p className="ask-note">Reading your planner…</p>
+              ))}
             {phase.kind === 'empty' && <p className="ask-note">Nothing in your planner matches that. General questions go to the chat.</p>}
             {phase.kind === 'failed' && (
               <p className="ask-note ask-failed">

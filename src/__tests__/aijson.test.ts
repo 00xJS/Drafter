@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 vi.mock('../api', () => ({ apiFetch: vi.fn() }))
 import { apiFetch } from '../api'
 import {
+  ASK_NUDGE,
   askDrafter,
   draftPlan,
   extractJSON,
@@ -140,7 +141,7 @@ describe('every other JSON call checks its shape and says what went wrong', () =
   it('Ask asks once more after {"":""}, and takes a lone field JSON mode named something else as the answer', async () => {
     vi.mocked(apiFetch).mockResolvedValueOnce(reply('{"":""}')).mockResolvedValueOnce(reply('{"response":"Nothing is due tomorrow."}'))
     expect(await askDrafter('What is due tomorrow?', [], ['Today is Tuesday.'])).toEqual({ answer: 'Nothing is due tomorrow.', cites: [] })
-    expect(bodies()[1].system).toMatch(/"answer" filled in/)
+    expect(bodies()[1].system).toContain(ASK_NUDGE)
     expect(bodies()[1].reasoning).toBe('off')
   })
 

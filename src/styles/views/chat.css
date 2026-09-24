@@ -81,6 +81,13 @@
   margin: 0 0 8px;
   color: var(--text-2);
 }
+/* An answer still arriving: its words so far, and a caret after them that
+   says more is coming. The turn that takes its place has none. */
+.chat-arriving .chat-bubble::after {
+  content: '▍';
+  margin-left: 2px;
+  color: var(--text-2);
+}
 .chat-intro {
   display: flex;
   flex-direction: column;
