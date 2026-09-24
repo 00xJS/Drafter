@@ -245,5 +245,9 @@ describe('Ask, streamed', () => {
     // an answer that names what the planner holds is not an echo, though the brief names it too
     api('Your planner holds tasks, people, places, meals, calendar, bills, clothes and journal.')
     expect((await askDrafter('What do you know about?', DOCS, [])).answer).toContain('clothes and journal')
+    // nor is the answer the brief asks for when the records hold none
+    const plain = api("The answer isn't in the records.")
+    expect((await askDrafter('Who fixed the gate?', DOCS, [])).answer).toBe("The answer isn't in the records.")
+    expect(plain).toHaveLength(1)
   })
 })
