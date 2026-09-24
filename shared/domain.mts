@@ -185,6 +185,14 @@ export interface HeldRecord {
   purged?: boolean
 }
 
+/**
+ * The weekly balance check-in's ids begin with this (Finance's "Check in
+ * weekly", src/finance.ts). It is a task, so it is on Home, the calendar and
+ * the reminders like any other; what sets it apart is that it keeps its slot
+ * (nextOccurrence) and that the app opens it on the Check in sheet.
+ */
+export const CHECK_IN_PREFIX = 'task~checkin~'
+
 /** How many months apart the repeats that go by the month fall. */
 const MONTH_STEPS: Partial<Record<RecurrenceFreq, number>> = { monthly: 1, quarterly: 3, yearly: 12 }
 
@@ -210,30 +218,42 @@ function addMonthsOnDay(date: Date, months: number, day: number): Date {
 export function nextOccurrence(task: Task, uidFn: () => string, held?: (id: string) => HeldRecord | undefined): (Task & { spawnedFrom: string }) | null {
   if (!task.recurrence) return null
   const bill = task.bill && typeof task.bill === 'object' ? task.bill : null
+  // the weekly balance check-in keeps its slot, as a bill keeps its day
+  const slot = typeof task.id === 'string' && task.id.startsWith(CHECK_IN_PREFIX)
   // A bill falls due on its own day however early or late it was paid; a chore
   // comes round again from when it was last done. Anchoring a bill on its
   // completion made it drift: due on the 15th, paid on the 12th, and the next
   // one was due on the 12th.
-  const baseIso = bill ? (task.dueAt ?? task.completedAt) : (task.completedAt ?? task.dueAt)
-  let next = baseIso ? new Date(baseIso) : new Date()
-  if (isNaN(next.getTime())) return null
+  const baseIso = bill || slot ? (task.dueAt ?? task.completedAt) : (task.completedAt ?? task.dueAt)
+  const base = baseIso ? new Date(baseIso) : new Date()
+  if (isNaN(base.getTime())) return null
   const freq = task.recurrence.freq
   let billDay: number | undefined
-  if (freq === 'daily') next.setDate(next.getDate() + 1)
-  else if (freq === 'weekly') next.setDate(next.getDate() + 7)
-  else if (freq === 'biweekly') next.setDate(next.getDate() + 14)
-  else {
-    // Monthly, quarterly and yearly land on a clamped day: setMonth used to roll
-    // 31 January into 3 March. A bill also remembers its intended day, so one due
-    // on the 31st goes 31 Jan -> 28 Feb -> 31 Mar instead of settling on the 28th;
-    // if the owner has moved the date since, the new day wins.
-    const baseDay = next.getDate()
-    const monthLen = new Date(next.getFullYear(), next.getMonth() + 1, 0).getDate()
-    const stored = bill && Number.isInteger(bill.day) ? bill.day : undefined
-    const day = stored !== undefined && Math.min(stored, monthLen) === baseDay ? stored : baseDay
-    if (bill) billDay = day
-    next = addMonthsOnDay(next, MONTH_STEPS[freq] ?? 1, day)
+  const advance = (from: Date): Date => {
+    const at = new Date(from)
+    if (freq === 'daily') at.setDate(at.getDate() + 1)
+    else if (freq === 'weekly') at.setDate(at.getDate() + 7)
+    else if (freq === 'biweekly') at.setDate(at.getDate() + 14)
+    else {
+      // Monthly, quarterly and yearly land on a clamped day: setMonth used to roll
+      // 31 January into 3 March. A bill also remembers its intended day, so one due
+      // on the 31st goes 31 Jan -> 28 Feb -> 31 Mar instead of settling on the 28th;
+      // if the owner has moved the date since, the new day wins.
+      const baseDay = at.getDate()
+      const monthLen = new Date(at.getFullYear(), at.getMonth() + 1, 0).getDate()
+      const stored = bill && Number.isInteger(bill.day) ? bill.day : undefined
+      const day = stored !== undefined && Math.min(stored, monthLen) === baseDay ? stored : baseDay
+      if (bill) billDay = day
+      return addMonthsOnDay(at, MONTH_STEPS[freq] ?? 1, day)
+    }
+    return at
   }
+  let next = advance(base)
+  // …and one done late, or missed for weeks, is next due on the first slot
+  // still ahead of when it was done: a bill owes every month it missed, and
+  // a reminder to type in balances does not
+  const done = slot ? Date.parse(task.completedAt ?? '') : NaN
+  for (let i = 0; i < 520 && Number.isFinite(done) && next.getTime() <= done; i++) next = advance(next)
   const now = new Date().toISOString()
   const dueAt = next.toISOString()
   // uidFn kept for call-site compatibility; id is deterministic so two devices agree
