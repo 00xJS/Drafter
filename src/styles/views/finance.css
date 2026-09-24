@@ -78,6 +78,9 @@
 }
 /* the runway is a long list of short rows: no glyph column, and the amount
    pinned right so the balance reads as one column down the page */
+.bill-list.runway .bill-row {
+  padding: 6px 12px;
+}
 .bill-list.runway .bill-copy {
   flex: 1;
 }
