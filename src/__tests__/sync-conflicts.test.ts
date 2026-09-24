@@ -109,7 +109,7 @@ describe('both devices edited the same field', () => {
     expect(seen[0]).toEqual([
       expect.objectContaining({ id: 't', label: 'Buy blue paint', fields: [{ path: ['title'], local: 'Buy blue paint', remote: 'Buy green paint' }] }),
     ])
-    expect(conflictMessage(seen[0])).toBe('“Buy blue paint” changed on another device too — kept the newer edit')
+    expect(conflictMessage(seen[0])).toBe('“Buy blue paint” changed on another device too — kept the one saved first')
     // the merge came out as the server's copy: nothing left to push
     expect(a.engine.inspect().dirty).toEqual([])
 
@@ -123,7 +123,7 @@ describe('both devices edited the same field', () => {
   })
 
   it('names several records in one toast', () => {
-    expect(conflictMessage([{ label: 'Buy paint' }, { label: 'Walk' }, { label: 'Milk' }])).toBe('“Buy paint” and 2 more changed on another device too — kept the newer edits')
+    expect(conflictMessage([{ label: 'Buy paint' }, { label: 'Walk' }, { label: 'Milk' }])).toBe('“Buy paint” and 2 more changed on another device too — kept the ones saved first')
   })
 })
 

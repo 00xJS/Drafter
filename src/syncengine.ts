@@ -437,12 +437,18 @@ export function recordLabel(item: Item | undefined): string {
   }
 }
 
-/** “Buy paint” changed on another device too — kept the newer edit. */
+/**
+ * “Buy paint” changed on another device too — kept the one saved first.
+ *
+ * Where both devices changed one field, the copy the server already has wins
+ * (shared/merge.mts): the edit saved first, whichever was made later. The
+ * toast says which it kept, and its Keep mine puts this device's back.
+ */
 export function conflictMessage(conflicts: readonly { label: string }[]): string {
   const first = `“${conflicts[0]?.label ?? 'Something'}”`
   return conflicts.length > 1
-    ? `${first} and ${conflicts.length - 1} more changed on another device too — kept the newer edits`
-    : `${first} changed on another device too — kept the newer edit`
+    ? `${first} and ${conflicts.length - 1} more changed on another device too — kept the ones saved first`
+    : `${first} changed on another device too — kept the one saved first`
 }
 
 /** A next occurrence put in the Trash as another's duplicate, holding something the one kept does not. */

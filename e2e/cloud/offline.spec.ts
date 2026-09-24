@@ -54,7 +54,7 @@ test('edits made offline reach the other member once the device is back, and not
   await a.settled()
 })
 
-test('both members rename one task offline: the later edit is kept on both devices, and neither stays unsynced', async ({ lane }) => {
+test('both members rename one task offline, the later edit saved first: it is kept on both devices, and neither stays unsynced', async ({ lane }) => {
   const [maria, sam] = await lane.household('Maria', 'Sam')
   const a = await lane.device(maria)
   const b = await lane.device(sam)
@@ -74,17 +74,17 @@ test('both members rename one task offline: the later edit is kept on both devic
   expect(his.id).toBe(hers.id)
   expect(Date.parse(his.updatedAt)).toBeGreaterThan(Date.parse(hers.updatedAt))
 
-  // Sam's device is back first, so the later edit reaches the server first.
-  // Where both devices changed one field, the merge keeps the server's copy
-  // (shared/merge.mts), which makes this the order in which the later edit is
-  // the one both keep: Maria's device takes it in as it comes back, and says so.
+  // Sam's device is back first, so the later edit is saved first. Where both
+  // devices changed one field, the merge keeps the server's copy
+  // (shared/merge.mts): the edit saved first. Maria's device takes it in as it
+  // comes back, and says so. The next test is the other order.
   await b.offline(false)
   await expect.poll(() => lane.row('task', 'title', 'Clean the gutters on Sunday'), LIVE).toMatchObject({ id: his.id })
   await b.settled()
   await a.offline(false)
   await expect(a.task('Clean the gutters on Sunday')).toBeVisible(LIVE)
   await expect(a.task('Clean the gutters on Saturday')).toHaveCount(0)
-  await expect(a.page.getByRole('status').filter({ hasText: 'changed on another device too' })).toHaveText(/^“Clean the gutters on Saturday” changed on another device too — kept the newer edit/)
+  await expect(a.page.getByRole('status').filter({ hasText: 'changed on another device too' })).toHaveText(/^“Clean the gutters on Saturday” changed on another device too — kept the one saved first/)
 
   // neither device is left with anything to push, and both hold Sam's version, stamp and all
   await a.settled()
@@ -106,4 +106,48 @@ test('both members rename one task offline: the later edit is kept on both devic
   await expect(sqlAs(lane.stack, maria, `update public.posts set data = ${lit(older)}::jsonb, updated_at = ${lit(hers.updatedAt)} where id = ${lit(his.id)}`)).rejects.toThrow(
     /stale write rejected/,
   )
+})
+
+test('both members rename one task offline, the earlier edit saved first: that one is kept, and Keep mine brings the later back', async ({ lane }) => {
+  const [maria, sam] = await lane.household('Maria', 'Sam')
+  const a = await lane.device(maria)
+  const b = await lane.device(sam)
+  await b.go('Tasks')
+  await a.newTask('Sweep the porch', { shared: true })
+  await expect(b.task('Sweep the porch')).toBeVisible(LIVE)
+
+  await a.offline(true)
+  await b.offline(true)
+  // Maria first, then Sam: Sam's is the later edit
+  await rename(a, 'Sweep the porch', 'Sweep the porch today')
+  await expect(a.pill).toContainText('1 unsynced', LIVE)
+  await rename(b, 'Sweep the porch', 'Sweep the porch tomorrow')
+  await expect(b.pill).toContainText('1 unsynced', LIVE)
+  const hers = (await a.held('Sweep the porch today'))!
+  const his = (await b.held('Sweep the porch tomorrow'))!
+  expect(his.id).toBe(hers.id)
+  expect(Date.parse(his.updatedAt)).toBeGreaterThan(Date.parse(hers.updatedAt))
+
+  // Maria's device is back first, so the earlier edit is saved first and is
+  // the one kept, later or not: Sam's device takes it in, and its toast says
+  // which it kept and offers his back
+  await a.offline(false)
+  await expect.poll(() => lane.row('task', 'title', 'Sweep the porch today'), LIVE).toMatchObject({ id: hers.id })
+  await a.settled()
+  await b.offline(false)
+  await expect(b.task('Sweep the porch today')).toBeVisible(LIVE)
+  await expect(b.task('Sweep the porch tomorrow')).toHaveCount(0)
+  const toast = b.page.getByRole('status').filter({ hasText: 'changed on another device too' })
+  await expect(toast).toHaveText(/^“Sweep the porch tomorrow” changed on another device too — kept the one saved first/)
+  await b.settled()
+  await expect(a.task('Sweep the porch today')).toBeVisible()
+
+  // Keep mine writes Sam's title again, as a new edit, and it reaches Maria too
+  await toast.getByRole('button', { name: 'Keep mine' }).click()
+  await expect(b.task('Sweep the porch tomorrow')).toBeVisible(LIVE)
+  await expect(a.task('Sweep the porch tomorrow')).toBeVisible(LIVE)
+  await expect(a.task('Sweep the porch today')).toHaveCount(0)
+  await a.settled()
+  await b.settled()
+  expect(await lane.row('task', 'title', 'Sweep the porch tomorrow')).toMatchObject({ id: hers.id })
 })
