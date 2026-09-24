@@ -1,8 +1,9 @@
 // @vitest-environment happy-dom
 import { act, fireEvent, render, screen, within } from './dom'
-import { useState } from 'react'
+import { useSyncExternalStore } from 'react'
 import { afterAll, describe, expect, it } from 'vitest'
 import type { AskSources } from '../ask'
+import { newTurn } from '../chat'
 import type { ChatReply } from '../chatactions'
 import { CUT_SHORT } from '../ai'
 import { AskSheet } from '../components/AskSheet'
@@ -41,9 +42,34 @@ function heldAsk() {
   return { call, ask }
 }
 
-/** The chat over a thread of its own: what is written is kept, and drawn. */
-function Thread({ ask, written }: { ask: ReturnType<typeof heldAsk>['ask']; written: ChatTurn[] }) {
-  const [turns, setTurns] = useState<ChatTurn[]>([])
+/**
+ * The thread, kept outside the chat and read the way the app reads its store
+ * (useSyncExternalStore): a turn written is drawn at once, before the chat
+ * hears anything more. `written` is every turn written, in order.
+ */
+function threadStore() {
+  let turns: ChatTurn[] = []
+  const listeners = new Set<() => void>()
+  const written: ChatTurn[] = []
+  return {
+    written,
+    write(t: ChatTurn) {
+      written.push(t)
+      turns = [...turns, t]
+      for (const l of listeners) l()
+    },
+    subscribe(l: () => void) {
+      listeners.add(l)
+      return () => void listeners.delete(l)
+    },
+    read: () => turns,
+  }
+}
+type ThreadStore = ReturnType<typeof threadStore>
+
+/** The chat over a thread of its own. */
+function Thread({ ask, store }: { ask: ReturnType<typeof heldAsk>['ask']; store: ThreadStore }) {
+  const turns = useSyncExternalStore(store.subscribe, store.read)
   return (
     <Chat
       side="assistant"
@@ -56,10 +82,7 @@ function Thread({ ask, written }: { ask: ReturnType<typeof heldAsk>['ask']; writ
       tz="America/Phoenix"
       onSendMessage={noop}
       onRemoveMessage={noop}
-      onWriteTurn={t => {
-        written.push(t)
-        setTurns(ts => [...ts, t])
-      }}
+      onWriteTurn={store.write}
       onClearChat={noop}
       onOpen={noop}
       ask={ask}
@@ -81,8 +104,9 @@ const arriving = () => document.querySelector('.chat-arriving')
 describe('an answer arriving in the chat', () => {
   it('grows where the answer will be, then becomes the answer with its cards', async () => {
     const { call, ask } = heldAsk()
-    const written: ChatTurn[] = []
-    render(<Thread ask={ask} written={written} />)
+    const store = threadStore()
+    const written = store.written
+    render(<Thread ask={ask} store={store} />)
     await act(async () => send('Add milk and eggs'))
     expect(call.asked).toBe(1)
     expect(screen.getByText('Reading your planner…')).toBeTruthy()
@@ -113,8 +137,9 @@ describe('an answer arriving in the chat', () => {
 
   it('leaves nothing behind when it breaks off part way: the failure line, Try again, and only the question written', async () => {
     const { call, ask } = heldAsk()
-    const written: ChatTurn[] = []
-    render(<Thread ask={ask} written={written} />)
+    const store = threadStore()
+    const written = store.written
+    render(<Thread ask={ask} store={store} />)
     await act(async () => send('Tell me about my week'))
     await act(async () => call.words!('It was a busy one: you'))
     expect(arriving()?.textContent).toContain('It was a busy one: you')
@@ -138,9 +163,23 @@ describe('an answer arriving in the chat', () => {
     ])
   })
 
+  it('never draws the answer twice: once its turn is in the thread, the words that became it are gone, whatever the chat has heard', async () => {
+    // The store draws a turn the moment it is written, and the chat learns that
+    // its question was answered a render later: the thread alone decides.
+    const { call, ask } = heldAsk()
+    const store = threadStore()
+    render(<Thread ask={ask} store={store} />)
+    await act(async () => send('Add milk and eggs'))
+    await act(async () => call.words!('I can add milk and eggs to the list.'))
+    await act(async () => store.write(newTurn('drafter', 'I can add milk and eggs to the list.', undefined, new Date(NOW.getTime() + 60_000))!))
+    expect(arriving()).toBeNull()
+    expect(screen.getAllByText('I can add milk and eggs to the list.')).toHaveLength(1)
+    expect(screen.queryByText('Reading your planner…')).toBeNull()
+  })
+
   it('shows what the model is taking back as taken back', async () => {
     const { call, ask } = heldAsk()
-    render(<Thread ask={ask} written={[]} />)
+    render(<Thread ask={ask} store={threadStore()} />)
     await act(async () => send('What is due?'))
     await act(async () => call.words!('The user asks'))
     expect(arriving()).not.toBeNull()

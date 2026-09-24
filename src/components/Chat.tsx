@@ -287,6 +287,18 @@ type Ask = (question: string, docs: AskDoc[], facts: string[], history: readonly
 /** Close enough to the foot of the thread to be following it down (px). */
 const FOLLOWING = 160
 
+/**
+ * Whether the thread's newest line, the app's own lines aside, is a question:
+ * its answer is still to come. An empty thread is waiting too, as far as it can
+ * tell. Read off the thread rather than off `busy`: the store draws a turn the
+ * moment it is written, and `busy` goes a render later, so for a frame the
+ * answer and the words that became it were both on screen.
+ */
+function awaitingAnswer(turns: readonly ChatTurn[]): boolean {
+  for (let i = turns.length - 1; i >= 0; i--) if (!turns[i].outcomes?.length) return turns[i].role === 'you'
+  return true
+}
+
 /** You and Drafter, about your own planner. */
 function AssistantThread({
   turns,
@@ -518,6 +530,8 @@ function AssistantThread({
   const byRef = new Map(docs.map(d => [d.ref, d]))
   // the app's own lines are a speaker of their own, so an answer after one still says who it is from
   const rows = thread(turns, t => (t.outcomes?.length ? 'app' : t.role))
+  // an answer on its way: its words, or the line that says it is coming, until the answer itself is in the thread
+  const answerDue = busy && awaitingAnswer(turns)
   return (
     <>
       {turns.length === 0 ? (
@@ -572,7 +586,7 @@ function AssistantThread({
               </li>
             ),
           )}
-          {busy && arriving && (
+          {answerDue && arriving && (
             // where the answer will be, drawn as it will be drawn: the turn replaces it once the whole reply is read
             <li ref={arrivingLine} className="chat-line theirs drafter chat-arriving" aria-busy="true">
               <span className="chat-who">✈ Drafter</span>
@@ -581,7 +595,7 @@ function AssistantThread({
           )}
         </ul>
       )}
-      {busy && !(arriving && turns.length > 0) && <p className="chat-thinking">Reading your planner…</p>}
+      {answerDue && !(arriving && turns.length > 0) && <p className="chat-thinking">Reading your planner…</p>}
       {failed && !busy && (
         <p className="chat-thinking ask-failed" role="status">
           {failed.text}{' '}
