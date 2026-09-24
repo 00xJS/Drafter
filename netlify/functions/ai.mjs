@@ -7,8 +7,8 @@
 // was sent turned out to be the model's thinking, and `done` with the whole
 // answer — the same text the ordinary answer would have carried — or `error`
 // if it breaks off. Until the first words are ready everything is as before,
-// failures included, so an app that cannot read a stream is answered as
-// before too. JSON, and a host that names Anthropic, are answered whole.
+// failures included. Every other call, a phone built before streaming among
+// them, JSON, and a host that names Anthropic are answered whole, as before.
 //
 // The owner's AI keys sit behind this, so it fails closed: no valid session is
 // a 401, and a host missing its auth settings answers 503. It used to skip the
