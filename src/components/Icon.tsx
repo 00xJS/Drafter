@@ -39,6 +39,13 @@ export type IconName =
   | 'chevron'
   | 'bell'
   | 'alert'
+  | 'check'
+  | 'tee'
+  | 'trousers'
+  | 'dress'
+  | 'coat'
+  | 'shoe'
+  | 'bag'
 
 const PATHS: Record<IconName, JSX.Element> = {
   home: (
@@ -179,7 +186,7 @@ const PATHS: Record<IconName, JSX.Element> = {
       <path d="M10 11v5M14 11v5" />
     </>
   ),
-  // Surprise me: two crossing paths
+  // New ideas, and another look for a day of the plan: two crossing paths
   shuffle: (
     <>
       <path d="M3 7h3.2c2 0 3.2 1 4.3 2.8l2.9 4.4c1.1 1.8 2.3 2.8 4.3 2.8H21" />
@@ -224,6 +231,41 @@ const PATHS: Record<IconName, JSX.Element> = {
     <>
       <path d="M12 3.9 21.2 19.6H2.8z" />
       <path d="M12 10v4.4M12 17.3v.1" />
+    </>
+  ),
+  /* a tick: the piece a picker has chosen */
+  check: <path d="M5 12.6l4.3 4.3L19.2 7" />,
+  /* a piece of clothing by its type, where it has no photo yet: a tee, a pair
+     of trousers, a dress, a coat, a shoe and a bag, each its outline alone */
+  tee: <path d="M8.6 3.6 4.3 5.5 2.6 10.2l3.4 1.3 1-2v10.9h10V9.5l1 2 3.4-1.3-1.7-4.7-4.3-1.9c-.5 1.5-1.9 2.5-3.4 2.5s-2.9-1-3.4-2.5z" />,
+  trousers: (
+    <>
+      <path d="M6.6 3.2h10.8l1.4 17.4h-4.5L12 10.4l-2.3 10.2H5.2z" />
+      <path d="M6.4 6.2h11.2" />
+    </>
+  ),
+  dress: (
+    <>
+      <path d="M9.3 3l.6 4.3-1.3 2.9-3.2 10.4h13.2l-3.2-10.4-1.3-2.9.6-4.3" />
+      <path d="M9.9 7.3c1.4.9 2.8.9 4.2 0M8.6 10.2h6.8" />
+    </>
+  ),
+  coat: (
+    <>
+      <path d="M9 3 5.2 4.9 3.6 19.9h3l.9-9.2V21h9V10.7l.9 9.2h3L18.8 4.9 15 3l-3 5.6z" />
+      <path d="M12 8.6V21" />
+    </>
+  ),
+  shoe: (
+    <>
+      <path d="M3 17.8V9.6c0-.6.6-1 1.1-.8 1.6.6 3.2.3 4.3-.9l.6-.7c.4-.4 1-.4 1.3 0l2.5 2.6c1.5 1.5 3.4 2.4 5.5 2.7 1.5.2 2.7 1.5 2.7 3v2.3z" />
+      <path d="M3 15.2h18M10.7 9.9l-1.3 1.3M12.6 11.6l-1.3 1.3" />
+    </>
+  ),
+  bag: (
+    <>
+      <path d="M5.2 8.6h13.6l-1.3 11.4a1.3 1.3 0 0 1-1.3 1.2H7.8a1.3 1.3 0 0 1-1.3-1.2z" />
+      <path d="M9 8.6V6.9a3 3 0 0 1 6 0v1.7" />
     </>
   ),
   keep: (

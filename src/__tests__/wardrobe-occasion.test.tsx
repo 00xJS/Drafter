@@ -6,22 +6,23 @@ import { describe, expect, it, vi } from 'vitest'
 import { mergeRecord } from '../../shared/merge.mts'
 import { workByDay, workDaysOf } from '../calgrid'
 import { entryToEvent } from '../calendars'
+import { dealIdeas, pickerGroups, pickerOrder } from '../components/wardrobe/board'
 import { Clothes } from '../components/wardrobe/Clothes'
-import { chosenIn, rowsOf, start, surprise, surprisePool } from '../components/wardrobe/composer'
+import { heldPieces, ideaPool, rowsOf } from '../components/wardrobe/composer'
 import { GarmentSheet, type SheetMode } from '../components/wardrobe/GarmentSheet'
+import { FilledSlot } from '../components/wardrobe/LookSlot'
 import { OutfitComposer } from '../components/wardrobe/OutfitComposer'
 import { OccasionChoice, PieceDetails } from '../components/wardrobe/PieceDetails'
 import { SavedOutfits } from '../components/wardrobe/SavedOutfits'
-import { SnapRow } from '../components/wardrobe/SnapRow'
 import { WardrobeCard } from '../components/wardrobe/WardrobeCard'
 import type { CalendarEntry, Garment, GarmentType, Outfit, Wear } from '../types'
 import { dayOccasion, liveById, wearIndex } from '../wardrobe'
 import { button, elements, press, propsOf, settled } from './rendered'
 
-// Work and days-off pieces, and a composer that knows a work day: the day's
-// occasion from your own work-day entries, flipped for the view alone; the
-// rows, their badges and quieter cards; Surprise me's pool; a saved outfit's
-// badge; Clothes' filter; Today's one-tap looks; and Wear it for.
+// Work and days-off pieces, and an Outfit board that knows a work day: the
+// day's occasion from your own work-day entries, flipped for the view alone;
+// the picker's groups and the card's badges; the ideas' pool; a saved
+// outfit's badge; Clothes' filter; Today's one-tap looks; and Wear it for.
 
 const read = (path: string) => readFileSync(fileURLToPath(new URL(path, import.meta.url)), 'utf8')
 const noop = () => {}
@@ -39,8 +40,7 @@ const slacks = piece('slacks', 'bottom', { occasion: 'work' })
 const jeans = piece('jeans', 'bottom')
 const joggers = piece('joggers', 'bottom', { occasion: 'personal' })
 const wardrobe = [suit, shirt, gym, slacks, jeans, joggers]
-/** The rows' rest order as a visit freezes it: never worn, so by name. */
-const frozen = ['gym-top', 'jeans', 'joggers', 'shirt', 'slacks', 'suit']
+const ix = wearIndex([], TODAY)
 
 /** A local time on a day, as an entry stores it. */
 const at = (day: string, h: number, m = 0) => {
@@ -84,6 +84,7 @@ function composerProps(over: Partial<ComposerProps> = {}): ComposerProps {
     onDay: noop,
     onLog: noop,
     onRemoveLook: noop,
+    onPlanWeek: noop,
     onSaveOutfit: noop,
     onAdd: noop,
     onOpenPiece: noop,
@@ -96,10 +97,13 @@ function composerProps(over: Partial<ComposerProps> = {}): ComposerProps {
   }
 }
 const composer = (over: Partial<ComposerProps> = {}) => renderToStaticMarkup(<OutfitComposer {...composerProps(over)} />)
-/** The pieces each row deals, row by row. */
-const rowsIn = (tree: ReactNode) => elements(tree).filter(e => e.type === SnapRow).map(e => (e.props.pieces as Garment[]).map(g => g.id))
-/** The names on the chosen cards, row by row. */
-const chosenNames = (html: string) => [...html.matchAll(/aria-checked="true"[^>]*class="snap-card">[\s\S]*?class="snap-name">([^<]+)</g)].map(m => m[1])
+/** The pieces on the card, slot by slot. */
+const chosenNames = (html: string) => [...html.matchAll(/class="look-slot-main" aria-label="[^:"]+: ([^"]+?)(?: \((?:Retired|In Trash)\))?\. Choose another"/g)].map(m => m[1])
+/** Every piece the ideas deal, from their tiles' names. */
+const ideaPieces = (tree: ReactNode) =>
+  elements(tree)
+    .filter(e => e.props.className === 'idea-tile')
+    .flatMap(e => String(e.props['aria-label']).replace(/^Try /, '').split(' + '))
 
 describe('the day’s occasion', () => {
   const entries: CalendarEntry[] = [
@@ -148,9 +152,9 @@ describe('the day’s occasion', () => {
     expect(read('../components/planner/HomeScreen.tsx')).toContain('entries={store.events}')
   })
 
-  it('shows beside the date, on a day ahead too, in plain words', () => {
+  it('shows on the day line, on a day ahead too, in plain words', () => {
     const today = composer()
-    expect(today).toMatch(/<span class="wardrobe-day-mid"><span class="wardrobe-day-pick">[\s\S]*?<\/span><button type="button" class="wardrobe-occasion" aria-label="Work day: dress for a day off instead"[^>]*>Work day<\/button><\/span>/)
+    expect(today).toMatch(/<div class="wardrobe-dayline"><button type="button" class="wardrobe-occasion" aria-label="Work day: dress for a day off instead"[^>]*>Work day<\/button>/)
     expect(composer({ day: '2026-09-15' })).toContain('>Work day</button>')
     expect(composer({ day: '2026-09-16' })).toContain('>Day off</button>')
     expect(composer({ day: '2026-09-13' })).toContain('>Day off</button>')
@@ -158,93 +162,93 @@ describe('the day’s occasion', () => {
     expect(composer({ workDays: new Set() })).toContain('>Day off</button>')
   })
 
-  it('turns the other way at a tap, for the view alone: the rows follow, and nothing is written', () => {
-    const [onLog, onSaveOutfit, onDay, onOpenPiece] = [vi.fn(), vi.fn(), vi.fn(), vi.fn()]
-    const props = composerProps({ onLog, onSaveOutfit, onDay, onOpenPiece })
-    expect(rowsIn(settled(OutfitComposer, props))[0]).toEqual(['shirt', 'suit', 'gym-top'])
+  it('turns the other way at a tap, for the view alone: the ideas follow, and nothing is written', () => {
+    const [onLog, onSaveOutfit, onDay, onOpenPiece, onPlanWeek] = [vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn()]
+    const props = composerProps({ onLog, onSaveOutfit, onDay, onOpenPiece, onPlanWeek })
+    const before = ideaPieces(settled(OutfitComposer, props))
+    expect(before.length).toBeGreaterThan(0)
+    expect(before).not.toContain('gym-top')
+    expect(before).not.toContain('joggers')
     const after = settled(OutfitComposer, props, t => press(t, 'Work day: dress for a day off instead'))
     // the name says it was changed, not only the title
     expect(button(after, 'Day off, changed for now: dress for work instead').props).toMatchObject({ className: 'wardrobe-occasion changed', title: 'Changed for now: nothing is saved' })
-    expect(rowsIn(after)[0]).toEqual(['gym-top', 'shirt', 'suit'])
-    for (const f of [onLog, onSaveOutfit, onDay, onOpenPiece]) expect(f).not.toHaveBeenCalled()
+    const offIdeas = ideaPieces(after)
+    expect(offIdeas.length).toBeGreaterThan(0)
+    expect(offIdeas).not.toContain('suit')
+    expect(offIdeas).not.toContain('slacks')
+    for (const f of [onLog, onSaveOutfit, onDay, onOpenPiece, onPlanWeek]) expect(f).not.toHaveBeenCalled()
   })
 })
 
-describe('the composer’s rows', () => {
-  it('lead with the pieces for the day, or for any time, in their usual order, and keep the others after them', () => {
-    expect(rowsOf(wardrobe, frozen, [], 'work').top.map(g => g.id)).toEqual(['shirt', 'suit', 'gym-top'])
-    expect(rowsOf(wardrobe, frozen, [], 'personal').top.map(g => g.id)).toEqual(['gym-top', 'shirt', 'suit'])
-    expect(rowsOf(wardrobe, frozen, [], 'work').bottom.map(g => g.id)).toEqual(['jeans', 'slacks', 'joggers'])
-    // no occasion: the rest order alone
-    expect(rowsOf(wardrobe, frozen).top.map(g => g.id)).toEqual(['gym-top', 'shirt', 'suit'])
+describe('the picker and the card', () => {
+  it('lead the picker with the pieces for the day, or for any time, and keep the others under Other days', () => {
+    const rows = rowsOf(wardrobe)
+    const work = pickerGroups(rows.top, pickerOrder(rows.top, ix), 'work', 'all')
+    expect([work.fit.map(g => g.id), work.other.map(g => g.id)]).toEqual([['shirt', 'suit'], ['gym-top']])
+    const off = pickerGroups(rows.top, pickerOrder(rows.top, ix), 'personal', 'all')
+    expect([off.fit.map(g => g.id), off.other.map(g => g.id)]).toEqual([['gym-top', 'shirt'], ['suit']])
+    const bottoms = pickerGroups(rows.bottom, pickerOrder(rows.bottom, ix), 'work', 'all')
+    expect([bottoms.fit.map(g => g.id), bottoms.other.map(g => g.id)]).toEqual([['jeans', 'slacks'], ['joggers']])
+    // For work leaves the others out, and says how many
+    expect(pickerGroups(rows.top, pickerOrder(rows.top, ix), 'work', 'fit')).toMatchObject({ other: [], hidden: 1 })
     // the day's held piece still leads, whatever it is for
     const oldGym = piece('old-gym', 'top', { occasion: 'personal', archivedAt: T0 })
-    expect(rowsOf([...wardrobe, oldGym], frozen, [oldGym], 'work').top.map(g => g.id)).toEqual(['old-gym', 'shirt', 'suit', 'gym-top'])
+    const held = rowsOf([...wardrobe, oldGym], heldPieces(look(TODAY, ['old-gym', 'jeans']), [...wardrobe, oldGym], [])).top
+    expect(pickerGroups(held, pickerOrder(held, ix), 'work', 'fit').held.map(g => g.id)).toEqual(['old-gym'])
   })
 
-  it('badge a piece marked Work or Days off, none for Anytime, and draw one for the other occasion quieter, never hidden', () => {
-    const html = composer()
-    expect(html.match(/<span class="badge occasion-badge work">Work<\/span>/g)).toHaveLength(2)
+  it('badge a piece on the card only when it is for the other occasion, Work or Days off, never Anytime', () => {
+    // a work day: the gym top is for days off and says so; the slacks and the shirt need no word
+    const html = composer({ wears: [look(TODAY, ['gym-top', 'slacks'])] })
+    expect(chosenNames(html)).toEqual(['gym-top', 'slacks'])
+    expect(html.match(/occasion-badge/g)).toHaveLength(1)
     // stored as 'personal', read as Days off
-    expect(html.match(/<span class="badge occasion-badge personal">Days off<\/span>/g)).toHaveLength(2)
-    // the shirt and the jeans are for any time: no badge of their own
-    expect(html.match(/occasion-badge/g)).toHaveLength(4)
+    expect(html).toContain('<span class="badge occasion-badge personal">Days off</span>')
     expect(html).not.toMatch(/>(Personal|Both|Anytime)<\/span>/)
-    // on a work day the gym top and the joggers are quieter, and still in their rows
-    expect(html.match(/class="snap-cell side off"/g)).toHaveLength(2)
-    expect(html).toContain('>gym-top</span>')
-    expect(html).toContain('>joggers</span>')
-    expect(chosenNames(html)).toEqual(['shirt', 'jeans'])
-    // on a day off, the suit and the slacks
-    const off = composer({ day: '2026-09-16' })
-    expect(off.match(/ off"/g)).toHaveLength(2)
-    expect(off.indexOf('>gym-top</span>')).toBeLessThan(off.indexOf('>suit</span>'))
+    // a day off: the suit is for work
+    const off = composer({ day: '2026-09-16', wears: [look('2026-09-16', ['suit', 'jeans'])] })
+    expect(off).toContain('<span class="badge occasion-badge work">Work</span>')
+    expect(off.match(/occasion-badge/g)).toHaveLength(1)
+    // pieces for any time, on either day: no badge at all
+    expect(composer({ wears: [look(TODAY, ['shirt', 'jeans'])] })).not.toContain('occasion-badge')
   })
 
   it('give a held piece’s badge the line: a retired one says Retired, not Work', () => {
     const oldSuit = piece('old-suit', 'top', { occasion: 'work', archivedAt: T0 })
-    const html = renderToStaticMarkup(
-      <SnapRow label="Tops" pieces={[oldSuit, suit]} ix={wearIndex([], TODAY)} selected="old-suit" onSelect={noop} occasion="work" onInfo={noop} onAdd={noop} addLabel="+ Add top" emptyLabel="No tops yet" />,
-    )
-    expect(html).toContain('class="badge snap-held">Retired</span>')
-    // one Work badge, the suit's; the retired suit's line is its Retired badge alone
-    expect(html.match(/occasion-badge work/g)).toHaveLength(1)
+    const html = renderToStaticMarkup(<FilledSlot garment={oldSuit} ix={ix} occasion="personal" flipped={false} onFlip={noop} onOpen={noop} onClear={noop} />)
+    expect(html).toContain('class="badge look-held">Retired</span>')
+    expect(html).not.toContain('occasion-badge')
   })
 
-  it('still start a day off from a saved outfit for work', () => {
-    expect(chosenNames(composer({ day: '2026-09-16', pending: ['suit', 'slacks'] }))).toEqual(['suit', 'slacks'])
+  it('still start a day off from a saved outfit for work, and say so', () => {
+    const html = composer({ day: '2026-09-16', pending: ['suit', 'slacks'] })
+    expect(chosenNames(html)).toEqual(['suit', 'slacks'])
+    expect(html.match(/<span class="badge occasion-badge work">Work<\/span>/g)).toHaveLength(2)
   })
 })
 
-describe('Surprise me', () => {
-  it('draws from the pieces that fit the day, for it or for any time, and then the season', () => {
-    const rows = rowsOf(wardrobe, frozen, [], 'work')
-    expect(surprisePool(rows.top, 'autumn', 'work').map(g => g.id)).toEqual(['shirt', 'suit'])
-    expect(surprisePool(rows.top, 'autumn', 'personal').map(g => g.id)).toEqual(['shirt', 'gym-top'])
-    expect(surprisePool([{ ...shirt, seasons: ['summer'] }, suit, gym], 'autumn', 'work').map(g => g.id)).toEqual(['suit'])
-    // a row with nothing for the day draws nothing, and a row with nothing in season keeps the day's pieces
-    expect(surprisePool([suit], 'autumn', 'personal')).toEqual([])
-    expect(surprisePool([{ ...suit, seasons: ['summer'] }], 'autumn', 'work').map(g => g.id)).toEqual(['suit'])
-    // so Surprise me leaves that row where it is: a day off never gets the suit
-    const workOnly = rowsOf([suit, slacks, jeans], frozen, [], 'personal')
-    const onSuit = start(workOnly, undefined, liveById([suit, slacks, jeans]))
-    for (const r of [0, 0.5, 0.999]) {
-      const { slots } = chosenIn(surprise(onSuit, workOnly, [], wearIndex([], TODAY), { occasion: 'personal', random: () => r }), workOnly, [])
-      expect(slots.top, String(r)).toBe(chosenIn(onSuit, workOnly, []).slots.top)
-      expect(slots.bottom, String(r)).toBe('jeans')
-    }
-    // and a draw never lands on a piece for the other occasion
-    const sel = start(rows, undefined, liveById(wardrobe))
-    for (const r of [0, 0.3, 0.6, 0.999]) {
-      const { slots } = chosenIn(surprise(sel, rows, [], wearIndex([], TODAY), { occasion: 'work', random: () => r }), rows, [])
-      expect([slots.top, slots.bottom], String(r)).not.toContain('gym-top')
-      expect([slots.top, slots.bottom], String(r)).not.toContain('joggers')
+describe('the ideas', () => {
+  it('draw from the pieces that fit the day, for it or for any time, and then the season', () => {
+    const rows = rowsOf(wardrobe)
+    expect(ideaPool(rows.top, 'autumn', 'work').map(g => g.id)).toEqual(['shirt', 'suit'])
+    expect(ideaPool(rows.top, 'autumn', 'personal').map(g => g.id)).toEqual(['gym-top', 'shirt'])
+    expect(ideaPool([{ ...shirt, seasons: ['summer'] }, suit, gym], 'autumn', 'work').map(g => g.id)).toEqual(['suit'])
+    // a type with nothing for the day draws nothing, and one with nothing in season keeps the day's pieces
+    expect(ideaPool([suit], 'autumn', 'personal')).toEqual([])
+    expect(ideaPool([{ ...suit, seasons: ['summer'] }], 'autumn', 'work').map(g => g.id)).toEqual(['suit'])
+    // so a day off with only work tops has no look to offer
+    expect(dealIdeas(rowsOf([suit, slacks, jeans]), ix, { occasion: 'personal', season: 'autumn', seed: 'x' })).toEqual([])
+    // and a deal never lands on a piece for the other occasion
+    for (let n = 0; n < 8; n++) {
+      const dealt = dealIdeas(rows, ix, { occasion: 'work', season: 'autumn', seed: `w|${n}` }).flatMap(i => i.core)
+      expect(dealt, String(n)).not.toContain('gym-top')
+      expect(dealt, String(n)).not.toContain('joggers')
     }
   })
 
-  it('is told the day’s occasion by the composer, and so is the coat', () => {
+  it('are told the day’s occasion and season by the board, and so is the coat', () => {
     const src = read('../components/wardrobe/OutfitComposer.tsx')
-    expect(src).toContain('surprise(s, rows, openRows, ix, { season: seasonOf(day), occasion })')
+    expect(src).toContain('dealIdeas(rows, ix, { occasion, season: seasonOf(day), coat: dayCoat,')
     expect(src).toContain('outerwearFor(garments, ix, need, undefined, occasion)')
   })
 })

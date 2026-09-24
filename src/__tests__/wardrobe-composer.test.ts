@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { chosenIn, heldPieces, load, rowsOf, shownIn, start, surprise, type Selection } from '../components/wardrobe/composer'
+import { chosenIn, heldPieces, load, loadIdea, pickSlot, rowsOf, shownIn, start, toggleAccessory, type Selection } from '../components/wardrobe/composer'
 import type { Garment, GarmentType, Wear } from '../types'
-import { byRest, liveById, logLook, looksOn, wearIndex } from '../wardrobe'
+import { liveById, logLook, looksOn } from '../wardrobe'
 
-// The composer's selection as a thumb drives it, then what Update look
+// The look card's selection as a thumb drives it, then what Update look
 // writes. A day's look is shown as it is — a retired piece in it, or one in
-// Trash, joins its row for the visit — so it keeps its day unless you move
-// that row, and no piece is written that you did not choose.
+// Trash, holds its slot for the visit — so it keeps its day unless you change
+// that slot, and no piece is written that you did not choose.
 
 const T0 = '2026-08-01T09:00:00.000Z'
 const TODAY = '2026-09-14'
@@ -25,23 +25,29 @@ const boots = piece('boots', 'shoes')
 const scarf = piece('scarf', 'accessory')
 const wardrobe = [bandTee, hoodie, shirt, jeans, chinos, trainers, boots, scarf]
 
-/** The composer as it mounts on `day`: the rows dealt, the day's held pieces in them, and its latest look put in them. */
+/** The board as it mounts on `day`: what each slot can hold, the day's held pieces among it, and its latest look on the card. */
 function visit(wears: Wear[], day: string, garments: Garment[] = wardrobe, inTrash: Garment[] = []) {
   const looks = looksOn(wears, day)
   const latest = looks[looks.length - 1]
   const byId = liveById(garments)
-  const rows = rowsOf(
-    garments,
-    byRest(garments, wearIndex(wears, TODAY)).map(g => g.id),
-    heldPieces(latest, garments, inTrash),
-  )
+  const rows = rowsOf(garments, heldPieces(latest, garments, inTrash))
   return { rows, byId, sel: start(rows, latest, byId) }
 }
 const picking = (sel: Selection, over: Partial<Selection['picked']>): Selection => ({ ...sel, picked: { ...sel.picked, ...over } })
 const sorted = (ids: readonly string[]) => [...ids].sort()
 
+describe('what each slot can hold', () => {
+  it('is every live, unretired piece of its type, by name, so the chips keep one order visit after visit', () => {
+    const rows = rowsOf([piece('b', 'top', { name: 'Zip top' }), piece('a', 'top', { name: 'Aran' }), jeans, bandTee, piece('gone', 'top', { deletedAt: T0 })])
+    expect(rows.top.map(g => g.id)).toEqual(['a', 'b'])
+    expect(rows.bottom.map(g => g.id)).toEqual(['jeans'])
+    // the same whatever was worn, and whenever it is asked
+    expect(rowsOf([...wardrobe].reverse()).top.map(g => g.id)).toEqual(rowsOf(wardrobe).top.map(g => g.id))
+  })
+})
+
 describe('a day holding a retired piece', () => {
-  it('shows it first in its row, chosen, with nothing to explain', () => {
+  it('shows it first in its slot’s pieces, chosen, with nothing to explain', () => {
     const { rows, sel } = visit([look(DAY, ['band-tee', 'jeans'])], DAY)
     expect(rows.top[0].id).toBe('band-tee')
     expect(chosenIn(sel, rows, []).slots.top).toBe('band-tee')
@@ -66,14 +72,14 @@ describe('a day holding a retired piece', () => {
     expect(sorted(write.garmentIds)).toEqual(['band-tee', 'jeans', 'scarf'])
   })
 
-  it('lets it go when you move its row: that top is replaced, as you chose', () => {
+  it('lets it go when you change its slot: that top is replaced, as you chose', () => {
     const day = look(DAY, ['band-tee', 'jeans'])
     const { rows, sel } = visit([day], DAY)
     const { pieces } = chosenIn(picking(sel, { top: 'hoodie' }), rows, [])
     expect(sorted(logLook([day], DAY, pieces, wardrobe, { shown: shownIn(rows) }).write.garmentIds)).toEqual(['hoodie', 'jeans'])
   })
 
-  it('leaves the rows on any other day', () => {
+  it('is offered on no other day', () => {
     const { rows } = visit([look(DAY, ['band-tee', 'jeans'])], TODAY)
     expect(rows.top.map(g => g.id)).not.toContain('band-tee')
   })
@@ -83,7 +89,7 @@ describe('a day holding a piece in Trash', () => {
   const binned = { ...shirt, deletedAt: '2026-09-12T09:00:00.000Z' }
   const live = wardrobe.filter(g => g.id !== 'shirt')
 
-  it('shows it in its row too, so Update look keeps one top and a Restore finds one top, not two', () => {
+  it('holds its slot too, so Update look keeps one top and a Restore finds one top, not two', () => {
     const day = look('2026-09-01', ['shirt', 'jeans'])
     const { rows, sel } = visit([day], '2026-09-01', live, [binned])
     expect(rows.top[0].id).toBe('shirt')
@@ -102,8 +108,8 @@ describe('a day holding a piece in Trash', () => {
   })
 })
 
-describe('a saved outfit put in the rows', () => {
-  it('leaves a retired piece’s row where it was, and names the piece', () => {
+describe('a saved outfit put on the card', () => {
+  it('leaves a retired piece’s slot as it was, and names the piece', () => {
     const { rows, sel, byId } = visit([], TODAY)
     const before = chosenIn(sel, rows, []).slots.top
     const loaded = load(sel, ['band-tee', 'chinos'], rows, byId)
@@ -115,60 +121,61 @@ describe('a saved outfit put in the rows', () => {
   })
 })
 
-describe('Surprise me', () => {
-  // the draw is Math.random's shape: 0 takes the first card in the draw
-  const first = () => 0
-
-  it('moves each row on screen off the card it is on, and writes nothing', () => {
+describe('the card, slot by slot', () => {
+  it('takes a piece into a slot, or empties it, and lets the card’s note go', () => {
     const { rows, sel } = visit([], TODAY)
-    const before = chosenIn(sel, rows, [])
-    const after = chosenIn(surprise({ ...sel, note: 'A piece was deleted' }, rows, [], wearIndex([], TODAY), { random: first }), rows, [])
-    expect(after.slots.top).not.toBe(before.slots.top)
-    expect(after.slots.bottom).not.toBe(before.slots.bottom)
-    // the rows only move: the shoes stay shut, and nothing is logged or saved
-    expect(after.slots.shoes).toBeNull()
-    expect(surprise(sel, rows, [], wearIndex([], TODAY), { random: first }).note).toBeUndefined()
+    const on = pickSlot({ ...sel, note: 'A piece was deleted' }, 'top', 'hoodie')
+    expect(on.note).toBeUndefined()
+    expect(chosenIn(on, rows, []).slots.top).toBe('hoodie')
+    expect(chosenIn(pickSlot(on, 'top', null), rows, []).slots.top).toBeNull()
+    // a top and a bottom make a look; a top alone does not
+    expect(chosenIn(on, rows, []).dressed).toBe(false)
+    expect(chosenIn(pickSlot(on, 'bottom', 'jeans'), rows, []).dressed).toBe(true)
   })
 
-  it('leans on the ones rested longest: each is drawn as often as its rest weighs', () => {
-    const garments = [piece('t-today', 'top'), piece('t-month', 'top'), piece('t-never', 'top'), piece('b', 'bottom')]
-    const ix = wearIndex([look(TODAY, ['t-today', 'b']), look('2026-08-15', ['t-month', 'b'])], TODAY)
-    const rows = rowsOf(garments, byRest(garments, ix).map(g => g.id))
-    // an undressed day starts on None; never worn leads the row behind it
-    const sel = start(rows, undefined, liveById(garments))
-    expect(chosenIn(sel, rows, []).slots.top).toBeNull()
-    expect(rows.top[0].id).toBe('t-never')
-    const drawn = (r: number) => chosenIn(surprise(sel, rows, [], ix, { random: () => r }), rows, []).slots.top
-    // Never worn weighs 61, a month's rest 32, today's 1 — 94 between them.
-    // Surprise me skips the card the row is on, and None is not a card of
-    // anything, so from an undressed day all three are in the draw.
-    expect(drawn(0.5)).toBe('t-never')
-    expect(drawn(0.9)).toBe('t-month')
-    expect(drawn(0.999)).toBe('t-today')
+  it('puts an accessory on and takes it off again', () => {
+    const { sel } = visit([], TODAY)
+    const on = toggleAccessory(sel, 'scarf')
+    expect(on.picked.accessories).toEqual(['scarf'])
+    expect(toggleAccessory(on, 'scarf').picked.accessories).toEqual([])
   })
 
-  it('never deals a piece only held for the day, nor one out of season while the row has one in it', () => {
-    const { rows, sel } = visit([look(DAY, ['band-tee', 'jeans'])], DAY)
-    // the held tee leads its row and the rows start on it; moved off it first,
-    // only the draw itself can keep it out
-    expect(rows.top[0].id).toBe('band-tee')
-    const moved = picking(sel, { top: 'hoodie' })
-    for (const r of [0, 0.5, 0.999]) expect(chosenIn(surprise(moved, rows, [], wearIndex([], TODAY), { random: () => r }), rows, []).slots.top).not.toBe('band-tee')
-    const tops = [piece('summer-tee', 'top', { seasons: ['summer'] }), piece('wool-top', 'top', { seasons: ['winter'] }), piece('plain-top', 'top')]
-    const garments = [...tops, jeans]
-    const ix = wearIndex([], TODAY)
-    const dealt = rowsOf(garments, byRest(garments, ix).map(g => g.id))
-    const on = start(dealt, undefined, liveById(garments))
-    for (const r of [0, 0.5, 0.999]) expect(chosenIn(surprise(on, dealt, [], ix, { season: 'winter', random: () => r }), dealt, []).slots.top).not.toBe('summer-tee')
-    // with nothing else in its row, the out-of-season one still comes up
-    const lone = rowsOf([tops[0], jeans], ['summer-tee', 'jeans'])
-    expect(chosenIn(surprise(start(lone, undefined, liveById([tops[0], jeans])), lone, [], ix, { season: 'winter', random: first }), lone, []).slots.top).toBe('summer-tee')
-  })
-
-  it('deals an open optional row a piece too, and leaves the accessories as they were', () => {
+  it('opens outerwear and shoes when they hold a piece or are asked for, and takes them only then', () => {
     const { rows, sel } = visit([], TODAY)
-    const after = chosenIn(surprise(picking(sel, { accessories: ['scarf'] }), rows, ['shoes'], wearIndex([], TODAY), { random: first }), rows, ['shoes'])
-    expect(after.slots.shoes).not.toBeNull()
-    expect(after.accessories).toEqual(['scarf'])
+    const shod = pickSlot(pickSlot(pickSlot(sel, 'top', 'shirt'), 'bottom', 'chinos'), 'shoes', 'boots')
+    expect(chosenIn(shod, rows, []).open).toEqual(['shoes'])
+    expect(chosenIn(shod, rows, []).pieces).toEqual(['shirt', 'chinos', 'boots'])
+    expect(chosenIn(sel, rows, ['outerwear']).open).toEqual(['outerwear'])
+  })
+})
+
+describe('an idea put on the card', () => {
+  it('takes the top and the bottom, and its coat, and leaves the shoes and accessories as they were', () => {
+    const mac = piece('mac', 'outerwear')
+    const garments = [...wardrobe, mac]
+    const rows = rowsOf(garments)
+    const worn = pickSlot(toggleAccessory(pickSlot(pickSlot(start(rows, undefined, liveById(garments)), 'top', 'shirt'), 'bottom', 'chinos'), 'scarf'), 'shoes', 'boots')
+    const tried = loadIdea(worn, ['hoodie', 'jeans', 'mac'], rows)
+    const chosen = chosenIn(tried, rows, [])
+    expect(chosen.slots).toMatchObject({ top: 'hoodie', bottom: 'jeans', outerwear: 'mac', shoes: 'boots' })
+    expect(chosen.accessories).toEqual(['scarf'])
+    expect(tried.note).toBeUndefined()
+  })
+
+  it('turns the card to a one-piece for a one-piece, and back to separates for a pair', () => {
+    const dress = piece('dress', 'onepiece')
+    const rows = rowsOf([...wardrobe, dress])
+    const sel = start(rows, undefined, liveById([...wardrobe, dress]))
+    const inDress = loadIdea(sel, ['dress'], rows)
+    expect(chosenIn(inDress, rows, []).onepieceMode).toBe(true)
+    expect(chosenIn(inDress, rows, []).pieces).toEqual(['dress'])
+    const back = loadIdea(inDress, ['hoodie', 'jeans'], rows)
+    expect(chosenIn(back, rows, []).onepieceMode).toBe(false)
+    expect(chosenIn(back, rows, []).pieces).toEqual(['hoodie', 'jeans'])
+  })
+
+  it('never takes a piece no slot can hold', () => {
+    const { rows, sel } = visit([], TODAY)
+    expect(chosenIn(loadIdea(sel, ['band-tee', 'jeans'], rows), rows, []).slots).toMatchObject({ top: null, bottom: 'jeans' })
   })
 })

@@ -279,12 +279,12 @@ describe('the palette finds clothes and saved outfits', () => {
   })
 })
 
-describe('a saved outfit asked for from outside goes in the composer’s rows', () => {
+describe('a saved outfit asked for from outside goes on the look card', () => {
   const tops = ['navy-tee', 'white-shirt', 'grey-tee', 'black-tee', 'blue-shirt'].map(id => piece(id, 'top'))
   const bottoms = ['jeans', 'chinos', 'shorts', 'cords', 'joggers'].map(id => piece(id, 'bottom'))
   const garments = [...tops, ...bottoms]
-  /** The names on the chosen cards, row by row. */
-  const chosenNames = (html: string) => [...html.matchAll(/aria-checked="true"[^>]*class="snap-card">[\s\S]*?class="snap-name">([^<]+)</g)].map(m => m[1])
+  /** The pieces on the card, slot by slot. */
+  const chosenNames = (html: string) => [...html.matchAll(/class="look-slot-main" aria-label="[^:"]+: ([^"]+?)\. Choose another"/g)].map(m => m[1])
   const wardrobe = (open: ComponentProps<typeof Wardrobe>['open'], outfits: Outfit[]) =>
     renderToStaticMarkup(<Wardrobe garments={garments} outfits={outfits} wears={[]} onSave={noop} onRemove={noop} onRestore={noop} showToast={noop} open={open} onOpenConsumed={noop} />)
 
@@ -294,13 +294,14 @@ describe('a saved outfit asked for from outside goes in the composer’s rows', 
     const html = wardrobe({ outfitId: 'o1', date: TODAY }, [saved])
     expect(html).toContain('aria-selected="true" class="seg on">Outfit</button>')
     expect(chosenNames(html)).toEqual(['white-shirt', 'chinos'])
-    // without it the rows start on their first cards
-    expect(chosenNames(wardrobe({ date: TODAY }, [saved]))).toEqual(['black-tee', 'chinos'])
+    // without it a day nobody has dressed starts empty
+    expect(chosenNames(wardrobe({ date: TODAY }, [saved]))).toEqual([])
+    expect(wardrobe({ date: TODAY }, [saved])).toContain('Add a top')
   })
 
-  it('opens the rows as usual when that outfit is gone', () => {
+  it('opens the card as usual when that outfit is gone', () => {
     at(new Date(2026, 8, 14, 10))
-    expect(chosenNames(wardrobe({ outfitId: 'o1' }, [outfit('o1', ['white-shirt', 'chinos'], undefined, { deletedAt: T0 })]))).toEqual(['black-tee', 'chinos'])
+    expect(chosenNames(wardrobe({ outfitId: 'o1' }, [outfit('o1', ['white-shirt', 'chinos'], undefined, { deletedAt: T0 })]))).toEqual([])
   })
 
   it('the composer puts a pending outfit in once and hands it back as used', () => {
@@ -316,6 +317,7 @@ describe('a saved outfit asked for from outside goes in the composer’s rows', 
         onDay={noop}
         onLog={noop}
         onRemoveLook={noop}
+        onPlanWeek={noop}
         onSaveOutfit={noop}
         onAdd={noop}
         onOpenPiece={noop}

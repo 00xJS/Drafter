@@ -13,7 +13,9 @@
   white-space: nowrap;
 }
 
-/* a piece's picture: whole, on the surface, never cropped */
+/* a piece's picture: whole, never cropped. A photo sits on the photo's own
+   white, the ground a cut-out is made on, so no grey band shows round it;
+   a piece with no photo is its type's outline on the sunken surface */
 .garment-photo {
   position: relative;
   display: flex;
@@ -24,6 +26,9 @@
   background: var(--surface-2);
   border-radius: 10px;
 }
+.garment-photo.has-photo {
+  background: var(--photo-white);
+}
 .garment-photo img {
   display: block;
   width: 100%;
@@ -31,11 +36,18 @@
   object-fit: contain;
 }
 .garment-photo-type {
-  padding: 4px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--text);
-  text-align: center;
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-2);
+}
+.garment-photo-type svg {
+  width: 46%;
+  height: 46%;
+  max-width: 72px;
+  max-height: 72px;
 }
 /* a piece at card size or larger: its main side, and its other side as an
    inset in the corner, under a third of the photo's width and framed in the
@@ -104,22 +116,8 @@
   color: var(--tone-indigo);
 }
 
-/* ----- the day line: ‹ Today · Sun 14 Sep › */
-.wardrobe-day {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 4px 6px;
-  margin-bottom: 6px;
-}
-/* the date and what the day is dressed for, side by side (a phone stacks them) */
-.wardrobe-day-mid {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-}
-/* Work day or Day off: a tap turns it the other way for the visit, saving nothing */
+/* ----- the Outfit board's day: Work day or Day off, a tap turns it the other
+   way for the visit and saves nothing; a look's Logged or Planned */
 .wardrobe-occasion {
   padding: 2px 8px;
   border: 1px solid var(--border);
@@ -141,76 +139,7 @@
   color: var(--tone-sky);
 }
 
-/* ----- a swipeable row: the card in the middle is the chosen one */
-.snap-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  min-height: 18px;
-}
-.snap-cell.side {
-  transform: scale(0.92);
-  opacity: 0.7;
-}
-.snap-card {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  width: 100%;
-  aspect-ratio: 4 / 5;
-  padding: 6px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface);
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-}
-.snap-card:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
-}
-.snap-card .garment-photo {
-  flex: 1;
-  min-height: 0;
-}
-/* a piece the day's look holds that the rows are not dealt: retired, or in Trash */
-.snap-held {
-  flex: none;
-  padding: 1px 7px;
-  font-size: 0.625rem;
-  line-height: calc(1rem - 2px);
-  background: var(--surface-2);
-  color: var(--muted);
-}
-/* after the last card, a dashed tile to add one; it never snaps to the middle */
-.snap-add {
-  flex: none;
-  width: calc(var(--card-w) * 0.62);
-  aspect-ratio: 3 / 4;
-  border: 1px dashed var(--border-strong);
-  border-radius: var(--radius);
-  background: transparent;
-  color: var(--text-2);
-  font-size: 0.8125rem;
-  scroll-snap-align: none;
-}
-.snap-empty {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  min-height: calc(var(--card-w) * 1.25);
-  margin: 3px 0;
-  border: 1px dashed var(--border-strong);
-  border-radius: var(--radius);
-  background: transparent;
-  color: var(--text-2);
-}
-/* ‹ › at the row's ends, for a mouse; a finger swipes */
-
-/* ----- outerwear and shoes on request, accessories as chips */
+/* ----- the accessories, as chips on the look card */
 .wardrobe-acc-chips {
   display: flex;
   flex-wrap: wrap;
@@ -335,7 +264,6 @@
   flex: 1;
   min-height: 0;
 }
-.collage .garment-photo-type,
 .wardrobe-card-thumbs .garment-photo-type,
 .acc-thumb .garment-photo-type,
 .thumb-28 .garment-photo-type,
@@ -1117,9 +1045,8 @@ button.photo-cal-day:focus-visible {
     background: var(--surface);
     border-top: 1px solid var(--hairline);
   }
-  /* chrome gives before content: the bar's buttons and the day line grow with
-     Dynamic Type only so far, as the tab bar's labels do, so the Bottoms row
-     stays above the bar */
+  /* chrome gives before content: the bar's buttons grow with Dynamic Type
+     only so far, as the tab bar's labels do, so the look card keeps the room */
   .wardrobe-actions .btn {
     font-size: calc(14px * min(1.15, var(--type-scale)));
   }
@@ -1130,58 +1057,12 @@ button.photo-cal-day:focus-visible {
   html:not(.keyboard-open) body:has(.wardrobe-actions) .toast {
     bottom: calc(var(--tabbar-h) + var(--safe-b) + 64px);
   }
-  /* the day line keeps to one line at 375pt, logged or not: the two rows and
-     the bar under them have to fit above the tab bar.
-     ‹ and › sit at the ends of that line with the date centred between
-     them, as they do on every other period bar in the app — all three were
-     packed against the left edge with 196pt of empty row beside them, so the
-     › read as a button stranded in the middle of the page (v3.28). When the
-     day carries a Logged/Planned badge it keeps the end, and › sits in from
-     it, the way Today does on the calendar. */
-  .wardrobe-day {
-    gap: 4px;
-    margin-bottom: 2px;
-    flex-wrap: nowrap;
-  }
-  .wardrobe-day > .wardrobe-day-mid {
-    flex: 1;
-    align-items: center;
-  }
-  /* the date over the day's occasion, so the line stays one line at 375pt */
-  .wardrobe-day-mid {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0;
-  }
-  /* no pill here, so a dotted hairline under the words says they can be
-     tapped (an underline, which adds no height to the stacked column) */
-  .wardrobe-occasion {
-    min-width: 36px;
-    padding: 0 2px;
-    border: 0;
-    background: none;
-    font-size: calc(11px * min(1.15, var(--type-scale)));
-    text-decoration-line: underline;
-    text-decoration-style: dotted;
-    text-decoration-color: var(--border-strong);
-    text-underline-offset: 2px;
-  }
-  .wardrobe-logged {
-    padding: 1px 6px;
-    font-size: calc(10px * min(1.15, var(--type-scale)));
-  }
-  .wardrobe-planned {
-    padding: 1px 6px;
-    font-size: calc(10px * min(1.15, var(--type-scale)));
-  }
 }
-/* a short phone (375×667 and the like): smaller cards, so both rows and the bar still fit */
 
 /* ----- a finger: every small control gets the 44pt floor */
 @media (pointer: coarse) {
   .wardrobe-step,
   .wardrobe-remove,
-  .snap-hide,
   .wardrobe-forgot,
   .wardrobe-card-prior,
   .wardrobe-card-add,
@@ -1195,8 +1076,7 @@ button.photo-cal-day:focus-visible {
   .garment-back-pick,
   .garment-hero-add,
   .garment-back-first,
-  .garment-back .btn,
-  .wardrobe-occasion {
+  .garment-back .btn {
     min-height: 44px;
   }
   /* padding rather than flex, so the disclosure triangle stays */

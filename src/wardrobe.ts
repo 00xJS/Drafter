@@ -199,7 +199,7 @@ export function wornLine(ix: WearIndex, id: string): string {
   return `Last worn ${daysAgo(daysBetween(days[0], ix.dayKey))} · ${times(days.length)}`
 }
 
-/** "12 days ago", or "new": under a card in the composer rows, as lastCookedShort is beside a recipe. */
+/** "12 days ago", or "new": under a piece on the Outfit board and in Clothes, as lastCookedShort is beside a recipe. */
 export function wornShort(ix: WearIndex, id: string): string {
   const last = ix.days.get(id)?.[0]
   return last ? daysAgo(daysBetween(last, ix.dayKey)) : 'new'
@@ -231,17 +231,13 @@ function restOrder(ix: WearIndex): (a: Garment, b: Garment) => number {
   return (a, b) => last(a).localeCompare(last(b)) || a.createdAt.localeCompare(b.createdAt) || a.name.localeCompare(b.name)
 }
 
-/** Live, unretired pieces in rest order: what the composer's rows are dealt from. */
-export function byRest(garments: readonly Garment[], ix: WearIndex): Garment[] {
-  return garments.filter(g => !g.deletedAt && !g.archivedAt).sort(restOrder(ix))
-}
-
-// ---- Surprise me -----------------------------------------------------------------
+// ---- the Outfit board's ideas ----------------------------------------------------
 
 /**
- * A piece's weight in Surprise me's draw: one, and a day more for every day it
- * has rested, up to NOT_WORN_DAYS; never worn counts as the longest rest. The
- * least recently worn come up most, and nothing is ever ruled out.
+ * A piece's weight in the ideas' draw (components/wardrobe/board.ts): one, and
+ * a day more for every day it has rested, up to NOT_WORN_DAYS; never worn
+ * counts as the longest rest. The least recently worn come up most, and
+ * nothing is ever ruled out.
  */
 export function restWeight(ix: WearIndex, id: string): number {
   const last = ix.days.get(id)?.[0]
@@ -285,7 +281,7 @@ export type DayOccasion = Occasion
  */
 export const dayOccasion = (day: string, workDays: ReadonlySet<string>): DayOccasion => (workDays.has(day) ? 'work' : 'personal')
 
-/** The other occasion: what the composer's flip turns a day into. */
+/** The other occasion: what the Outfit board's flip turns a day into. */
 export const otherOccasion = (o: DayOccasion): DayOccasion => (o === 'work' ? 'personal' : 'work')
 
 /** The day's words, beside its date: "Work day" or "Day off". */
@@ -433,7 +429,7 @@ export function outfitLine(o: Outfit, ix: WearIndex, byId: ReadonlyMap<string, G
   return `Worn ${times(days.length)} · ${lastWorn(daysBetween(days[0], ix.dayKey))}`
 }
 
-/** The saved outfits under the composer: the favourites first, then the most days worn in the last 60, then the newest saved. */
+/** The saved outfits on the Outfit board: the favourites first, then the most days worn in the last 60, then the newest saved. */
 export function savedOrder(outfits: readonly Outfit[], ix: WearIndex, byId: ReadonlyMap<string, Garment>): Outfit[] {
   const lately = new Map(outfits.map(o => [o.id, outfitDays(o, ix, byId).filter(d => daysBetween(d, ix.dayKey) < SUGGEST_DAYS).length]))
   return outfits
@@ -600,6 +596,33 @@ export function weatherLine(f: Forecast, need: WeatherNeed): string {
   const sky = describeCode(f.code).label
   const head = need.cold && need.wet ? 'Cold and wet today' : need.cold ? 'Cold today' : 'Wet today'
   return [head, need.cold ? `${f.hiC}° at most` : '', need.wet ? (WET_SKIES.has(sky) ? sky.toLowerCase() : `rain ${f.rainPct}%`) : ''].filter(Boolean).join(' · ')
+}
+
+/** What the sky is called on the Outfit board's day line: a word for what to wear under it. */
+const SKY_WORDS: Record<string, string> = {
+  Clear: 'sunny',
+  'Mostly clear': 'mostly sunny',
+  'Partly cloudy': 'partly cloudy',
+  Overcast: 'overcast',
+  Fog: 'foggy',
+  Drizzle: 'drizzly',
+  Rain: 'rainy',
+  Snow: 'snowy',
+  Showers: 'showery',
+  'Snow showers': 'snowy',
+  Thunder: 'stormy',
+}
+
+/**
+ * Today on the board's day line, whatever it asks of a look: "91° and sunny",
+ * "8° and rainy", "64° and overcast · rain 60%" when a dry sky still carries a
+ * wet day's chance. The high, in the unit the forecast reads in.
+ */
+export function dayWeather(f: Forecast): string {
+  const sky = describeCode(f.code).label
+  const words = SKY_WORDS[sky]
+  const rain = f.rainPct >= WET_PCT && !WET_SKIES.has(sky) ? ` · rain ${f.rainPct}%` : ''
+  return `${f.hiC}°${words ? ` and ${words}` : ''}${rain}`
 }
 
 /** Tags that mark a coat for the rain. */

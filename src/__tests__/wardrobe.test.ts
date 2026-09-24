@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { formatMoney } from '../bills'
+import { pickerOrder } from '../components/wardrobe/board'
 import { visitSummary } from '../people'
 import { Garment, GarmentType, Outfit, Wear } from '../types'
 import { dateKey } from '../utils'
@@ -10,7 +11,6 @@ import {
   NEVER_WORN_GRACE_DAYS,
   NOT_WORN_DAYS,
   PLAN_DAYS,
-  byRest,
   canDress,
   clothesMatch,
   clothesOrder,
@@ -606,14 +606,13 @@ describe('names from a colour', () => {
   })
 })
 
-describe('the orders the composer and Clothes lead with', () => {
-  it('byRest: never worn first, the oldest added first, then the longest rested; retired and deleted left out', () => {
-    const early = piece('early', 'top', { createdAt: '2026-07-01T09:00:00.000Z' })
-    const late = piece('late', 'top', { createdAt: '2026-09-01T09:00:00.000Z' })
+describe('the orders the picker and Clothes lead with', () => {
+  it('pickerOrder: never worn first, then the longest rested, a tie by name; what slot a piece is for is not its business', () => {
+    const late = piece('late', 'top', { createdAt: '2026-07-01T09:00:00.000Z', name: 'Zip top' })
+    const early = piece('early', 'top', { createdAt: '2026-09-01T09:00:00.000Z', name: 'Aran' })
     const ix = wearIndex([look(ago(2), ['tee']), look(ago(30), ['shirt'])], TODAY)
-    const gone = piece('gone', 'top', { deletedAt: T0 })
-    const old = piece('old', 'top', { archivedAt: T0 })
-    expect(byRest([tee, shirt, late, early, gone, old], ix).map(g => g.id)).toEqual(['early', 'late', 'shirt', 'tee'])
+    // by name among the never worn, whenever they were added
+    expect(pickerOrder([tee, shirt, late, early], ix)).toEqual(['early', 'late', 'shirt', 'tee'])
   })
 
   it('clothesOrder: rest order by default, then most worn, newest and A–Z, retired pieces included', () => {

@@ -656,15 +656,14 @@ describe('landscape: nothing sits under the notch or the Dynamic Island', () => 
 describe('phone: the wardrobe is dressed with a thumb', () => {
   const narrow = narrowBlocks()
 
-  it('snaps each row sideways, keeps the swipe inside it, and lets its ends reach the middle', () => {
-    const row = rule(bare, '.snap-row')
-    expect(row).toMatch(/scroll-snap-type:\s*x mandatory/)
-    // a sideways swipe that runs out of cards must not pull the page or go back a screen
-    expect(row).toMatch(/overscroll-behavior-x:\s*contain/)
-    expect(row).toMatch(/padding-inline:\s*calc\(50% - var\(--card-w\) \/ 2\)/)
-    expect(rule(bare, '.snap-cell')).toMatch(/scroll-snap-align:\s*center/)
-    // the add tile after the last card is never where a swipe comes to rest
-    expect(rule(bare, '.snap-add')).toMatch(/scroll-snap-align:\s*none/)
+  it('keeps the week to seven boxes that shrink rather than scroll, and the picker to three tiles across', () => {
+    expect(rule(bare, '.wardrobe-week-days')).toMatch(/grid-template-columns:\s*repeat\(7, minmax\(0, 1fr\)\)/)
+    const picker = narrow.map(b => rule(b.body, '.pick-grid')).find(Boolean) ?? ''
+    expect(picker, 'no @media (max-width: 640px) rule for .pick-grid').toMatch(/grid-template-columns:\s*repeat\(3, minmax\(0, 1fr\)\)/)
+    // the search field never zooms the page: 16px wherever it is drawn
+    expect(rule(bare, '.pick-search')).toMatch(/font-size:\s*1rem/)
+    // and nothing on the board swipes any more: the rows it had are gone, rules and all
+    expect(bare).not.toMatch(/\.snap-(row|cell|card|add|step|info)\b/)
   })
 
   it('narrows the native Keep track’s thumbs on a phone, outranking the shared padding', () => {
@@ -690,17 +689,17 @@ describe('phone: the wardrobe is dressed with a thumb', () => {
     expect(rule(bare, '.wardrobe-actions')).not.toMatch(/position:\s*sticky/)
   })
 
-  it('shows the row ends’ ‹ › to a mouse only', () => {
-    expect(rule(bare, '.snap-step')).toMatch(/display:\s*none/)
-    const fine = [...bare.matchAll(/@media\s*\(hover:\s*hover\)\s*and\s*\(pointer:\s*fine\)/g)].map(m => blockBody(m.index))
-    expect(fine.some(b => /display:\s*inline-flex/.test(rule(b, '.snap-step')))).toBe(true)
-  })
-
-  it('gives the middle card’s “i” and a saved outfit’s “…” the 44pt floor under a finger', () => {
-    const floor = coarseBlocks().find(b => rule(b.body, '.snap-info, .saved-more'))
-    expect(floor, 'no @media (pointer: coarse) rule for .snap-info, .saved-more').toBeTruthy()
-    expect(rule(floor!.body, '.snap-info, .saved-more')).toMatch(/width:\s*44px/)
-    expect(rule(floor!.body, '.snap-info, .saved-more')).toMatch(/height:\s*44px/)
+  it('gives a slot’s ✕ and a saved outfit’s “…” the 44pt floor under a finger', () => {
+    for (const sel of ['.saved-more', '.look-slot-clear']) {
+      const floor = coarseBlocks().find(b => rule(b.body, sel))
+      expect(floor, `no @media (pointer: coarse) rule for ${sel}`).toBeTruthy()
+      expect(rule(floor!.body, sel), sel).toMatch(/width:\s*44px/)
+      expect(rule(floor!.body, sel), sel).toMatch(/height:\s*44px/)
+    }
+    // the pill stays a pill, its target reaching 44pt round it
+    const pill = coarseBlocks().find(b => rule(b.body, '.wardrobe-dayline .wardrobe-occasion::after'))
+    expect(pill, 'no @media (pointer: coarse) target for the day’s pill').toBeTruthy()
+    expect(rule(pill!.body, '.wardrobe-dayline .wardrobe-occasion::after')).toMatch(/inset:\s*-8px -4px/)
   })
 
   it('lifts the app’s toast clear of the bar while the composer is on screen, and leaves it to the keyboard rule when the keyboard is up', () => {
@@ -716,10 +715,10 @@ describe('phone: the wardrobe is dressed with a thumb', () => {
     expect(bare).toMatch(/\.keyboard-open \.toast\s*\{[^}]*bottom:\s*calc\(var\(--safe-b\) \+ 12px\)/)
   })
 
-  it('keeps the bar to one row, with its buttons and the day line capped like the tab bar’s labels', () => {
+  it('keeps the bar to one row, with its buttons and the week’s name capped like the tab bar’s labels', () => {
     const phone = (sel: string) => narrow.map(b => rule(b.body, sel)).find(Boolean) ?? ''
     expect(phone('.wardrobe-actions')).toMatch(/flex-wrap:\s*nowrap/)
-    for (const sel of ['.wardrobe-actions .btn', '.wardrobe-day-pick', '.wardrobe-logged', '.wardrobe-remove']) {
+    for (const sel of ['.wardrobe-actions .btn', '.wardrobe-day-pick', '.wardrobe-remove']) {
       expect(phone(sel), sel).toMatch(/font-size:\s*calc\(\d+px \* min\(1\.15, var\(--type-scale\)\)\)/)
     }
     // "+ Another look" is "+ Look" there

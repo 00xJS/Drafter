@@ -18,16 +18,17 @@ import { mergeRecord } from '../../shared/merge.mts'
 import { Clothes } from '../components/wardrobe/Clothes'
 import { Collage, GarmentInset, GarmentPhoto, GarmentView, flipLabel, hasBack, mainSide } from '../components/wardrobe/GarmentPhoto'
 import { GarmentSheet } from '../components/wardrobe/GarmentSheet'
-import { SnapRow } from '../components/wardrobe/SnapRow'
+import { FilledSlot } from '../components/wardrobe/LookSlot'
+import { OutfitComposer } from '../components/wardrobe/OutfitComposer'
 import { Wardrobe } from '../components/wardrobe/Wardrobe'
-import type { Garment, GarmentType, Item } from '../types'
+import type { Garment, GarmentType, Item, Wear } from '../types'
 import { liveById, wearIndex, withBack } from '../wardrobe'
 import { elements, propsOf, settled } from './rendered'
 import { partialSource } from './source'
 
 // A piece's back photo (a shirt whose logo is there): the other side drawn
 // small in the corner of the card-size views, a button that swaps the two in
-// the sheet and on the composer's cards and a mark in Clothes, the main side
+// the sheet and on the look card's slots and a mark in Clothes, the main side
 // alone on every small thumbnail, and the clean-up a Remove or a Replace of it
 // sets off, with its Undo.
 
@@ -79,56 +80,97 @@ describe('a piece’s two sides', () => {
     expect(renderToStaticMarkup(<GarmentPhoto garment={band} />)).not.toMatch(/data-side|garment-inset/)
   })
 
-  it('keep the inset to the card-size views: the piece sheet, a Clothes tile and the composer’s cards', () => {
-    const small = ['Today.tsx', 'Calendar.tsx', 'Search.tsx', 'Review.tsx', 'wardrobe/WardrobeCard.tsx', 'wardrobe/WardrobeStats.tsx', 'wardrobe/SavedOutfits.tsx', 'wardrobe/PieceDetails.tsx', 'wardrobe/OutfitComposer.tsx']
+  it('keep the inset to the card-size views: the piece sheet, a Clothes tile and the look card’s slots', () => {
+    const small = [
+      'Today.tsx',
+      'Calendar.tsx',
+      'Search.tsx',
+      'Review.tsx',
+      'wardrobe/WardrobeCard.tsx',
+      'wardrobe/WardrobeStats.tsx',
+      'wardrobe/SavedOutfits.tsx',
+      'wardrobe/PieceDetails.tsx',
+      'wardrobe/OutfitComposer.tsx',
+      'wardrobe/PiecePicker.tsx',
+      'wardrobe/PlanWeekSheet.tsx',
+      'wardrobe/WeekStrip.tsx',
+    ]
     for (const f of small) expect(read(`../components/${f}`), f).not.toMatch(/GarmentView|GarmentInset/)
     expect(read('../components/wardrobe/Clothes.tsx')).toContain('<GarmentView garment={garment} />')
     expect(read('../components/wardrobe/GarmentSheet.tsx')).toContain('<GarmentView key={mainSide(g)} garment={g} size="photo" alt={g.name} flip />')
-    expect(read('../components/wardrobe/SnapRow.tsx')).toContain('<GarmentInset garment={g} side={otherSide(shown)} className="snap-flip"')
+    expect(read('../components/wardrobe/LookSlot.tsx')).toContain('<GarmentInset garment={g} side={otherSide(shown)} className="look-flip" onFlip={onFlip} />')
   })
 })
 
-describe('the composer’s cards', () => {
-  const rowProps = (over: Partial<ComponentProps<typeof SnapRow>> = {}): ComponentProps<typeof SnapRow> => ({
-    label: 'Tops',
-    pieces: [plain, band],
+describe('the look card’s slots', () => {
+  const slot = (over: Partial<ComponentProps<typeof FilledSlot>> = {}): ComponentProps<typeof FilledSlot> => ({
+    garment: band,
     ix: wearIndex([], TODAY),
-    selected: 'band-tee',
-    onSelect: vi.fn(),
-    onInfo: noop,
-    onAdd: noop,
-    addLabel: '+ Add top',
-    emptyLabel: 'No tops yet · Add one',
+    occasion: 'work',
+    flipped: false,
+    onFlip: vi.fn(),
+    onOpen: vi.fn(),
+    onClear: vi.fn(),
     ...over,
   })
 
-  it('flip a piece with a back photo with a button beside its card, named for the side it brings up', () => {
-    const html = renderToStaticMarkup(<SnapRow {...rowProps()} />)
+  it('flip a piece with a back photo with a button beside the slot’s own, named for the side it brings up', () => {
+    const html = renderToStaticMarkup(<FilledSlot {...slot()} />)
     expect(html.match(/garment-inset/g)).toHaveLength(1)
-    expect(html).toContain('<button type="button" class="garment-inset snap-flip flip" aria-label="Show the back" title="Show the back" tabindex="0">')
-    // a side card's is out of the Tab order, as the side cards are
-    expect(renderToStaticMarkup(<SnapRow {...rowProps({ selected: 'plain-tee' })} />)).toContain('aria-label="Show the back" title="Show the back" tabindex="-1"')
-    // beside the card, never in it: a radio's contents are not a screen reader's to reach, and its tap chooses
-    const tree = settled(SnapRow, rowProps())
+    expect(html).toContain('<button type="button" class="garment-inset look-flip flip" aria-label="Show the back" title="Show the back">')
+    expect(renderToStaticMarkup(<FilledSlot {...slot({ garment: plain })} />)).not.toContain('garment-inset')
+    // beside the slot's button, never in it: a button inside a button is no button, and its tap opens the picker
+    const tree = settled(FilledSlot, slot())
     const inset = elements(tree).find(e => e.type === GarmentInset)!
-    for (const radio of elements(tree).filter(e => e.props.role === 'radio')) expect(elements(radio.props.children)).not.toContain(inset)
+    const main = elements(tree).find(e => e.props.className === 'look-slot-main')!
+    expect(elements(main.props.children)).not.toContain(inset)
   })
 
-  it('swap a card’s two sides at a tap, for the visit only: nothing is chosen, and nothing saved', () => {
-    const onSelect = vi.fn()
-    const flipped = settled(SnapRow, rowProps({ onSelect }), flipIn)
-    expect(elements(flipped).filter(e => e.type === GarmentPhoto).map(e => [(e.props.garment as Garment).id, e.props.side])).toEqual([
-      ['plain-tee', 'front'],
-      ['band-tee', 'back'],
+  it('swap a slot’s two sides at a tap, for the visit only: nothing is chosen, and nothing saved', () => {
+    const wears: Wear[] = [{ kind: 'wear', id: 'wear~2026-09-14~0000000001', date: TODAY, garmentIds: ['band-tee', 'jeans'], createdAt: T0, updatedAt: T0 }]
+    const onLog = vi.fn()
+    const props = {
+      garments: [plain, band, jeans],
+      outfits: [],
+      wears,
+      byId: liveById([plain, band, jeans]),
+      ix: wearIndex(wears, TODAY),
+      day: TODAY,
+      todayKey: TODAY,
+      onDay: noop,
+      onLog,
+      onRemoveLook: noop,
+      onPlanWeek: noop,
+      onSaveOutfit: noop,
+      onAdd: noop,
+      onOpenPiece: noop,
+      onWearOutfit: noop,
+      onRenameOutfit: noop,
+      onFavouriteOutfit: noop,
+      onDeleteOutfit: noop,
+      forecast: null,
+    }
+    const shown = (tree: Parameters<typeof propsOf>[0]) => elements(tree).filter(e => e.type === FilledSlot).map(e => [(e.props.garment as Garment).id, e.props.flipped])
+    expect(shown(settled(OutfitComposer, props))).toEqual([
+      ['band-tee', false],
+      ['jeans', false],
     ])
-    expect(propsOf(flipped, GarmentInset)).toMatchObject({ side: 'front' })
-    expect(onSelect).not.toHaveBeenCalled()
+    const flipped = settled(OutfitComposer, props, t => (propsOf(t, FilledSlot) as { onFlip(): void }).onFlip())
+    expect(shown(flipped)).toEqual([
+      ['band-tee', true],
+      ['jeans', false],
+    ])
+    // flipped, the slot shows the back and offers the front
+    const html = renderToStaticMarkup(<FilledSlot {...slot({ flipped: true })} />)
+    expect(sides(html)).toEqual(['back', 'front'])
+    expect(html).toContain('aria-label="Show the front"')
+    expect(onLog).not.toHaveBeenCalled()
   })
 
-  it('leave the row to scroll from the inset and snap as ever, the target at 44pt however small the card', () => {
+  it('leave the photo its whole corner, the target at 44pt however small the inset', () => {
     const css = partialSource('18-wardrobe.css')
     const block = (sel: string) => css.match(new RegExp(`\\n${sel.replace(/\./g, '\\.')} \\{([^}]*)\\}`))?.[1] ?? ''
-    for (const sel of ['.garment-inset', '.snap-flip']) {
+    for (const sel of ['.garment-inset', '.look-slot .look-flip']) {
       expect(block(sel), sel).not.toBe('')
       expect(block(sel), sel).not.toMatch(/touch-action|pointer-events|scroll-snap/)
     }
