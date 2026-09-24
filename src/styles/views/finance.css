@@ -98,6 +98,8 @@
   flex-direction: column;
   gap: 16px;
   min-width: 0;
+  /* the rows below ask how wide it is in rem, which grows with Dynamic Type */
+  container: fin / inline-size;
 }
 
 /* safe to spend */
@@ -776,6 +778,34 @@
   }
   .checkin-add > select {
     grid-column: 1 / -1;
+  }
+}
+/* Large text on a phone. A container query's rem is the page's own, so these
+   turn on as Dynamic Type grows, not only on a narrower screen: the four
+   buttons go two by two, and a row puts its amount under the name, which
+   keeps the name instead of cutting it to a letter or two. */
+@container fin (max-width: 21rem) {
+  .fin-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .fin-rows .bill-main {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas:
+      'date copy'
+      'date amount';
+    align-items: center;
+    gap: 2px 8px;
+  }
+  .fin-rows .fin-date {
+    grid-area: date;
+  }
+  .fin-rows .bill-copy {
+    grid-area: copy;
+  }
+  .fin-rows .bill-amount {
+    grid-area: amount;
+    justify-self: start;
   }
 }
 @media (pointer: coarse) {
