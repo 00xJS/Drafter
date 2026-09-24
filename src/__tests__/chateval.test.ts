@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CHAT_HELP, GENERAL_LABEL } from '../assistanthelp'
-import { CHAT_EVAL, judgeReply, runChatEval, type EvalCase } from '../chateval'
+import { CHAT_EVAL, judgeReply, runChatEval, speedLine, timingLine, type EvalCase, type EvalResult } from '../chateval'
 import { askWithActions, type ChatReply } from '../chatactions'
 
 // Admin's "Check the assistant" asks the chat one question of each kind it
@@ -93,5 +93,45 @@ describe('the check', () => {
       expect(b.prompt).not.toMatch(/^\[[A-Z]+\d+\]/m)
       expect(b.prompt).not.toContain('People:')
     }
+  })
+})
+
+describe('how long each answer took', () => {
+  it('times each case to its first words and to the whole answer, as the chat is felt', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout'] })
+    try {
+      const ask: typeof askWithActions = async (question, _docs, _facts, _history, _ctx, onText) => {
+        const c = CHAT_EVAL.find(x => x.question === question)!
+        // as askWithActions answers it: at once, with no model call
+        if (c.expect === 'help') return said(CHAT_HELP)
+        if (c.expect === 'create_task') throw new Error('Too many AI requests')
+        await new Promise(resolve => setTimeout(resolve, 1_200))
+        onText?.('')
+        onText?.('Happy')
+        await new Promise(resolve => setTimeout(resolve, 1_800))
+        onText?.('Happy to help.')
+        return said('Happy to help.')
+      }
+      const run = runChatEval({ ask, now: new Date('2026-09-23T03:30:00.000Z'), tz: 'America/Phoenix' })
+      await vi.runAllTimersAsync()
+      const results = await run
+      // the help text needs no model: nothing streams, and it takes no time
+      expect(results.find(r => r.case.expect === 'help')).toMatchObject({ totalMs: 0 })
+      expect(results.find(r => r.case.expect === 'help')?.firstTextMs).toBeUndefined()
+      // an empty word is not a first word
+      expect(results.find(r => r.case.expect === 'chat')).toMatchObject({ firstTextMs: 1_200, totalMs: 3_000 })
+      // a failure is timed too, with no first words
+      expect(results.find(r => r.case.expect === 'create_task')).toMatchObject({ totalMs: 0, pass: false })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('says it in a few words for each case, and on average for the run', () => {
+    expect(timingLine({ firstTextMs: 1_234, totalMs: 3_060 })).toBe('first words 1.2 s · whole answer 3.1 s')
+    expect(timingLine({ totalMs: 2 })).toBe('answered in 0.0 s')
+    const r = (firstTextMs: number | undefined, totalMs: number) => ({ case: CHAT_EVAL[0], pass: true, why: '', answer: '', firstTextMs, totalMs }) as EvalResult
+    expect(speedLine([r(1_000, 3_000), r(2_000, 5_000), r(undefined, 0), undefined])).toBe('On average the first words showed after 1.5 s, and the whole answer took 4.0 s.')
+    expect(speedLine([r(undefined, 0)])).toBe('')
   })
 })

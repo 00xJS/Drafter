@@ -39,6 +39,10 @@ export interface EvalResult {
   /** Why it failed, or what it did right, in a few words. */
   why: string
   answer: string
+  /** How long after asking the answer's first words showed (ms); none when no words streamed — the help text, or a call that failed first. */
+  firstTextMs?: number
+  /** How long after asking the whole answer was read, or the call failed (ms). */
+  totalMs: number
 }
 
 /** "Not in the records" and its cousins: right when the planner can't answer, wrong for anything else. */
@@ -87,13 +91,34 @@ export function judgeReply(c: EvalCase, r: ChatReply): { pass: boolean; why: str
   }
 }
 
+/** Seconds, to a tenth: "1.4 s". */
+const seconds = (ms: number) => `${(ms / 1000).toFixed(1)} s`
+
+/** How long a case took, as Admin says it: when its first words showed and when the answer was whole, or only the latter when nothing streamed. */
+export function timingLine(r: Pick<EvalResult, 'firstTextMs' | 'totalMs'>): string {
+  return r.firstTextMs === undefined ? `answered in ${seconds(r.totalMs)}` : `first words ${seconds(r.firstTextMs)} · whole answer ${seconds(r.totalMs)}`
+}
+
+/**
+ * The check's speed in one line, over the cases the model answered: how soon
+ * words showed and how long an answer took, on average. Empty when none did.
+ */
+export function speedLine(results: readonly (EvalResult | undefined)[]): string {
+  const asked = results.filter((r): r is EvalResult => !!r && r.firstTextMs !== undefined)
+  if (!asked.length) return ''
+  const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length
+  return `On average the first words showed after ${seconds(mean(asked.map(r => r.firstTextMs!)))}, and the whole answer took ${seconds(mean(asked.map(r => r.totalMs)))}.`
+}
+
 /** Nothing from anyone's planner: the check is about the assistant, and sends no records. */
 const NOTHING: AskSources = { tasks: [], projects: [], people: [], places: [], recipes: [], meals: [], entries: [], feedEvents: [], journal: [] }
 
 /**
  * Ask every case, two at a time — each is one call to the real model, and the
  * AI endpoint allows each person 30 in ten minutes — and judge each reply as it
- * lands. A call that fails is a failed case, not a failed check.
+ * lands. A call that fails is a failed case, not a failed check. Each is timed
+ * as the chat is felt: until its first words show, and until the whole answer
+ * is read.
  */
 export async function runChatEval(
   o: { now?: Date; tz?: string; ask?: typeof askWithActions; onResult?(result: EvalResult, index: number): void } = {},
@@ -108,12 +133,17 @@ export async function runChatEval(
       const index = next++
       const c = CHAT_EVAL[index]
       const prep = prepareAsk(c.question, NOTHING, { now, tz, includeJournal: false })
+      const started = Date.now()
+      const timing: { firstTextMs?: number } = {}
+      const shown = (text: string) => {
+        if (text && timing.firstTextMs === undefined) timing.firstTextMs = Date.now() - started
+      }
       let result: EvalResult
       try {
-        const reply = await ask(c.question, prep.docs, prep.facts, [], chatActionContext(prep.question, prep.docs, NOTHING, { now, tz }))
-        result = { case: c, answer: reply.answer, ...judgeReply(c, reply) }
+        const reply = await ask(c.question, prep.docs, prep.facts, [], chatActionContext(prep.question, prep.docs, NOTHING, { now, tz }), shown)
+        result = { case: c, answer: reply.answer, ...judgeReply(c, reply), ...timing, totalMs: Date.now() - started }
       } catch (e) {
-        result = { case: c, answer: '', pass: false, why: `no answer: ${(e as Error).message}` }
+        result = { case: c, answer: '', pass: false, why: `no answer: ${(e as Error).message}`, ...timing, totalMs: Date.now() - started }
       }
       results[index] = result
       o.onResult?.(result, index)
