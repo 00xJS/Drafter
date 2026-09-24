@@ -357,6 +357,9 @@
 .fin-row.income .fin-date {
   background: var(--tone-green-bg);
 }
+.fin-tag.alone {
+  margin-left: 0;
+}
 .fin-tag {
   display: inline-block;
   margin-left: 6px;

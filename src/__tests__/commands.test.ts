@@ -39,6 +39,8 @@ interface ShellState {
   newTasks: unknown[][]
   /** the planning sheets opened, in order */
   sheets: Sheet[]
+  /** Finance's Check in, asked for */
+  checkIn: boolean
 }
 
 /** Two starting points that disagree on every field, so no landing is true by accident. The first is on the month a day from a Stats view left, the Day remembered; in each, People's and Places' switches are on different halves. */
@@ -66,6 +68,7 @@ const STARTS: ShellState[] = [
     settingsOpen: false,
     newTasks: [],
     sheets: [],
+    checkIn: false,
   },
   {
     view: 'home',
@@ -90,6 +93,7 @@ const STARTS: ShellState[] = [
     settingsOpen: false,
     newTasks: [],
     sheets: [],
+    checkIn: false,
   },
 ]
 
@@ -162,6 +166,11 @@ function shell(start: ShellState, now: Date = AFTERNOON) {
       s.insightsTab = 'stats'
       s.view = 'insights'
     },
+    openFinanceCheckIn: () => {
+      s.checkIn = true
+      s.tasksTab = 'bills'
+      s.view = 'tasks'
+    },
   }
   const overlays: PaletteOverlays = {
     newTask: (...args) => {
@@ -221,6 +230,11 @@ describe('the palette’s own commands', () => {
     expect(commands.find(c => c.id === 'plan-week')?.quick).toBe(false)
     expect(commands.find(c => c.id === 'ask')?.keywords).toMatch(/question/)
     expect(commands.find(c => c.id === 'im-here')?.keywords).toMatch(/nearby/)
+  })
+
+  it('opens Finance’s Check in, typed for rather than offered', () => {
+    for (const start of STARTS) expect(run('check-in', start)).toMatchObject({ checkIn: true, view: 'tasks', tasksTab: 'bills' })
+    expect(commands.find(c => c.id === 'check-in')).toMatchObject({ label: 'Check in balances', quick: false })
   })
 
   it('opens Settings where you are', () => {

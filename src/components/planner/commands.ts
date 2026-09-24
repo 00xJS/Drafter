@@ -21,6 +21,8 @@ export interface PaletteNav {
   openKitchen(tab?: KitchenTab): void
   /** The Stats lens, on the segment named for this visit only, or the one last chosen. Every "… stats" row lands here. */
   openLens(tab?: StatsTab): void
+  /** Tasks → Finance with its Check in sheet up. */
+  openFinanceCheckIn(): void
 }
 
 /** The editors and sheets the palette opens (useOverlays', or a stand-in). */
@@ -41,7 +43,7 @@ export const SHUT_DOWN_QUICK_FROM = 17
 // decides which of the day's routines is a quick action. There is no New
 // project: there is one ongoing project, and nothing starts a second.
 export function buildPaletteCommands(nav: PaletteNav, overlays: PaletteOverlays, now: Date = new Date()): Command[] {
-  const { goView, setView, openJournal, openReview, goTasksTab, setKeepTab, goInnerView, openWardrobe, openKitchen, openLens } = nav
+  const { goView, setView, openJournal, openReview, goTasksTab, setKeepTab, goInnerView, openWardrobe, openKitchen, openLens, openFinanceCheckIn } = nav
   const { newTask, setPushed, openSheet } = overlays
   const hour = now.getHours()
   /** People or Places — two of Keep's four — remembered as its button would,
@@ -67,13 +69,15 @@ export function buildPaletteCommands(nav: PaletteNav, overlays: PaletteOverlays,
     { id: 'log-wear', label: 'What am I wearing?', icon: 'wardrobe', quick: false, keywords: 'outfit today log clothes', run: () => openWardrobe({ date: localDayKey() }) },
     { id: 'add-clothing', label: 'Add clothing', icon: 'camera', quick: false, keywords: 'photo garment top bottom shirt', run: () => openWardrobe({ tab: 'clothes', add: true }) },
     { id: 'new-bill', label: 'New bill', icon: 'bills', quick: true, keywords: 'payment money', run: () => newTask({ bill: { kind: 'bill' }, recurrence: { freq: 'monthly' } }, { capture: false }) },
+    // what each account holds, typed in: typed for rather than offered, as the weekly check-in's own reminder offers it
+    { id: 'check-in', label: 'Check in balances', icon: 'bills', quick: false, keywords: 'money accounts balance finance safe spend', run: () => openFinanceCheckIn() },
     { id: 'go-home', label: 'Home', icon: 'home', keywords: 'today dashboard', run: () => goView('home') },
     { id: 'go-week', label: 'Week', icon: 'review', keywords: 'review look back', run: () => openReview() },
     { id: 'go-journal', label: 'Journal', icon: 'journal', keywords: 'diary write', run: () => openJournal(localDayKey()) },
     { id: 'go-wardrobe', label: 'Wardrobe', icon: 'wardrobe', keywords: 'clothes outfit closet wear', run: () => openWardrobe() },
     { id: 'go-tasks', label: 'Tasks', icon: 'tasks', keywords: 'list', run: () => { goTasksTab('list'); setView('tasks') } },
     { id: 'go-board', label: 'Board', icon: 'board', keywords: 'kanban columns', run: () => { goTasksTab('board'); setView('tasks') } },
-    { id: 'go-bills', label: 'Bills', icon: 'bills', keywords: 'money payments', run: () => { goTasksTab('bills'); setView('tasks') } },
+    { id: 'go-bills', label: 'Finance', icon: 'bills', keywords: 'money bills payments paydays accounts savings', run: () => { goTasksTab('bills'); setView('tasks') } },
     { id: 'go-notes', label: 'Notes', icon: 'notes', keywords: 'notepad', run: () => { goTasksTab('notes'); setView('tasks') } },
     // on the mode last chosen, as a tab tap opens it, not one a day from a Stats view left for its visit
     { id: 'go-calendar', label: 'Calendar', icon: 'calendar', keywords: 'month week day', run: () => goView('calendar') },

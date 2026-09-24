@@ -247,7 +247,7 @@ function ComingRow({ row, today, whose, onOpen, onMarkPaid }: { row: MoneyRow; t
           </strong>{' '}
           <small>
             {meta}
-            {t.bill.autopay && <span className="fin-tag">Autopay</span>}
+            {t.bill.autopay && <span className={meta ? 'fin-tag' : 'fin-tag alone'}>Autopay</span>}
           </small>
         </span>{' '}
         <span className={row.amount === undefined ? 'bill-amount none' : row.income ? 'bill-amount in' : row.saving ? 'bill-amount kept' : 'bill-amount'}>{amount}</span>
