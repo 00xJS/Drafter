@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
-import { BILL_KIND_META, RECURRENCE_META, Task } from '../types'
-import { billMonth, formatMoney, isBill, monthlyCost } from '../bills'
+import { RECURRENCE_META, Task } from '../types'
+import { billEmoji, billMonth, formatMoney, isBill, monthlyCost } from '../bills'
 import { noonOf, useDayKey } from '../useDayKey'
 
 // The household's payments, one month at a time: what is overdue, what is
@@ -37,7 +37,6 @@ export function Bills({
   const shift = (n: number) => setCursor(c => new Date(c.getFullYear(), c.getMonth() + n, 1))
 
   const row = (t: Task, state: RowState) => {
-    const kind = t.bill ? BILL_KIND_META[t.bill.kind] : BILL_KIND_META.bill
     const when = state === 'paid' ? `Paid ${fmtDay(t.completedAt)}` : `Due ${fmtDay(t.dueAt)}`
     // A paid occurrence hands its repeat on to next month's copy, so naming a
     // frequency on it would read "One-off" for a bill that is anything but.
@@ -49,7 +48,7 @@ export function Bills({
       <li key={t.id} className={'bill-row ' + state}>
         <button type="button" className="bill-main" onClick={() => onOpen(t)}>
           <span className="bill-glyph" aria-hidden>
-            {kind.emoji}
+            {billEmoji(t.bill)}
           </span>
           <span className="bill-copy">
             <strong>{t.title || 'Untitled bill'}</strong>

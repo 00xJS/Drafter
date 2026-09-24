@@ -1,5 +1,5 @@
 import { DragEvent, useCallback, useEffect, useEffectEvent, useId, useMemo, useState } from 'react'
-import { CalendarEvent, CalendarSource, Garment, MEAL_SLOTS, Meal, Person, Place, PlaceCategory, Project, Recipe, STATUS_META, Task, WORK_MODE_META, Wear, WorkMode, BILL_KIND_META } from '../types'
+import { CalendarEvent, CalendarSource, Garment, MEAL_SLOTS, Meal, Person, Place, PlaceCategory, Project, Recipe, STATUS_META, Task, WORK_MODE_META, Wear, WorkMode } from '../types'
 import { clock, dateKey, fmtTime } from '../utils'
 import {
   DayItem,
@@ -21,7 +21,7 @@ import { mealWay, savedPlaces, type MealWay } from '../kitchenstats'
 import { plannedGift } from '../people'
 import { matchPlace, placeEmoji } from '../places'
 import { MealSlotRow } from './MealSlotRow'
-import { formatMoney } from '../bills'
+import { billEmoji, formatMoney } from '../bills'
 import { readableInk } from '../contrast'
 import { useTheme } from '../theme'
 import { useDayKey } from '../useDayKey'
@@ -357,7 +357,7 @@ export function Calendar({
     // reaches Google or Outlook unless it was written into the title itself.
     if (item.task.bill) {
       const amount = formatMoney(item.task.estimateCost)
-      return `${BILL_KIND_META[item.task.bill.kind].emoji} ${item.task.title || 'Untitled bill'}${amount ? ' ' + amount : ''}`
+      return `${billEmoji(item.task.bill)} ${item.task.title || 'Untitled bill'}${amount ? ' ' + amount : ''}`
     }
     return item.task.title || item.task.description.slice(0, 60) || 'Untitled'
   }

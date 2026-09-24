@@ -1,15 +1,19 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Segmented } from './stats/Segmented'
-import { formatMoney, isPayday, monthlyCost, monthlyIncome, monthlySpare } from '../bills'
-import { balanceOn, cashRunway, countable, firstShortfall, isLiability, isLiquid, latestBalance, moneyTotals, withBalance } from '../finance'
+import { formatMoney, isPayday } from '../bills'
+import { balanceOn, cashRunway, checkInDone, checkInTask, countable, firstShortfall, isLiability, isLiquid, latestBalance, moneyTotals, nextSlot, openCheckIn, shortfallLine, withBalance } from '../finance'
 import { newerStamp } from '../itemops'
 import { ACCOUNT_TYPES, ACCOUNT_TYPE_META, OPEN_STATUSES, RECURRENCE_META, type Account, type AccountType, type Task } from '../types'
-import { uid } from '../utils'
+import { dateKey, uid } from '../utils'
 import { shiftDayKey } from '../journal'
 import { noonOf, useDayKey } from '../useDayKey'
 import { Bills } from './Bills'
-import { StatTile } from './bits'
 import { ConfirmButton } from './ConfirmButton'
+import { BillSheet } from './finance/BillSheet'
+import { CheckInSheet, type CheckInChange } from './finance/CheckInSheet'
+import { GoalSheet } from './finance/GoalSheet'
+import { WEEKDAYS, dayLabel } from './finance/labels'
+import { Timeline, type CheckInFocus } from './finance/Timeline'
 
 // Finance (v3.27): what Bills was, plus the two things it could not answer.
 //
@@ -22,53 +26,55 @@ import { ConfirmButton } from './ConfirmButton'
 // arithmetic over what you wrote down — which is also why the runway is a
 // floor rather than a forecast: it counts the one open occurrence of each
 // series, so it can only turn out better than it says.
+//
+// It opens on the timeline (finance/Timeline.tsx): one screen that answers
+// "are we OK until payday?" with what is safe to spend, the next 30 days as a
+// line, what falls due, the accounts and the savings goals. The month of bills,
+// the paydays and the accounts as they always were are the segments beside it.
 
-type Segment = 'bills' | 'paydays' | 'accounts'
+type Segment = 'timeline' | 'bills' | 'paydays' | 'accounts'
 const SEGMENTS: { key: Segment; label: string }[] = [
+  { key: 'timeline', label: 'Timeline' },
   { key: 'bills', label: 'Bills' },
   { key: 'paydays', label: 'Paydays' },
   { key: 'accounts', label: 'Accounts' },
 ]
 
+/** The sheet over Finance, if any: Check in (on one account, or adding one), + Bill's templates, or + Goal. */
+type Sheet = { kind: 'checkin'; focus?: CheckInFocus } | { kind: 'bill' } | { kind: 'goal' }
+
 const fmtDay = (iso?: string) => (iso ? new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) : '')
-const dayLabel = (key: string) => new Date(`${key}T12:00`).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })
+const timeLabel = (hhmm: string) => {
+  const [h, m] = hhmm.split(':').map(Number)
+  return new Date(2026, 0, 1, h, m).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+}
 
 interface Props {
   tasks: Task[]
   accounts: Account[]
   members: { id: string; displayName: string }[]
+  /** The reader: the weekly check-in is each member's own. */
+  myId?: string | null
+  /** More than one member: a bill or a goal added here says who can see it. */
+  inHousehold?: boolean
   onOpen(t: Task): void
-  /** Open the task editor on a new bill, or on a new payday. */
-  onNew(bill: { kind: 'bill' | 'income' }): void
+  /** The task editor on a new payday, or on a bill with more to it than + Bill's short form. */
+  onNew(preset: Partial<Task>): void
   onMarkPaid(t: Task): void
+  /** A bill or a goal from Finance's own forms, or the weekly check-in turned on: written, with a toast and its Undo. */
+  onAdd(t: Task, message: string): void
+  /** The weekly check-in moved to another day or time. */
+  onSaveTask(t: Task): void
+  /** The weekly check-in turned off: to the Trash, with an Undo. */
+  onRemoveTask(t: Task): void
   onSaveAccount(a: Account): void
   onRemoveAccount(id: string): void
+  /** A Check in: every account written at once, and this week's check-in ticked off when it was due. */
+  onCheckIn(changes: CheckInChange[], done: Task | null): void
+  /** Open on Check in: handed over by the weekly check-in's task or its reminder. */
+  checkIn?: boolean
+  onCheckInOpened?(): void
   now?: Date
-}
-
-/** The strip every segment sits under: in, out, what is left, and what is actually there. */
-function MoneyStrip({ tasks, accounts }: { tasks: Task[]; accounts: Account[] }) {
-  const inPerMonth = useMemo(() => monthlyIncome(tasks), [tasks])
-  const outPerMonth = useMemo(() => monthlyCost(tasks), [tasks])
-  const spare = useMemo(() => monthlySpare(tasks), [tasks])
-  const totals = useMemo(() => moneyTotals(accounts), [accounts])
-  return (
-    <div className="kpi-row bills-kpis">
-      <StatTile label="In, a month" value={inPerMonth > 0 ? formatMoney(inPerMonth) : '—'} sub={inPerMonth > 0 ? 'every payday, averaged' : 'add a payday'} />
-      <StatTile label="Out, a month" value={outPerMonth > 0 ? formatMoney(outPerMonth) : '—'} sub="every repeating payment" />
-      <StatTile
-        label="Left over"
-        value={inPerMonth > 0 ? formatMoney(spare) : '—'}
-        sub={inPerMonth > 0 ? (spare < 0 ? 'more goes out than comes in' : 'in an average month') : undefined}
-        warn={inPerMonth > 0 && spare < 0}
-      />
-      <StatTile
-        label="Liquid now"
-        value={totals.asOf ? formatMoney(totals.liquid) : '—'}
-        sub={totals.asOf ? `as of ${dayLabel(totals.asOf)}${totals.unknown ? ` · ${totals.unknown} not checked in` : ''}` : 'type in a balance'}
-      />
-    </div>
-  )
 }
 
 /** One payday row: whose it is, who pays it, how often, how much. */
@@ -177,15 +183,30 @@ function AccountRow({ account, whose, onSave, onRemove }: { account: Account; wh
   )
 }
 
-export function Finance({ tasks, accounts, members, onOpen, onNew, onMarkPaid, onSaveAccount, onRemoveAccount, now }: Props) {
-  const [segment, setSegment] = useState<Segment>('bills')
+export function Finance(props: Props) {
+  const { tasks, accounts, members, myId, inHousehold = false, onOpen, onNew, onMarkPaid, onAdd, onSaveTask, onRemoveTask, onSaveAccount, onRemoveAccount, onCheckIn, checkIn = false, onCheckInOpened, now } = props
+  const [segment, setSegment] = useState<Segment>('timeline')
   const [adding, setAdding] = useState<AccountType | null>(null)
+  // Check in, asked for from elsewhere — the weekly check-in's task, its
+  // reminder — lands here with Finance not yet drawn, so it opens the sheet
+  // from the first render, and again when it is asked while Finance is up
+  const [sheet, setSheet] = useState<Sheet | null>(() => (checkIn ? { kind: 'checkin' } : null))
+  const [asked, setAsked] = useState(checkIn)
+  if (checkIn !== asked) {
+    setAsked(checkIn)
+    if (checkIn) setSheet({ kind: 'checkin' })
+  }
+  useEffect(() => {
+    if (checkIn) onCheckInOpened?.()
+  }, [checkIn, onCheckInOpened])
+
   const nameOf = (id: string | undefined) => (id ? (members.find(m => m.id === id)?.displayName ?? null) : null)
   // read by the day, so the runway is not rebuilt on every render by a fresh
   // clock, and still starts from today once midnight has passed on a phone
   // left open here, as the bills beside it do (useDayKey)
-  const today = useDayKey()
-  const at = useMemo(() => now ?? noonOf(today), [now, today])
+  const dayKey = useDayKey()
+  const at = useMemo(() => now ?? noonOf(dayKey), [now, dayKey])
+  const today = now ? dateKey(now) : dayKey
 
   const paydays = useMemo(
     () => tasks.filter(t => isPayday(t) && OPEN_STATUSES.includes(t.status)).sort((a, b) => (a.dueAt ?? '9999').localeCompare(b.dueAt ?? '9999')),
@@ -201,37 +222,58 @@ export function Finance({ tasks, accounts, members, onOpen, onNew, onMarkPaid, o
     onSaveAccount({ kind: 'account', id: uid(), name: ACCOUNT_TYPE_META[type].label, type, balances: [], createdAt: stamp, updatedAt: stamp })
     setAdding(null)
   }
+  // a payday is the household's picture as much as a bill is: shared unless kept back
+  const newPayday = () => onNew({ bill: { kind: 'income' }, recurrence: { freq: 'biweekly' }, title: 'Payday', ...(inHousehold ? { shared: true } : {}) })
+
+  /** Check in weekly: on at a slot, moved to another, or off. The slot is the open check-in's own due time. */
+  const setWeekly = (slot: { weekday: number; time: string } | null) => {
+    const current = openCheckIn(tasks, myId)
+    if (!slot) {
+      if (current) onRemoveTask(current)
+      return
+    }
+    const next = nextSlot(new Date(), slot.weekday, slot.time)
+    if (current) onSaveTask({ ...current, dueAt: next.toISOString(), updatedAt: newerStamp(current.updatedAt) })
+    else onAdd(checkInTask(next, { id: uid(), now: new Date().toISOString() }), `Check in weekly: ${WEEKDAYS[slot.weekday]}s at ${timeLabel(slot.time)}`)
+  }
 
   return (
     <div className="bills finance">
-      <div className="people-toolbar">
-        <h2>Finance</h2>
-        <Segmented items={SEGMENTS} value={segment} onChange={k => setSegment(k)} label="Finance view" />
-      </div>
+      <Segmented items={SEGMENTS} value={segment} onChange={k => setSegment(k)} label="Finance view" className="finance-seg" />
 
-      <MoneyStrip tasks={tasks} accounts={accounts} />
-
-      {short && (
-        <p className="warn finance-short">
-          On {dayLabel(short.day)} the money you can actually spend goes to {formatMoney(short.balance)} — counting only what is written down.
-        </p>
+      {segment === 'timeline' && (
+        <Timeline
+          tasks={tasks}
+          accounts={accounts}
+          members={members}
+          myId={myId}
+          today={today}
+          at={at}
+          onOpen={onOpen}
+          onMarkPaid={onMarkPaid}
+          onAddBill={() => setSheet({ kind: 'bill' })}
+          onAddPayday={newPayday}
+          onAddGoal={() => setSheet({ kind: 'goal' })}
+          onCheckIn={focus => setSheet({ kind: 'checkin', focus })}
+          onCheckInWeekly={setWeekly}
+        />
       )}
 
-      {segment === 'bills' && <Bills tasks={tasks} onOpen={onOpen} onNew={() => onNew({ kind: 'bill' })} onMarkPaid={onMarkPaid} />}
+      {segment === 'bills' && <Bills tasks={tasks} onOpen={onOpen} onNew={() => setSheet({ kind: 'bill' })} onMarkPaid={onMarkPaid} />}
 
       {segment === 'paydays' && (
         <section className="finance-section">
           <div className="people-toolbar">
             <h3 className="bills-head">Money in</h3>
             <span className="spacer" />
-            <button className="btn primary" onClick={() => onNew({ kind: 'income' })}>
+            <button className="btn primary" onClick={newPayday}>
               + Payday
             </button>
           </div>
           {paydays.length === 0 ? (
             <p className="empty">
-              Add each person’s pay — what it is, who pays it, how often and when the next one lands. A payday sits on the calendar like a bill, and the strip above
-              starts saying what is left over rather than only what goes out.
+              Add each person’s pay — what it is, who pays it, how often and when the next one lands. A payday sits on the calendar like a bill, and the timeline
+              starts saying what is safe to spend until it.
             </p>
           ) : (
             <ul className="bill-list">
@@ -265,7 +307,7 @@ export function Finance({ tasks, accounts, members, onOpen, onNew, onMarkPaid, o
           {live.length === 0 ? (
             <p className="empty">
               Add an account and type in what it holds. Drafter never connects to a bank — this is your own note of the balance, on the day it was true, and everything
-              above is worked out from it and from the bills and paydays you have written down.
+              Finance works out comes from it and from the bills and paydays you have written down.
             </p>
           ) : (
             <>
@@ -294,15 +336,16 @@ export function Finance({ tasks, accounts, members, onOpen, onNew, onMarkPaid, o
                 <>
                   <h3 className="bills-head">Next 60 days</h3>
                   <p className="field-hint">
-                    Spendable cash after each day’s bills and paydays. Only what is written down is counted, and a repeating payment shows its next occurrence alone —
-                    so this is the floor, not the forecast.
+                    Spendable cash after each day’s bills, paydays and set-asides. Only what is written down is counted, and a repeating payment shows its next
+                    occurrence alone — so this is the floor, not the forecast.
                   </p>
+                  {short && <p className="warn finance-short">{shortfallLine(short, dayLabel)}</p>}
                   <ul className="bill-list runway">
                     {runway.map(d => (
                       <li key={d.day} className={d.balance < 0 ? 'bill-row overdue' : 'bill-row'}>
                         <span className="bill-copy">
                           <strong>{dayLabel(d.day)}</strong>
-                          <small>{d.rows.map(r => `${r.income ? '+' : '−'}${formatMoney(r.amount)} ${r.title}`).join(' · ')}</small>
+                          <small>{d.rows.map(r => `${r.income ? '+' : '−'}${formatMoney(r.amount)} ${r.title}${r.saving ? ' (to savings)' : ''}`).join(' · ')}</small>
                         </span>
                         <span className={d.balance < 0 ? 'bill-amount owed' : 'bill-amount'}>{formatMoney(d.balance)}</span>
                       </li>
@@ -313,6 +356,45 @@ export function Finance({ tasks, accounts, members, onOpen, onNew, onMarkPaid, o
             </>
           )}
         </section>
+      )}
+
+      {sheet?.kind === 'checkin' && (
+        <CheckInSheet
+          accounts={live}
+          focus={sheet.focus}
+          today={today}
+          onClose={() => setSheet(null)}
+          onSave={changes => {
+            onCheckIn(changes, checkInDone(tasks, myId, new Date()))
+            setSheet(null)
+          }}
+        />
+      )}
+      {sheet?.kind === 'bill' && (
+        <BillSheet
+          inHousehold={inHousehold}
+          onClose={() => setSheet(null)}
+          onMore={preset => {
+            setSheet(null)
+            onNew(preset)
+          }}
+          onAdd={t => {
+            onAdd(t, `Added “${t.title}”`)
+            setSheet(null)
+          }}
+        />
+      )}
+      {sheet?.kind === 'goal' && (
+        <GoalSheet
+          today={today}
+          at={at}
+          inHousehold={inHousehold}
+          onClose={() => setSheet(null)}
+          onAdd={t => {
+            onAdd(t, `Saving for “${t.title}”`)
+            setSheet(null)
+          }}
+        />
       )}
     </div>
   )

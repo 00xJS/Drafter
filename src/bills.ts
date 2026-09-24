@@ -1,5 +1,6 @@
-import { Bill, OPEN_STATUSES, RecurrenceFreq, Task, isIncomeKind } from './types'
+import { BILL_KIND_META, Bill, OPEN_STATUSES, RecurrenceFreq, Task, isIncomeKind, isSavingKind } from './types'
 import { isOverdue } from '../shared/due.mts'
+import { seriesRoot } from '../shared/domain.mts'
 
 // Household payments: the rules behind the Bills view and the calendar's money
 // glyphs. A bill is a task with a `bill` facet — its amount due is estimateCost
@@ -14,7 +15,8 @@ export const CURRENCY = 'USD'
 const fmt = new Intl.NumberFormat('en-US', { style: 'currency', currency: CURRENCY })
 export const formatMoney = (n: number | undefined): string => (n === undefined || !Number.isFinite(n) ? '' : fmt.format(n))
 
-export const isBill = (t: Task): t is Task & { bill: Bill } => !!t.bill && !t.deletedAt && !isIncomeKind(t.bill.kind)
+/** A payment out: a bill, a card, a subscription, a loan. Never a payday, and never a set-aside, which is money kept. */
+export const isBill = (t: Task): t is Task & { bill: Bill } => !!t.bill && !t.deletedAt && !isIncomeKind(t.bill.kind) && !isSavingKind(t.bill.kind)
 
 /**
  * A payday: money coming IN, kept as a bill facet because that is exactly the
@@ -25,8 +27,26 @@ export const isBill = (t: Task): t is Task & { bill: Bill } => !!t.bill && !t.de
  */
 export const isPayday = (t: Task): t is Task & { bill: Bill } => !!t.bill && !t.deletedAt && isIncomeKind(t.bill.kind)
 
-/** A bill OR a payday: the rows the Finance view is built from. */
+/**
+ * A set-aside: money moved into savings on a schedule, the same facet again.
+ * It leaves what can be spent, so the runway counts it going out; it is not
+ * spent, so no cost, no Spend and no "paid" figure counts it (isSpending).
+ */
+export const isSaving = (t: Task): t is Task & { bill: Bill } => !!t.bill && !t.deletedAt && isSavingKind(t.bill.kind)
+
+/** A bill, a payday OR a set-aside: the rows the Finance view is built from. */
 export const isMoney = (t: Task): t is Task & { bill: Bill } => !!t.bill && !t.deletedAt
+
+/**
+ * Whether what a task cost is money SPENT. Any task's cost is, and a bill's
+ * is; a payday's is money in, and a set-aside's is money kept. Review's Spend
+ * and the Stats lens's Paid both ask this before they add anything up.
+ */
+export const isSpending = (t: Task): boolean => !t.bill || (!isIncomeKind(t.bill.kind) && !isSavingKind(t.bill.kind))
+
+/** The emoji a money row shows: its own (a template's, a goal's), or its kind's. */
+export const billEmoji = (bill: Pick<Bill, 'kind' | 'emoji'> | undefined): string =>
+  bill?.emoji || (bill && BILL_KIND_META[bill.kind]?.emoji) || BILL_KIND_META.bill.emoji
 
 /**
  * Marking a bill done with nothing typed under Paid records the amount due as
@@ -72,6 +92,35 @@ export function monthlyIncome(tasks: Task[]): number {
 /** What is left over in an average month: paid in, less paid out. Negative is the answer that matters. */
 export function monthlySpare(tasks: Task[]): number {
   return round(monthlyIncome(tasks) - monthlyCost(tasks))
+}
+
+/**
+ * What goes into savings in an average month, each set-aside series once at
+ * its cadence. It comes out of what is left over rather than being a cost: a
+ * month that sets $400 aside and has $900 spare has $500 to spend.
+ */
+export function monthlySetAside(tasks: Task[]): number {
+  return round(perMonth(tasks, isSaving))
+}
+
+/**
+ * What a set-aside series has saved so far: what each of its finished
+ * occurrences paid in, found by the series' id (seriesRoot, the rule the
+ * repeat machinery keeps). Paid is the amount typed under Paid, or the amount
+ * due when nothing was (withPaidDefault) — what marking it done records.
+ */
+export function savedSoFar(tasks: readonly Task[], series: Pick<Task, 'id'>): { saved: number; count: number } {
+  const root = seriesRoot(series.id)
+  let saved = 0
+  let count = 0
+  for (const t of tasks) {
+    if (t.status !== 'done' || !isSaving(t) || seriesRoot(t.id) !== root) continue
+    const paid = withPaidDefault(t).actualCost
+    if (paid === undefined || !Number.isFinite(paid) || paid <= 0) continue
+    saved += paid
+    count += 1
+  }
+  return { saved: round(saved), count }
 }
 
 function perMonth(tasks: Task[], pick: (t: Task) => boolean): number {

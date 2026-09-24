@@ -1,6 +1,6 @@
 import { memberName } from '../../household'
 import { Icon } from '../Icon'
-import { inTrash } from '../../itemops'
+import { inTrash, newerStamp } from '../../itemops'
 import type { PlannerCtx } from './ctx'
 import { Board, Finance, NotesView, TasksTable } from './lazy'
 import { TASKS_TABS } from './routes'
@@ -8,8 +8,8 @@ import { TASKS_TABS } from './routes'
 /** Tasks: the list, the board, Finance and the project notes, four segments of one tab. */
 export function TasksScreen({ p }: { p: PlannerCtx }) {
   const { store, upsert, remove, restore, household, projectMap, inHousehold } = p
-  const { tasksTab, setTasksTab, notesProjectId, setNotesProjectId, setTrashOpen, noteOpenId, setNoteOpenId } = p
-  const { openTask, newTask, deleteTask, changeStatus, showToast } = p
+  const { tasksTab, setTasksTab, notesProjectId, setNotesProjectId, setTrashOpen, noteOpenId, setNoteOpenId, financeCheckIn, setFinanceCheckIn } = p
+  const { openTask, newTask, deleteTask, changeStatus, applyStatus, showToast } = p
   // counted here rather than in the list: the Trash button lives on the
   // segment row now. `inTrash` is the Trash's own rule, imported rather than
   // repeated, so the badge and the list always say the same number.
@@ -74,23 +74,47 @@ export function TasksScreen({ p }: { p: PlannerCtx }) {
           accounts={store.accounts}
           // a payday says whose it is, and an account can too
           members={household.info?.members ?? []}
+          myId={household.myId}
+          inHousehold={inHousehold}
           onOpen={openTask}
-          onNew={bill =>
-            newTask(
-              // a payday defaults to a fortnight, which is what most are; a bill
-              // to a month, as it always has
-              { bill: { kind: bill.kind }, recurrence: { freq: bill.kind === 'income' ? 'biweekly' : 'monthly' }, title: bill.kind === 'income' ? 'Payday' : '' },
-              { capture: false },
-            )
-          }
+          onNew={preset => newTask(preset, { capture: false })}
           // the one completion path with a real undo: it restores the bill and
           // removes next month's occurrence, so an accidental tap costs nothing
           onMarkPaid={t => changeStatus(t.id, 'done')}
+          onAdd={(t, message) => {
+            upsert(t)
+            showToast(message, () => remove(t.id))
+          }}
+          onSaveTask={t => upsert(t)}
+          onRemoveTask={t => {
+            remove(t.id)
+            showToast('Weekly check-in off', () => restore([t.id]))
+          }}
           onSaveAccount={a => upsert(a)}
           onRemoveAccount={id => {
             remove(id)
             showToast('Account removed', () => restore([id]))
           }}
+          onCheckIn={(changes, done) => {
+            for (const c of changes) upsert(c.after)
+            // this week's check-in, ticked off by doing it, with the one Undo
+            const ticked = done ? applyStatus(done.id, 'done') : null
+            // a balance typed in gives the account a new list of them; one added blank has none
+            const n = changes.filter(c => c.after.balances.length > 0 && c.after.balances !== c.before?.balances).length
+            const said = n ? `Checked in ${n} account${n === 1 ? '' : 's'}` : changes.length === 1 ? 'Account added' : `${changes.length} accounts added`
+            showToast(ticked ? `${said} — this week’s check-in is done` : said, () => {
+              for (const c of changes) {
+                if (c.before) upsert({ ...c.before, updatedAt: newerStamp(c.after.updatedAt) })
+                else remove(c.after.id)
+              }
+              if (ticked) {
+                upsert({ ...ticked.prev, updatedAt: newerStamp(ticked.next.updatedAt) })
+                if (ticked.spawnedId) remove(ticked.spawnedId)
+              }
+            })
+          }}
+          checkIn={financeCheckIn}
+          onCheckInOpened={() => setFinanceCheckIn(false)}
         />
       )}
       {tasksTab === 'notes' && (

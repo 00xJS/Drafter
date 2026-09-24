@@ -51,17 +51,39 @@ export interface Milestone {
  * and overdue handling for free. The amount due is the task's estimateCost and
  * what was actually paid is its actualCost; this only adds what a task lacks.
  */
-export type BillKind = 'bill' | 'card' | 'subscription' | 'loan' | 'income'
-export const BILL_KINDS: BillKind[] = ['bill', 'card', 'subscription', 'loan', 'income']
+export type BillKind = 'bill' | 'card' | 'subscription' | 'loan' | 'income' | 'saving'
+export const BILL_KINDS: BillKind[] = ['bill', 'card', 'subscription', 'loan', 'income', 'saving']
 export const BILL_KIND_META: Record<BillKind, { label: string; emoji: string }> = {
   bill: { label: 'Bill', emoji: '🧾' },
   card: { label: 'Credit card', emoji: '💳' },
   subscription: { label: 'Subscription', emoji: '🔁' },
   loan: { label: 'Loan or mortgage', emoji: '🏦' },
   income: { label: 'Payday', emoji: '💵' },
+  saving: { label: 'Savings', emoji: '🐷' },
 }
 /** Money coming IN. Every figure that adds money up has to ask, or a payday reads as a cost. */
 export const isIncomeKind = (k: BillKind | undefined): boolean => k === 'income'
+/**
+ * Money set aside into savings on a schedule. It leaves what you could spend
+ * this month, so the runway and "safe to spend" count it going out, but it is
+ * not spending: it is never a cost, a bill or money spent. Every figure that
+ * adds money up has to ask this too, or a set-aside reads as a bill paid.
+ */
+export const isSavingKind = (k: BillKind | undefined): boolean => k === 'saving'
+
+/**
+ * What a set-aside series is saving towards. It rides on the series rather
+ * than being a record of its own, because a goal IS its set-asides: what has
+ * been saved is what the finished occurrences of the series paid in, and a
+ * new kind of record would have needed the database told about it first.
+ */
+export interface SavingGoal {
+  /** The amount to reach, in dollars. */
+  target: number
+  /** YYYY-MM-DD, a local day: when it should be reached by. None is "whenever it gets there". */
+  by?: string
+}
+
 export interface Bill {
   kind: BillKind
   /** Who is paid: "British Gas", "Amex". On a payday, who pays you: "Acme Ltd". */
@@ -82,6 +104,17 @@ export interface Bill {
   forMemberId?: string
   /** The account it lands in, or is paid from: an Account's id. */
   accountId?: string
+  /**
+   * Its own emoji: the one its template or goal gave it ("⚡" for the
+   * electric). Without one a row shows its kind's (billEmoji in bills.ts).
+   */
+  emoji?: string
+  /**
+   * On a set-aside series, what it is saving towards. Every occurrence carries
+   * it, the way each carries its payee, so the next one is born with it; the
+   * open occurrence's is the goal as it stands.
+   */
+  goal?: SavingGoal
 }
 
 /** The social-publishing extension of a task; present only on tasks that are posts. */
