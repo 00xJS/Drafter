@@ -13,7 +13,9 @@
   white-space: nowrap;
 }
 
-/* a piece's picture: whole, on the surface, never cropped */
+/* a piece's picture: whole, never cropped. A photo sits on the photo's own
+   white, the ground a cut-out is made on, so no grey band shows round it;
+   a piece with no photo is its type's outline on the sunken surface */
 .garment-photo {
   position: relative;
   display: flex;
@@ -24,6 +26,9 @@
   background: var(--surface-2);
   border-radius: 10px;
 }
+.garment-photo.has-photo {
+  background: var(--photo-white);
+}
 .garment-photo img {
   display: block;
   width: 100%;
@@ -31,11 +36,18 @@
   object-fit: contain;
 }
 .garment-photo-type {
-  padding: 4px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--text);
-  text-align: center;
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-2);
+}
+.garment-photo-type svg {
+  width: 46%;
+  height: 46%;
+  max-width: 72px;
+  max-height: 72px;
 }
 /* a piece at card size or larger: its main side, and its other side as an
    inset in the corner, under a third of the photo's width and framed in the
@@ -335,7 +347,6 @@
   flex: 1;
   min-height: 0;
 }
-.collage .garment-photo-type,
 .wardrobe-card-thumbs .garment-photo-type,
 .acc-thumb .garment-photo-type,
 .thumb-28 .garment-photo-type,

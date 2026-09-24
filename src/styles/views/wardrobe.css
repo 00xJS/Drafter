@@ -485,13 +485,20 @@ button.cutout-pick {
   font: inherit;
   text-align: left;
 }
+/* square whatever the photo's shape: min-height 0 keeps a tall picture from
+   stretching the box past its ratio */
 .clothes-tile .garment-view {
   width: 100%;
-  aspect-ratio: 4 / 5;
+  aspect-ratio: 1;
+  min-height: 0;
+}
+.clothes-tile .garment-view > .garment-photo {
+  min-height: 0;
 }
 .clothes-tile.add {
   align-items: center;
   justify-content: center;
+  min-height: 120px;
   border-style: dashed;
   color: var(--text-2);
   font-weight: 600;

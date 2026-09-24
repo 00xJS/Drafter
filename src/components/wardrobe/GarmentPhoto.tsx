@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { mediaURL, peekMediaURL } from '../../media'
-import { GARMENT_TYPE_META, type Garment, type GarmentType } from '../../types'
-import { Icon } from '../Icon'
+import type { Garment, GarmentType } from '../../types'
+import { Icon, type IconName } from '../Icon'
 
 /**
  * A favourite's star, said as well as drawn: a badge in a card's corner, or
@@ -37,12 +37,16 @@ export const otherSide = (s: Side): Side => (s === 'back' ? 'front' : 'back')
 /** The inset's name, for the side it would bring up: "Show the back" or "Show the front". */
 export const flipLabel = (s: Side): string => (s === 'back' ? 'Show the back' : 'Show the front')
 
+/** Each type's outline: what a piece with no photo is drawn as. */
+export const TYPE_ICON: Record<GarmentType, IconName> = { top: 'tee', bottom: 'trousers', onepiece: 'dress', outerwear: 'coat', shoes: 'shoe', accessory: 'bag' }
+
 /**
  * A piece's picture: one side of it — by default the side it is shown by —
  * as the 360px thumbnail (or, on the piece sheet, the 1200px photo) from the
- * media store, shown whole: contain, never cropped. Until it has loaded, or
- * while it has not reached this device yet, a tile tinted with the piece's
- * own colour carries its type instead.
+ * media store, shown whole: contain, never cropped, on the photo's own white
+ * (`has-photo`), so a cut-out has no grey bands round it. Until it has loaded,
+ * or while it has not reached this device yet, or when the piece has none, a
+ * tile tinted with the piece's own colour carries its type's outline instead.
  */
 export function GarmentPhoto({
   garment,
@@ -77,9 +81,16 @@ export function GarmentPhoto({
   const url = loaded.id === id ? loaded.url : id ? peekMediaURL(id) : null
   // a piece's colour is data, applied inline the way a place's is
   const tint = !url && garment.color ? { background: `color-mix(in srgb, ${garment.color} 35%, var(--surface-2))` } : undefined
+  const classes = ['garment-photo', url ? 'has-photo' : '', className ?? ''].filter(Boolean).join(' ')
   return (
-    <span className={className ? `garment-photo ${className}` : 'garment-photo'} style={tint} data-side={shown === 'back' ? 'back' : undefined}>
-      {url ? <img src={url} alt={alt} loading="lazy" decoding="async" /> : <span className="garment-photo-type">{GARMENT_TYPE_META[garment.type].label}</span>}
+    <span className={classes} style={tint} data-side={shown === 'back' ? 'back' : undefined}>
+      {url ? (
+        <img src={url} alt={alt} loading="lazy" decoding="async" />
+      ) : (
+        <span className="garment-photo-type" aria-hidden="true">
+          <Icon name={TYPE_ICON[garment.type]} strokeWidth={1.5} />
+        </span>
+      )}
     </span>
   )
 }

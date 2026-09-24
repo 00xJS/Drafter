@@ -2,9 +2,12 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
+import { Clothes } from '../components/wardrobe/Clothes'
+import { GarmentPhoto, TYPE_ICON } from '../components/wardrobe/GarmentPhoto'
 import { GarmentSheet } from '../components/wardrobe/GarmentSheet'
 import type { Garment, GarmentType } from '../types'
 import { liveById, wearIndex } from '../wardrobe'
+import { partialSource, viewSheet } from './source'
 
 /*
  * A piece you are not holding.
@@ -111,5 +114,27 @@ describe('the piece sheet: a photo arrives whenever it arrives', () => {
     // and nothing asks the question its own way afterwards
     const body = source.slice(source.indexOf('const hasPhoto ='))
     expect(body).not.toMatch(/\{\(g\.photoId \|\| g\.thumbId\)/)
+  })
+})
+
+describe('a piece’s picture, with a photo or without one', () => {
+  it('draws a piece with no photo as its type’s outline, never the word for it', () => {
+    const html = renderToStaticMarkup(<GarmentPhoto garment={unshot} />)
+    expect(html).toMatch(/^<span class="garment-photo"><span class="garment-photo-type" aria-hidden="true"><svg /)
+    expect(html).not.toContain('>Top<')
+    // one outline for each type, each its own
+    expect(new Set(Object.values(TYPE_ICON)).size).toBe(6)
+    // and Clothes draws its tile so
+    const tiles = renderToStaticMarkup(<Clothes garments={[unshot]} ix={wearIndex([], TODAY)} onAdd={noop} onOpen={noop} />)
+    expect(tiles).toContain('<span class="garment-photo-type" aria-hidden="true"><svg')
+    expect(tiles).not.toContain('>Top<')
+  })
+
+  it('sets a photo on the photo’s own white, so a cut-out has no grey band round it, in a square Clothes tile', () => {
+    const css = partialSource('18-wardrobe.css')
+    expect(css).toMatch(/\.garment-photo\.has-photo \{\s*background: var\(--photo-white\);\s*\}/)
+    // the sunken ground stays for a piece with no photo
+    expect(css).toMatch(/\n\.garment-photo \{[^}]*background: var\(--surface-2\);/)
+    expect(viewSheet('wardrobe.css')).toMatch(/\.clothes-tile \.garment-view \{\s*width: 100%;\s*aspect-ratio: 1;\s*min-height: 0;\s*\}/)
   })
 })
