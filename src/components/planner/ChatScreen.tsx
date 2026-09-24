@@ -1,5 +1,7 @@
-import { Suspense, useState, type ReactNode } from 'react'
+import { Suspense, useEffect, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { noteMessageSent } from '../../activity'
+import { messageNoticesShown } from '../../hub'
+import { newerStamp } from '../../itemops'
 import type { CalendarEntry, Meal, Task } from '../../types'
 import type { ChatOpen, ChatShell } from '../Chat'
 import { ErrorBoundary } from '../ErrorBoundary'
@@ -20,6 +22,13 @@ function Layer({ name, children }: { name: string; children: ReactNode }) {
   )
 }
 
+/** Whether the page is in front of anyone: a tab in the background, or the phone's app behind another, is not. */
+const pageShown = () => document.visibilityState !== 'hidden'
+function onShownChange(listener: () => void): () => void {
+  document.addEventListener('visibilitychange', listener)
+  return () => document.removeEventListener('visibilitychange', listener)
+}
+
 /**
  * The chat, as a screen you go into.
  *
@@ -36,11 +45,26 @@ function Layer({ name, children }: { name: string; children: ReactNode }) {
  * event editors here, over the chat, and saving one is the apply.
  *
  * A household message sent from here is told to the rest of the household
- * once the server has it (src/activity.ts).
+ * once the server has it (src/activity.ts), and the bell's word of messages
+ * this thread has shown is read here too.
  */
 export function ChatScreen({ p }: { p: PlannerCtx }) {
-  const { store, upsert, remove, restore, household, allEvents, setPushed, chatSide, setChatSide, markChatSeen, showToast } = p
+  const { store, upsert, remove, restore, household, allEvents, setPushed, chatSide, setChatSide, chatSeenAt, markChatSeen, showToast } = p
   const [editing, setEditing] = useState<Editing | null>(null)
+
+  // Reading the household thread is reading the hub's word of it: a message
+  // notice is marked read once the thread has shown its newest message — on
+  // opening the chat, and as messages arrive while it is open. Only while the
+  // page is in front of someone: the mark reaches every device of theirs, and
+  // a laptop left on the chat in a background tab has shown nobody anything.
+  const shown = useSyncExternalStore(onShownChange, pageShown, () => false)
+  const shownUpTo = shown && chatSide === 'household' ? chatSeenAt : null
+  useEffect(() => {
+    const read = messageNoticesShown(store.notices, shownUpTo)
+    if (!read.length) return
+    const at = new Date().toISOString()
+    for (const n of read) upsert({ ...n, readAt: at, updatedAt: newerStamp(n.updatedAt) })
+  }, [store.notices, shownUpTo, upsert])
   // a record named in an answer opens where it lives, which means leaving the chat
   const leave = () => setPushed(null)
   const openAskDoc = askDocOpener(p, leave)

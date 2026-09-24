@@ -4,12 +4,12 @@ import type { PlannerCtx } from './ctx'
 /**
  * A row tapped in the notification hub: the thing it is about, opened where
  * it lives, as its push or reminder would have opened it — a task in its
- * editor, an event in its own, the week's review, a person's card, a place's
- * row. `before` closes the sheet. A task deleted since, or not on this device
- * yet, says so rather than opening nothing.
+ * editor, an event in its own, the week's review, the household's thread, a
+ * person's card, a place's row. `before` closes the sheet. A task deleted
+ * since, or not on this device yet, says so rather than opening nothing.
  */
 export function hubOpener(p: PlannerCtx, before?: () => void): (target: NonNullable<HubRow['target']>) => void {
-  const { store, openTask, openReview, openPerson, openPlace, setView, setEventEditor, showToast } = p
+  const { store, openTask, openReview, openPerson, openPlace, setView, setEventEditor, setChatSide, setPushed, showToast } = p
   return target => {
     before?.()
     if (target.kind === 'task') {
@@ -21,7 +21,11 @@ export function hubOpener(p: PlannerCtx, before?: () => void): (target: NonNulla
       if (e) setEventEditor({ entry: e, startIso: e.start })
       else setView('calendar')
     } else if (target.kind === 'review') openReview()
-    else if (target.kind === 'person') openPerson(target.id)
+    else if (target.kind === 'message') {
+      // the chat on the household's thread, even if it was left on the assistant's
+      setChatSide('household')
+      setPushed('chat')
+    } else if (target.kind === 'person') openPerson(target.id)
     else if (target.kind === 'place') openPlace(target.id)
   }
 }
