@@ -262,8 +262,9 @@
        and blurs; the solid line is a fallback where backdrop-filter is off. */
     background: var(--surface);
     background: color-mix(in srgb, var(--surface) 80%, transparent);
-    backdrop-filter: saturate(1.5) blur(20px);
+    /* prefixed first, as in 02-chrome.css: the minifier keeps only the last */
     -webkit-backdrop-filter: saturate(1.5) blur(20px);
+    backdrop-filter: saturate(1.5) blur(20px);
     border-top: 1px solid var(--hairline);
     justify-content: stretch;
     gap: 0;

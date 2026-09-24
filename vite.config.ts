@@ -4,7 +4,8 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { defineConfig, type Plugin } from 'vite'
 import { configDefaults } from 'vitest/config'
-import react from '@vitejs/plugin-react'
+import babel from '@rolldown/plugin-babel'
+import react, { reactCompilerPreset } from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 import { cspHeadersFile } from './shared/csp.mts'
 
@@ -132,14 +133,15 @@ const cutoutRuntime = (): Plugin => {
  * The React Compiler memoises the app's components and hooks as it builds them,
  * and eslint-plugin-react-hooks reports what it would refuse (a component it
  * cannot prove safe is left as written; scripts/compiler-check.mjs keeps count).
- * The React plugin keeps it out of server-side transforms, which is how vitest
- * loads modules for a test in node: those run the components as written. The
- * DOM tests (*.dom.test.tsx, in happy-dom) load them as a browser does, and run
- * what the compiler made of them, as the browser tests (npm run e2e) do.
+ * Babel runs it, over the files the React plugin gave it before that plugin
+ * dropped Babel: .ts, .tsx, .js and .jsx outside node_modules, never the .mts
+ * rules in shared/. The preset keeps it out of server-side transforms, which is
+ * how vitest loads modules for a test in node: those run the components as
+ * written. The DOM tests (*.dom.test.tsx, in happy-dom) load them as a browser
+ * does, and run what the compiler made of them, as the browser tests (npm run
+ * e2e) do.
  */
-const withCompiler = {
-  babel: { plugins: ['babel-plugin-react-compiler'] },
-} satisfies Parameters<typeof react>[0]
+const reactCompiler = () => babel({ include: /\.[jt]sx?(?:$|\?)/, presets: [reactCompilerPreset()] })
 
 /**
  * Lazy chunks that only work online, so they are kept out of the precache
@@ -168,7 +170,8 @@ export default defineConfig({
     environment: 'node',
   },
   plugins: [
-    react(withCompiler),
+    react(),
+    reactCompiler(),
     cutoutRuntime(),
     buildStamp(),
     appleSiteAssociation(),
@@ -258,13 +261,26 @@ export default defineConfig({
   // built as an ES module so it loads the way the page's own chunks do
   worker: { format: 'es' },
   build: {
-    rollupOptions: {
+    // Vite 7's defaults. The iPhone app runs from iOS 16.0 (the deployment
+    // target in ios/App), whose web view is Safari 16.0, and Vite 8's default
+    // starts at Safari 16.4: its CSS minifier then writes every media query in
+    // the range form, (width<=640px), which Safari reads only from 16.4, so an
+    // iPhone on 16.0 to 16.3 would lose the whole phone layout.
+    target: ['chrome107', 'edge107', 'firefox104', 'safari16'],
+    rolldownOptions: {
       output: {
-        manualChunks(id) {
-          // stable vendor chunks survive app-code deploys in the service-worker cache
-          if (id.includes('node_modules/react-dom/') || /node_modules\/react\//.test(id)) return 'vendor-react'
-          if (id.includes('node_modules/@supabase/')) return 'vendor-supabase'
-          return undefined
+        codeSplitting: {
+          groups: [
+            // stable vendor chunks survive app-code deploys in the service-worker cache
+            { name: 'vendor-react', test: /node_modules[\\/](react|react-dom)[\\/]/, priority: 2 },
+            { name: 'vendor-supabase', test: /node_modules[\\/]@supabase[\\/]/, priority: 2 },
+            // Everything the page imports statically, in the entry. Left to
+            // itself, Rolldown splits what the entry shares with the lazy views
+            // into chunks of their own, and the page fetched eight more files
+            // before it could draw; Rollup kept them in the entry, as this does.
+            // scripts/check-precache.mjs fails a build whose launch loads more.
+            { name: 'index', tags: ['$initial'], priority: 1 },
+          ],
         },
         // The assistant's code — its prompts and parsers (ai.ts), the retrieval
         // Ask runs over the device (ask.ts), the chat's actions and the recipe
@@ -272,10 +288,10 @@ export default defineConfig({
         // launch draws. A chunk that is the assistant's (its entry is one of
         // those modules, or it has no entry and holds one) is NAMED for it, so
         // scripts/check-precache.mjs can hold it out of the launch. It is not a
-        // manualChunks rule: that form moves every module the assistant imports
-        // into the named chunk too (the API and Supabase clients, the schema,
-        // the kitchen…), and the entry, which needs those, then loaded the
-        // whole assistant first — what 3d22024 shipped.
+        // group above: a group takes in every module the assistant imports too
+        // (the API and Supabase clients, the schema, the kitchen…), and the
+        // entry, which needs those, then loaded the whole assistant first —
+        // what 3d22024 shipped.
         chunkFileNames: chunk =>
           (chunk.facadeModuleId ? ASSISTANT_MODULE.test(chunk.facadeModuleId) : chunk.moduleIds.some(id => ASSISTANT_MODULE.test(id)))
             ? 'assets/assistant-[hash].js'

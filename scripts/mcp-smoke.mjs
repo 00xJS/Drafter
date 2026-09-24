@@ -64,7 +64,7 @@ function startDatabase() {
     out = execFileSync('bash', [join(ROOT, 'scripts/lib/pgtest.sh'), 'up'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'] })
   } catch (e) {
     if (e.status === 2) process.exit(2) // no Postgres on PATH; pgtest.sh said so
-    throw new Error('mcp-smoke: could not start the throwaway Postgres')
+    throw new Error('mcp-smoke: could not start the throwaway Postgres', { cause: e })
   }
   dbDir = /^DIR=(.*)$/m.exec(out)?.[1] ?? ''
   dbPort = /^PORT=(.*)$/m.exec(out)?.[1] ?? ''

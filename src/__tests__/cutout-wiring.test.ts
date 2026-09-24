@@ -31,7 +31,7 @@ function sources(dir = path('src')): string[] {
 describe('the build and the host', () => {
   it('copies the runtime in, and keeps every cut-out file out of the precache', () => {
     const vite = read('vite.config.ts')
-    expect(vite).toMatch(/plugins: \[\s*react\(\w*\),\s*cutoutRuntime\(\),\s*buildStamp\(\),[\s\S]{0,80}VitePWA\(/)
+    expect(vite).toMatch(/plugins: \[\s*react\(\w*\),\s*reactCompiler\(\),\s*cutoutRuntime\(\),\s*buildStamp\(\),[\s\S]{0,80}VitePWA\(/)
     const ignores = /globIgnores: \[([^\]]*)\]/.exec(vite)?.[1] ?? ''
     expect(ignores).toContain("'**/node_modules/**/*'")
     expect(ignores).toContain("'cutout/**'")

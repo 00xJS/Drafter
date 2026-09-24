@@ -761,7 +761,7 @@ export async function askDrafter(
 function askAnswerIn(text: string): { said: string; raw: Record<string, unknown> | null } {
   const parts = replyParts(text)
   if (parts.said.trim() || parts.details) return { said: parts.said, raw: parts.details }
-  let raw: Record<string, unknown> | null = null
+  let raw: Record<string, unknown> | null
   try {
     const value = extractJSON<unknown>(stripThinking(text))
     raw = value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null

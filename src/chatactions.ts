@@ -157,7 +157,7 @@ export function resolveDay(value: unknown, todayKey: string, lean: DayLean = 'ah
   if (typeof value !== 'string') return null
   const s = value.trim().toLowerCase().replace(/,/g, ' ').replace(/\s+/g, ' ').trim()
   if (!s) return null
-  let key: string | null = null
+  let key: string | null
   const iso = /^(\d{4}-\d{2}-\d{2})(?:[t ].*)?$/.exec(s)
   if (iso) key = isDayKey(iso[1]) ? iso[1] : null
   else if (/^(today|tonight|this (morning|afternoon|evening))$/.test(s)) key = todayKey

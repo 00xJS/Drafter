@@ -24,7 +24,8 @@ updates:
           - '@aparajita/capacitor-*'
       # packages that name each other as peers come together, majors included:
       # alone, @vitejs/plugin-react 6 cannot install beside Vite 7, nor
-      # @eslint/js 10 beside ESLint 9 (npm ERESOLVE on the first run)
+      # @eslint/js 10 beside ESLint 9 (npm ERESOLVE on the first run). The
+      # React Compiler's Babel plugins are the React plugin's peers too.
       build-tools:
         patterns:
           - 'vite'
@@ -32,6 +33,9 @@ updates:
           - '@vitejs/*'
           - 'vitest'
           - '@vitest/*'
+          - '@rolldown/*'
+          - '@babel/core'
+          - 'babel-plugin-react-compiler'
       lint-and-types:
         patterns:
           - 'eslint'
@@ -56,6 +60,9 @@ updates:
           - '@vitejs/*'
           - 'vitest'
           - '@vitest/*'
+          - '@rolldown/*'
+          - '@babel/core'
+          - 'babel-plugin-react-compiler'
           - 'eslint'
           - 'eslint-plugin-*'
           - '@eslint/*'

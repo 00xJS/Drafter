@@ -61,7 +61,7 @@ export function clearAuthorizeRequest(store: Store | null = session()): void {
 
 /** The request waiting for an answer, or null (none, unreadable, or older than ten minutes). */
 export function pendingAuthorizeRequest(store: Store | null = session(), now = Date.now()): URLSearchParams | null {
-  let raw: string | null = null
+  let raw: string | null
   try {
     raw = store?.getItem(OAUTH_REQUEST_KEY) ?? null
   } catch {
