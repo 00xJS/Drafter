@@ -190,7 +190,7 @@ function Hero({ safe, today, onCheckIn }: { safe: SafeToSpend; today: string; on
         <h3 id="fin-hero-head" className="fin-hero-label">
           Safe to spend
         </h3>
-        <p className="fin-hero-prompt">Type in what your accounts hold, and this says what is safe to spend until payday — after the bills and savings due before it.</p>
+        <p className="fin-hero-prompt">Type in what your checking and cash hold, and this says what is safe to spend until payday — after the bills and set-asides due before it. Savings stays out of it.</p>
         <button type="button" className="btn primary" onClick={() => onCheckIn()}>
           Check in
         </button>

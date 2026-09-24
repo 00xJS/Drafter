@@ -48,6 +48,12 @@ export function withBalance(account: Account, amount: number, on = dateKey(new D
 export const isLiability = (a: Account): boolean => !!ACCOUNT_TYPE_META[a.type].liability
 /** Money you could actually spend today: not a card, not an investment. */
 export const isLiquid = (a: Account): boolean => a.type === 'checking' || a.type === 'savings' || a.type === 'cash'
+/**
+ * Money meant for spending: checking and cash. Savings is liquid but kept, so
+ * safe to spend and the cash line leave it out (the owner's rule, 2026-09-23)
+ * and the accounts total, `liquid`, still counts it.
+ */
+export const isSpendable = (a: Account): boolean => a.type === 'checking' || a.type === 'cash'
 
 /** The accounts a total counts: live, not archived. */
 export const countable = (accounts: readonly Account[]): Account[] => accounts.filter(a => !a.deletedAt && !a.archivedAt)
@@ -57,12 +63,16 @@ export interface MoneyTotals {
   net: number
   /** What you could spend today: checking, savings and cash. */
   liquid: number
+  /** What is meant for spending: checking and cash, not savings (isSpendable). */
+  spendable: number
   /** What is owed on cards. A positive number. */
   owed: number
   /** Accounts with no balance typed in yet: the figures above simply do not include them. */
   unknown: number
   /** The oldest of the check-ins the totals are built from — how stale the picture is. */
   asOf: string | null
+  /** The same, over the spendable accounts alone: how stale `spendable` is. */
+  spendableAsOf: string | null
 }
 
 /**
@@ -76,9 +86,11 @@ export interface MoneyTotals {
 export function moneyTotals(accounts: readonly Account[]): MoneyTotals {
   let net = 0
   let liquid = 0
+  let spendable = 0
   let owed = 0
   let unknown = 0
   let asOf: string | null = null
+  let spendableAsOf: string | null = null
   for (const a of countable(accounts)) {
     const b = latestBalance(a)
     if (!b) {
@@ -92,10 +104,14 @@ export function moneyTotals(accounts: readonly Account[]): MoneyTotals {
       net += b.amount
       if (isLiquid(a)) liquid += b.amount
     }
+    if (isSpendable(a)) {
+      spendable += b.amount
+      if (!spendableAsOf || b.on < spendableAsOf) spendableAsOf = b.on
+    }
     if (!asOf || b.on < asOf) asOf = b.on
   }
   const round = (n: number) => Math.round(n * 100) / 100
-  return { net: round(net), liquid: round(liquid), owed: round(owed), unknown, asOf }
+  return { net: round(net), liquid: round(liquid), spendable: round(spendable), owed: round(owed), unknown, asOf, spendableAsOf }
 }
 
 /** One dated money movement the forecast counts: a payday in, a bill or a set-aside out. */
@@ -103,7 +119,7 @@ export interface MoneyDay {
   day: string
   /** Positive in, negative out. */
   change: number
-  /** Running liquid balance at the end of that day. */
+  /** Running spendable balance (checking and cash) at the end of that day. */
   balance: number
   rows: { title: string; amount: number; income: boolean; saving?: boolean }[]
 }
@@ -156,10 +172,11 @@ export function moneyRows(tasks: readonly Task[], now: Date, days: number): Mone
 }
 
 /**
- * Liquid cash, day by day, from today to `days` out.
+ * Spendable cash (checking and cash, not savings), day by day, from today to
+ * `days` out.
  *
  * Built from what is already written down: every open bill, payday and
- * set-aside with a due date in the window, counted once, against the liquid
+ * set-aside with a due date in the window, counted once, against the spendable
  * balance as it stands now. A set-aside goes OUT here: it is money moved to
  * where it will not be spent, which is exactly what this is about, even though
  * no figure calls it spending. It does not invent a repeat — a series has
@@ -175,7 +192,7 @@ export function cashRunway(accounts: readonly Account[], tasks: readonly Task[],
     rows.push({ title: r.task.title || (r.income ? 'Payday' : r.saving ? 'Savings' : 'Bill'), amount: r.amount, income: r.income, ...(r.saving ? { saving: true } : {}) })
     byDay.set(r.day, rows)
   }
-  let balance = moneyTotals(accounts).liquid
+  let balance = moneyTotals(accounts).spendable
   const out: MoneyDay[] = []
   for (const day of [...byDay.keys()].sort()) {
     const rows = byDay.get(day)!
@@ -218,15 +235,15 @@ export const TIMELINE_DAYS = 30
 
 const round = (n: number) => Math.round(n * 100) / 100
 
-/** Whether any account you could spend from has a balance typed in: without one there is nothing to count from. */
-export const hasLiquidBalance = (accounts: readonly Account[]): boolean => countable(accounts).some(a => isLiquid(a) && !!latestBalance(a))
+/** Whether any account meant for spending has a balance typed in: without one there is nothing to count from. */
+export const hasSpendableBalance = (accounts: readonly Account[]): boolean => countable(accounts).some(a => isSpendable(a) && !!latestBalance(a))
 
 export interface SafeToSpend {
-  /** Liquid now, less every bill and set-aside that falls due before `through` ends. Null with no liquid balance typed in. */
+  /** Spendable now, less every bill and set-aside that falls due before `through` ends. Null with no spendable balance typed in. */
   amount: number | null
-  /** What the liquid accounts hold, as typed in. */
-  liquid: number
-  /** The oldest check-in the totals are built from (moneyTotals): how stale the figure is. */
+  /** What checking and cash hold, as typed in (never savings). */
+  spendable: number
+  /** The oldest check-in on those accounts (moneyTotals): how stale the figure is. */
   asOf: string | null
   /** The payday it runs to: the first one after today, when it lands within PAYDAY_HORIZON_DAYS. */
   payday: MoneyRow | null
@@ -243,7 +260,8 @@ export interface SafeToSpend {
 }
 
 /**
- * Safe to spend until payday: what the accounts you can spend from hold, less
+ * Safe to spend until payday: what checking and cash hold (savings is kept,
+ * not spent, so it stays out), less
  * every bill and set-aside that falls due before the next payday — overdue
  * ones too, since those are owed now. The payday is the first after today:
  * one due today, or late, is either in the balance you typed or not here yet,
@@ -274,9 +292,9 @@ export function safeToSpend(accounts: readonly Account[], tasks: readonly Task[]
     else bills += 1
   }
   return {
-    amount: hasLiquidBalance(accounts) ? round(totals.liquid - owed) : null,
-    liquid: totals.liquid,
-    asOf: totals.asOf,
+    amount: hasSpendableBalance(accounts) ? round(totals.spendable - owed) : null,
+    spendable: totals.spendable,
+    asOf: totals.spendableAsOf,
     payday,
     through,
     bills,
@@ -294,12 +312,12 @@ export function afterLine(s: Pick<SafeToSpend, 'bills' | 'setAsides'>): string {
   return parts.length ? `after ${parts.join(' and ')}` : 'nothing due before then'
 }
 
-/** The cash line: liquid now, then each day something falls due, as far as it looks. */
+/** The cash line: spendable now, then each day something falls due, as far as it looks. */
 export interface CashLine {
   /** Today and the last day drawn, YYYY-MM-DD. */
   from: string
   to: string
-  /** Liquid now, where the line starts. */
+  /** Spendable now, where the line starts. */
   start: number
   /** The end of each day something falls due (cashRunway). */
   days: MoneyDay[]
@@ -310,11 +328,11 @@ export interface CashLine {
   short: { day: string; balance: number } | null
 }
 
-/** The cash line for `days` ahead (30, or 60 at a tap), or null with no liquid balance to start it from. */
+/** The cash line for `days` ahead (30, or 60 at a tap), or null with no spendable balance to start it from. */
 export function cashLine(accounts: readonly Account[], tasks: readonly Task[], days: number, now: Date): CashLine | null {
-  if (!hasLiquidBalance(accounts)) return null
+  if (!hasSpendableBalance(accounts)) return null
   const from = dateKey(now)
-  const start = moneyTotals(accounts).liquid
+  const start = moneyTotals(accounts).spendable
   const run = cashRunway(accounts, tasks, days, now)
   let low = { day: from, balance: start }
   let high = start

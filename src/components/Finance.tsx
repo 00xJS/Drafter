@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Segmented } from './stats/Segmented'
 import { formatMoney, isPayday } from '../bills'
-import { balanceOn, cashRunway, checkInDone, checkInTask, countable, firstShortfall, isLiability, isLiquid, latestBalance, moneyTotals, nextSlot, openCheckIn, shortfallLine, withBalance } from '../finance'
+import { balanceOn, cashRunway, checkInDone, checkInTask, countable, firstShortfall, isLiability, isSpendable, latestBalance, moneyTotals, nextSlot, openCheckIn, shortfallLine, withBalance } from '../finance'
 import { newerStamp } from '../itemops'
 import { ACCOUNT_TYPES, ACCOUNT_TYPE_META, OPEN_STATUSES, RECURRENCE_META, type Account, type AccountType, type Task } from '../types'
 import { dateKey, uid } from '../utils'
@@ -325,14 +325,14 @@ export function Finance(props: Props) {
                 </li>
                 <li className="admin-stat">
                   <span>Spendable today</span>
-                  <strong>{totals.asOf ? formatMoney(totals.liquid) : '—'}</strong>
+                  <strong>{totals.spendableAsOf ? formatMoney(totals.spendable) : '—'}</strong>
                 </li>
                 <li className="admin-stat">
                   <span>Owed on cards</span>
                   <strong className={totals.owed > 0 ? 'warn' : undefined}>{formatMoney(totals.owed)}</strong>
                 </li>
               </ul>
-              {live.some(a => isLiquid(a)) && runway.length > 0 && (
+              {live.some(a => isSpendable(a)) && runway.length > 0 && (
                 <>
                   <h3 className="bills-head">Next 60 days</h3>
                   <p className="field-hint">

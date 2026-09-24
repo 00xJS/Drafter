@@ -129,6 +129,16 @@ describe('what the household has', () => {
     expect(moneyTotals(accounts).asOf).toBe('2026-03-01')
   })
 
+  it('keeps savings out of what is meant for spending, and in the rest', () => {
+    // the owner's rule: savings is kept, not spent — checking and cash only
+    const t = moneyTotals(accounts)
+    expect(t.spendable).toBe(2000)
+    expect(t.liquid).toBe(7000)
+    // and the spendable figure is as fresh as checking, not March's savings
+    expect(t.spendableAsOf).toBe('2026-09-20')
+    expect(moneyTotals([withBalance(account({ id: 'tin', type: 'cash' }), 60, '2026-09-18'), ...accounts]).spendable).toBe(2060)
+  })
+
   it('leaves a closed account out without deleting it', () => {
     const closed = [...accounts, withBalance(account({ id: 'old', archivedAt: '2026-01-01T00:00:00.000Z' }), 999, '2026-09-20')]
     expect(moneyTotals(closed).liquid).toBe(7000)

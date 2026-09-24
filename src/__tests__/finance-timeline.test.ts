@@ -96,15 +96,23 @@ describe('safe to spend until payday', () => {
     expect(afterLine(s)).toBe('after 2 bills')
   })
 
-  it('is as old as the oldest check-in, and leaves out an account with none', () => {
-    const accounts = [checking, account('sav', 'savings', [['2026-09-16', 500]]), account('new', 'checking')]
+  it('counts checking and cash, never savings, and is as old as their oldest check-in', () => {
+    const accounts = [checking, account('sav', 'savings', [['2026-09-16', 500]]), account('tin', 'cash', [['2026-09-19', 40]]), account('new', 'checking')]
     const s = safeToSpend(accounts, [], NOW)
-    expect(s.amount).toBe(2500)
-    expect(s.asOf).toBe('2026-09-16')
+    // savings is kept, not spent (the owner's rule): 2000 + 40, not + 500
+    expect(s.amount).toBe(2040)
+    expect(s.spendable).toBe(2040)
+    expect(s.asOf).toBe('2026-09-19')
     expect(s.unchecked).toBe(1)
     expect(afterLine(s)).toBe('nothing due before then')
-    // the same "as of" the totals have always said (moneyTotals)
-    expect(s.asOf).toBe(moneyTotals(accounts).asOf)
+    // the accounts total still has the savings in it
+    expect(moneyTotals(accounts).liquid).toBe(2540)
+    expect(s.asOf).toBe(moneyTotals(accounts).spendableAsOf)
+  })
+
+  it('has no figure from a savings balance alone', () => {
+    expect(safeToSpend([account('sav', 'savings', [['2026-09-20', 5000]])], [], NOW).amount).toBeNull()
+    expect(cashLine([account('sav', 'savings', [['2026-09-20', 5000]])], [], 30, NOW)).toBeNull()
   })
 
   it('has no figure until an account you can spend from has a balance', () => {

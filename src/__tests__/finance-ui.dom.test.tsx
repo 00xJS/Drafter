@@ -102,8 +102,8 @@ describe('the timeline, filled in', () => {
     // 1,420.18 in checking, less the overdue internet and Netflix before Friday's pay
     expect(hero.textContent).toContain('$1,324.70')
     expect(hero.textContent).toContain('Fri, Sep 25 · after 2 bills ($95.48)')
-    // the card's check-in is the oldest, and the hero says so
-    expect(hero.textContent).toContain('Balances as of Sep 14')
+    // as old as the checking it counts: the card's older check-in (Sep 14) is not in the figure
+    expect(hero.textContent).toContain('Balances as of Sep 21')
   })
 
   it('lists what is due, overdue first, paydays by whose they are and in with a plus', () => {
