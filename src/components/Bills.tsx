@@ -1,15 +1,18 @@
 import { useMemo, useState } from 'react'
-import { RECURRENCE_META, Task } from '../types'
+import { OPEN_STATUSES, RECURRENCE_META, Task } from '../types'
 import { billEmoji, billMonth, formatMoney, isBill, monthlyCost } from '../bills'
 import { noonOf, useDayKey } from '../useDayKey'
+import { MoneyMeta, NextDate } from './finance/NextDate'
 
 // The household's payments, one month at a time: what is overdue, what is
 // still to come, what has been paid, and what an average month costs. Every
 // row is a task, so it is also on the calendar, in reminders and on Today.
+// A bill with no date belongs to no month, so it is listed on its own above
+// them, saying so, rather than left out of every month without a word.
 
 const fmtDay = (iso?: string) => (iso ? new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) : '')
 
-type RowState = 'overdue' | 'upcoming' | 'paid'
+type RowState = 'undated' | 'overdue' | 'upcoming' | 'paid'
 
 export function Bills({
   tasks,
@@ -33,15 +36,15 @@ export function Bills({
   const month = useMemo(() => billMonth(tasks, cursor, noonOf(today)), [tasks, cursor, today])
   const perMonth = useMemo(() => monthlyCost(tasks), [tasks])
   const any = useMemo(() => tasks.some(isBill), [tasks])
+  const undated = useMemo(() => tasks.filter(t => isBill(t) && OPEN_STATUSES.includes(t.status) && !t.dueAt), [tasks])
   const monthName = cursor.toLocaleDateString(undefined, { month: 'long' })
   const shift = (n: number) => setCursor(c => new Date(c.getFullYear(), c.getMonth() + n, 1))
 
   const row = (t: Task, state: RowState) => {
-    const when = state === 'paid' ? `Paid ${fmtDay(t.completedAt)}` : `Due ${fmtDay(t.dueAt)}`
     // A paid occurrence hands its repeat on to next month's copy, so naming a
     // frequency on it would read "One-off" for a bill that is anything but.
     const cadence = state === 'paid' ? '' : t.recurrence ? RECURRENCE_META[t.recurrence.freq] : 'One-off'
-    const meta = [t.bill?.payee, when, cadence, t.bill?.autopay ? 'Autopay' : '']
+    const meta = [t.bill?.payee, cadence, t.bill?.autopay ? 'Autopay' : '']
       .filter(Boolean)
       .join(' · ')
     return (
@@ -52,7 +55,8 @@ export function Bills({
           </span>
           <span className="bill-copy">
             <strong>{t.title || 'Untitled bill'}</strong>
-            <small>{meta}</small>
+            {/* when first, and whole: a long payee cannot push it off a phone's line */}
+            <MoneyMeta when={state === 'paid' ? <span className="fin-next">Paid {fmtDay(t.completedAt)}</span> : <NextDate dueAt={t.dueAt} />} rest={meta} />
           </span>
           <span className="bill-amount">{formatMoney(state === 'paid' ? (t.actualCost ?? t.estimateCost) : t.estimateCost)}</span>
         </button>
@@ -101,6 +105,13 @@ export function Bills({
               <span className="stat-sub">every repeating payment</span>
             </div>
           </div>
+
+          {undated.length > 0 && (
+            <section>
+              <h3 className="bills-head">Needs a date</h3>
+              <ul className="bill-list">{undated.map(t => row(t, 'undated'))}</ul>
+            </section>
+          )}
 
           {month.overdue.length > 0 && (
             <section>

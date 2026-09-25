@@ -13,6 +13,7 @@ import { BillSheet } from './finance/BillSheet'
 import { CheckInSheet, type CheckInChange } from './finance/CheckInSheet'
 import { GoalSheet } from './finance/GoalSheet'
 import { WEEKDAYS, dayLabel, moneyName } from './finance/labels'
+import { MoneyMeta, NextDate } from './finance/NextDate'
 import { PaydaySheet } from './finance/PaydaySheet'
 import { Timeline, type CheckInFocus } from './finance/Timeline'
 
@@ -46,7 +47,6 @@ const SEGMENTS: { key: Segment; label: string }[] = [
 /** The sheet over Finance, if any: Check in (on one account, or adding one), + Bill's templates, + Payday or + Goal. */
 type Sheet = { kind: 'checkin'; focus?: CheckInFocus } | { kind: 'bill' } | { kind: 'payday' } | { kind: 'goal' }
 
-const fmtDay = (iso?: string) => (iso ? new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) : '')
 const timeLabel = (hhmm: string) => {
   const [h, m] = hhmm.split(':').map(Number)
   return new Date(2026, 0, 1, h, m).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
@@ -80,9 +80,9 @@ interface Props {
   now?: Date
 }
 
-/** One payday row: whose it is, who pays it, how often, how much. */
+/** One payday row: when the next one lands (or that it has no date, so nothing counts it yet), whose it is, who pays it, how often, how much. */
 function PaydayRow({ t, whose, onOpen, onMarkPaid }: { t: Task; whose: string | null; onOpen(t: Task): void; onMarkPaid(t: Task): void }) {
-  const meta = [whose, t.bill?.payee, t.dueAt ? `Next ${fmtDay(t.dueAt)}` : '', t.recurrence ? RECURRENCE_META[t.recurrence.freq] : 'One-off'].filter(Boolean).join(' · ')
+  const meta = [whose, t.bill?.payee, t.recurrence ? RECURRENCE_META[t.recurrence.freq] : 'One-off'].filter(Boolean).join(' · ')
   return (
     <li className="bill-row upcoming">
       <button type="button" className="bill-main" onClick={() => onOpen(t)}>
@@ -90,8 +90,8 @@ function PaydayRow({ t, whose, onOpen, onMarkPaid }: { t: Task; whose: string | 
           💵
         </span>
         <span className="bill-copy">
-          <strong>{t.title || 'Payday'}</strong>
-          <small>{meta}</small>
+          <strong>{moneyName(t, whose)}</strong>
+          <MoneyMeta when={<NextDate dueAt={t.dueAt} />} rest={meta} />
         </span>
         <span className="bill-amount in">{formatMoney(t.estimateCost)}</span>
       </button>

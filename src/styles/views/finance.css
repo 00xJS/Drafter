@@ -88,6 +88,28 @@
   margin-left: auto;
 }
 
+/* A bill's or a payday's second line: its next date first and whole, and
+   the rest (whose, who pays, how often) giving way when the line is short.
+   One with no date says so in the warning ink. */
+.bill-copy small.fin-meta {
+  display: flex;
+  min-width: 0;
+}
+.fin-next {
+  flex: none;
+}
+.fin-meta-rest {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  /* keeps the spaces round the dot: a nowrap line drops a leading one */
+  white-space: pre;
+}
+.fin-nodate {
+  color: var(--warn-text);
+  font-weight: 600;
+}
+
 /* ---------- the money timeline ----------
    Finance opens on one screen: safe to spend, the next 30 days as a line,
    what falls due, the accounts and the goals. Every colour here is a token,
@@ -801,6 +823,13 @@
 }
 
 @media (max-width: 640px) {
+  /* the date on its line and the rest on the next, rather than the rest cut to a dot or two */
+  .bill-copy small.fin-meta {
+    flex-direction: column;
+  }
+  .fin-meta-dot {
+    display: none;
+  }
   .fin-hero {
     padding: 14px 16px 10px;
   }

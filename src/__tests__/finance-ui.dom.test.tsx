@@ -204,6 +204,22 @@ describe('the timeline, filled in', () => {
     expect(month).toContain('$325.00 of it set aside')
   })
 
+  it('starts every payday and bill row with its next date, and says so in the warning ink when there is none', () => {
+    const nodate = task('bonus', { title: 'Payday', bill: { kind: 'income', forMemberId: MARIA }, estimateCost: 500, recurrence: { freq: 'biweekly' } })
+    const gym = task('gym', { title: 'Gym', bill: { kind: 'subscription', payee: 'A gym with a very long name indeed' }, estimateCost: 30, recurrence: { freq: 'monthly' } })
+    render(<Finance {...props({ tasks: [...rows, nodate, gym] })} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Paydays' }))
+    const paydays = screen.getAllByRole('listitem').map(li => li.querySelector('.bill-copy small'))
+    expect(paydays.map(small => small?.textContent)).toEqual(['Next: Fri, Sep 25 · Joseph · Every 2 weeks', 'Next: Fri, Oct 9 · Maria · Monthly', 'No date yet · Maria · Every 2 weeks'])
+    expect(paydays[2]?.querySelector('.fin-nodate')?.textContent).toBe('No date yet')
+    fireEvent.click(screen.getByRole('tab', { name: 'Bills' }))
+    // a bill with no date belongs to no month: it is listed above them all, saying so
+    expect(screen.getByRole('heading', { name: 'Needs a date' })).toBeTruthy()
+    const gymRow = screen.getByRole('button', { name: /^Gym/ })
+    expect(gymRow.querySelector('.bill-copy small')?.textContent).toBe('No date yet · A gym with a very long name indeed · Monthly')
+    expect(screen.getByRole('button', { name: /^Netflix/ }).querySelector('.bill-copy small')?.textContent).toBe('Next: Thu, Sep 24 · Monthly')
+  })
+
   it('keeps the month of bills, the paydays and the accounts a tap away', () => {
     render(<Finance {...props()} />)
     fireEvent.click(screen.getByRole('tab', { name: 'Bills' }))
