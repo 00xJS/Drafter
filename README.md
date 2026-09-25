@@ -8,14 +8,14 @@ Five tabs, **Home · Tasks · Calendar · Keep · Insights**:
 - **Tasks** holds the List, the Board, **Finance** (safe to spend until payday, bills, paydays, check-ins and savings goals) and Notes.
 - **Calendar** shows tasks, events, meals and work days, mirrors Google and Outlook, and overlays any `.ics` feed.
 - **Keep** is People, Places, Kitchen and Wardrobe: who you've seen, where you went, recipes and the week's meals, and an outfit board for planning what to wear.
-- **Insights** is Stats, the Journal archive and the weekly Review.
+- **Insights** is Stats, the Journal archive and the weekly Review. Stats opens on a few highlights of the week, month or year, yours or the household's, with every figure an area's tap away; on the 1st the morning digest brings last month's.
 
 Cmd/Ctrl+K searches everything, and **Ask Drafter** answers questions about your own records. Assistants such as Claude connect to the MCP server at `/api/mcp`, with the permissions you give them. The iPhone app adds a Home Screen widget, Siri shortcuts, Face ID lock and reminders the phone schedules itself.
 
 ## Privacy
 
 - Records live on the device first and sync between devices. When two devices change the same field, the edit saved first is kept, and the other device offers **Keep mine**.
-- A household shares tasks, notes, events, people, places and the kitchen. Journals, habits, reviews and wardrobes stay personal.
+- A household shares tasks, notes, events, people, places and the kitchen. Journals, habits, reviews and wardrobes stay personal: Insights' Both of us never counts another member's, and the monthly recap counts only your own log.
 - The server keeps encrypted nightly backups, and anyone can export their data from Settings → Data.
 - ✨ features go through Drafter's own server to NVIDIA, so no key reaches the browser. Garment photos are cut out on the device, and Drafter never connects to a bank.
 
