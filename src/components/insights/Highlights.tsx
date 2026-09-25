@@ -14,25 +14,20 @@ import {
   type HighlightVisual,
   type InsightInput,
   type InsightPeriod,
-  type Whose,
 } from '../../../shared/insights.mts'
 import { STATS_AREAS, type StatsTab } from '../planner/routes'
 import { AreaCard, DeltaBadge, Ring, Segmented, Sparkline } from '../stats'
 
-/** Mine · Both of us, in the words on the switch. */
-const WHOSE: readonly { key: Whose; label: string }[] = [
-  { key: 'mine', label: 'Mine' },
-  { key: 'both', label: 'Both of us' },
-]
-
 const AREA_LABELS = new Map<string, string>(STATS_AREAS.map(a => [a.key, a.label]))
 
+/** What counts whose, in a household: said once, under the period, in words and no badge (scopeRecords, shared/insights.mts). */
+const HOUSEHOLD_SCOPE = 'Tasks, money and meals count the household; people, places, your journal, habits and clothes are yours.'
+
 export interface HighlightsProps {
-  /** What the figures are counted from, and whose log (scopeRecords decides; see shared/insights.mts). */
+  /** What the figures are counted from (scopeRecords decides whose; see shared/insights.mts). */
   input: InsightInput
-  /** More than one member: the Mine · Both of us switch is offered. Alone there is nobody else's log to count. */
+  /** More than one member: the line saying what counts whose is drawn. Alone, everything counted is yours. */
   household: boolean
-  onWhose(w: Whose): void
   period: InsightPeriod
   onPeriod(p: InsightPeriod): void
   /** Which week, month or year, by its key; null for the one we are in. */
@@ -52,22 +47,18 @@ export interface HighlightsProps {
  * nothing: a quiet week says it is quiet. Under them, a chip for every area
  * and the year, so every figure the app keeps is one tap away.
  */
-export function Highlights({ input, household, onWhose, period, onPeriod, at, onAt, onOpen }: HighlightsProps) {
-  const { today, whose } = input
+export function Highlights({ input, household, period, onPeriod, at, onAt, onOpen }: HighlightsProps) {
+  const { today } = input
   const asked = parsePeriodKey(at)
   const anchor = asked && asked.period === period ? asked.anchor : today
   const span = useMemo(() => periodSpan(period, anchor, today), [period, anchor, today])
   const cards = useMemo(() => pickHighlights(insightFigures(input, span)), [input, span])
   const before = previousSpan(span, today)
   const after = nextSpan(span, today)
-  const both = household && whose === 'both'
   return (
     <div className="insights-feed">
       <div className="highlights-head">
-        <div className="highlights-switches">
-          <Segmented items={INSIGHT_PERIODS} value={period} onChange={onPeriod} label="Period" role="group" className="period-seg" />
-          {household && <Segmented items={WHOSE} value={whose} onChange={onWhose} label="Whose log" role="group" className="whose-seg" />}
-        </div>
+        <Segmented items={INSIGHT_PERIODS} value={period} onChange={onPeriod} label="Period" role="group" className="period-seg" />
         <div className="highlights-when">
           <button type="button" className="btn subtle icon-btn when-step" aria-label={`Previous ${period}`} onClick={() => onAt(before.key)}>
             ‹
@@ -80,11 +71,7 @@ export function Highlights({ input, household, onWhose, period, onPeriod, at, on
             ›
           </button>
         </div>
-        {both && (
-          <p className="whose-note">
-            <span className="badge whose-badge">Both of us</span> Tasks, money, people, places and meals count everyone in the household. The journal, habits and clothes are still yours alone.
-          </p>
-        )}
+        {household && <p className="field-hint insights-scope">{HOUSEHOLD_SCOPE}</p>}
       </div>
 
       {/* every figure the app keeps, an area a tap: the Highlights are a few of them, never all */}
@@ -128,12 +115,8 @@ function HighlightCard({ card: c, onOpen }: { card: Highlight; onOpen(): void })
         <span className="highlight-area">
           <span className="area-dot" aria-hidden="true" />
           {area}
-          {c.who === 'both' && <span className="badge whose-badge">Both of us</span>}
         </span>
-        <span className="highlight-title">
-          {c.who === 'just-you' && <span className="just-you">Just you: </span>}
-          {c.title}
-        </span>
+        <span className="highlight-title">{c.title}</span>
         {(c.delta || c.detail) && (
           <span className="highlight-more">
             {c.delta && <DeltaBadge by={c.delta.by} text={c.delta.text} than={c.delta.than} />}

@@ -395,20 +395,34 @@ describe('the lens drawn', () => {
     const year = elements(tree).find(e => e.type === AreaCard && e.props.name === 'This year')!
     ;(year.props.onOpen as () => void)()
     expect(went.at(-1)).toBe('year')
-    // the period is a track of three, and a household of one is offered no Mine · Both of us
+    // the period is a track of three, and the only one
     const tracks = elements(tree).filter(e => e.type === Segmented)
     expect(tracks.map(t => t.props.label)).toEqual(['Period'])
     expect((tracks[0].props.items as { key: string }[]).map(i => i.key)).toEqual(['week', 'month', 'year'])
   })
 
-  it('offers Mine · Both of us only to a household, and hands the Highlights whose log to count', () => {
-    const highlights = (over: Record<string, unknown>) => elements(settled(StatsLens, { ...LENS_PROPS, myId: 'me', ...over })).find(e => e.type === Highlights)!.props as { household: boolean; input: { whose: string; myId: string } }
-    expect(highlights({ household: true, whose: 'both' })).toMatchObject({ household: true, input: { whose: 'both', myId: 'me' } })
-    // alone, whatever the device once chose, there is only your own log
-    expect(highlights({ household: false, whose: 'both' })).toMatchObject({ household: false, input: { whose: 'mine' } })
+  it('offers no switch of whose log, in a household or alone, and hands the Highlights the viewer', () => {
+    const highlights = (over: Record<string, unknown>) => elements(settled(StatsLens, { ...LENS_PROPS, myId: 'me', ...over })).find(e => e.type === Highlights)!.props as { household: boolean; input: Record<string, unknown> }
+    expect(highlights({ household: true })).toMatchObject({ household: true, input: { myId: 'me' } })
+    expect(highlights({ household: false })).toMatchObject({ household: false, input: { myId: 'me' } })
+    // one view: there is no whose log to hand down
+    expect(highlights({ household: true }).input).not.toHaveProperty('whose')
     const tracks = (over: Record<string, unknown>) => elements(into(settled(StatsLens, { ...LENS_PROPS, myId: 'me', ...over }), 'Highlights')).filter(e => e.type === Segmented).map(t => t.props.label)
-    expect(tracks({ household: true })).toEqual(['Period', 'Whose log'])
+    expect(tracks({ household: true })).toEqual(['Period'])
     expect(tracks({ household: false })).toEqual(['Period'])
+  })
+
+  it('says what counts whose in one quiet line, only in a household, and wears no badge on any page', () => {
+    const line = /Tasks, money and meals count the household; people, places, your journal, habits and clothes are yours\./
+    const household = html(<StatsLens {...LENS_PROPS} myId="me" household />)
+    expect(household).toMatch(line)
+    // the look of a field's hint: no badge, and nothing louder
+    expect(household).toContain('<p class="field-hint insights-scope">')
+    expect(html(<StatsLens {...LENS_PROPS} myId="me" household={false} />)).not.toMatch(line)
+    for (const tab of PAGES) {
+      const out = html(<StatsLens {...LENS_PROPS} tab={tab} myId="me" household />)
+      expect(out, tab).not.toMatch(/Both of us|Just you|whose-badge|whose-note/)
+    }
   })
 
   it('never leaves the tab: every card on the year opens a page of this one', () => {
@@ -451,11 +465,9 @@ describe('the lens drawn', () => {
     for (const [tab, Component, wrapper] of [['people', PeopleStats, 'AreaPeople'], ['places', PlacesStats, 'AreaPlaces']] as const) {
       const view = (over: Record<string, unknown>) => elements(into(settled(StatsLens, { ...LENS_PROPS, tab, myId: 'me', ...over }), wrapper)).find(e => e.type === Component)!
       expect(view({}).props.myId, tab).toBe('me')
-      // a household of one that once chose Both of us: still only yours
-      expect(view({ household: false, whose: 'both' }).props.myId, tab).toBe('me')
-      // …and under Both of us, every member's, which the page says above it
-      expect(view({ household: true, whose: 'both' }).props.myId, tab).toBeNull()
-      expect(html(<StatsLens {...LENS_PROPS} tab={tab} myId="me" household whose="both" />), tab).toContain('Both of us')
+      // in a household too: who you saw and where you went are your own log,
+      // so a person's page here is the same as Keep → People's
+      expect(view({ household: true }).props.myId, tab).toBe('me')
     }
   })
 
@@ -508,8 +520,8 @@ describe('the lens drawn', () => {
       elements(into(settled(StatsLens, { ...props, tab: 'year' as const, myId, ...over }), 'YearLens')).filter(e => e.type === AreaCard).find(c => c.props.name === 'Places')!.props.value
     expect(visited('maria')).toBe('1 place')
     expect(visited('joe')).toBe('0 places')
-    // under Both of us, her outing counts, and the page says whose it is
-    expect(visited('joe', { household: true, whose: 'both' })).toBe('1 place')
+    // in a household as well: her outing is hers
+    expect(visited('joe', { household: true })).toBe('0 places')
   })
 
   it('finishes the heading\u2019s sentence on every window, including All', () => {

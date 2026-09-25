@@ -7,10 +7,12 @@
 // Insights draws its Highlights with, so the recap and the app can never tell
 // one member two different Septembers.
 //
-// Whose log: the member's OWN, always — Mine, never the household's. The
-// service key bypasses every policy, so each row counted has passed
-// readableRow for that member (visibleItemsFor), and the personal kinds read
-// here are read for that member alone: their journal, habits and clothes.
+// Whose records: the scope the app's Highlights count by (scopeRecords).
+// Tasks, money and meals are the household's as this member can read them;
+// who they saw and where they went is their own log; the journal, habits and
+// clothes are theirs alone. The service key bypasses every policy, so each
+// row counted has passed readableRow for that member (visibleItemsFor), and
+// the personal kinds read here are read for that member alone.
 //
 // Once a month: the notice's id is the month's, `notice~<user>~recap~YYYY-MM`,
 // and it is written BEFORE anything is sent, as the digest writes its
@@ -67,7 +69,9 @@ function liveOf(items, kind) {
  * A member's recap for `month` from rows as the database holds them: their
  * readable share of the digest's rows and their own personal rows. Every row
  * is scoped by visibleItemsFor (readableRow, for this member), and personal
- * kinds that are not theirs are dropped there too. The figures are Mine.
+ * kinds that are not theirs are dropped there too. The figures are counted as
+ * the app's are: the household's tasks, money and meals among what is left,
+ * the member's own visits, outings, journal, habits and clothes.
  * @param {{ user_id: string | null, data: unknown }[]} rows
  * @param {string} userId
  * @param {Iterable<string> | null | undefined} peerIds
@@ -98,7 +102,6 @@ export function buildRecap(rows, userId, peerIds, ownerId, timezone, now, month)
     garments: liveOf(items, 'garment'),
     wears: liveOf(items, 'wear'),
     myId: userId,
-    whose: /** @type {const} */ ('mine'),
     now,
     today,
     dayKeyOf,

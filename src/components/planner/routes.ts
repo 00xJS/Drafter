@@ -1,5 +1,5 @@
 import type { IconName } from '../Icon'
-import type { InsightPeriod, Whose } from '../../../shared/insights.mts'
+import type { InsightPeriod } from '../../../shared/insights.mts'
 
 // Five tabs, and each one answers a different question.
 //
@@ -341,19 +341,5 @@ export const storedInsightsPeriod = (): InsightPeriod => {
     return saved === 'month' || saved === 'year' ? saved : 'week'
   } catch {
     return 'week'
-  }
-}
-
-/**
- * Mine · Both of us: whose log the shared areas count, remembered per device.
- * Mine unless this device was told otherwise; the recap's link opens on Mine
- * for its visit, as the recap itself counts only yours.
- */
-export const INSIGHTS_WHOSE_KEY = 'drafter:insights-whose'
-export const storedWhose = (): Whose => {
-  try {
-    return localStorage.getItem(INSIGHTS_WHOSE_KEY) === 'both' ? 'both' : 'mine'
-  } catch {
-    return 'mine'
   }
 }

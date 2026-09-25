@@ -7,8 +7,9 @@ import { inAppLink, parseLink, paramsOf } from '../links'
 
 // The monthly recap, on the server: on the 1st, from the member's digest hour
 // in their own zone, last month's highlights — a push and a notice in the hub,
-// once — counted from the member's OWN log, by shared/insights.mts, the module
-// the app's Highlights are drawn with.
+// once — counted by shared/insights.mts, the module the app's Highlights are
+// drawn with, and as they count: the household's tasks, money and meals as the
+// member can read them, and the member's own visits, journal, habits and clothes.
 //
 // Push is stubbed at its module, and the database is answered here, as the
 // digest's own tests answer it.
@@ -74,14 +75,14 @@ function september(): Row[] {
     done(JOE, 'j4', '2026-09-10'),
     // Joe saw Tio Marco
     done(JOE, 'jv', '2026-09-12', { tags: ['visit'], peopleIds: ['marco'] }),
-    // Maria's own work, shared with the household: hers, not his
+    // Maria's own work, shared with the household: the household's, so his figure too
     done(MARIA, 'm1', '2026-09-09'),
     done(MARIA, 'm2', '2026-09-09'),
     // Maria's visit with Ana, shared: her log, not his
     done(MARIA, 'mv', '2026-09-14', { tags: ['visit'], peopleIds: ['ana'] }),
     // Maria's PRIVATE work handed to Joe, and a private visit with Rosa put on
-    // him: under Mine each would be his (isMineTask, ownVisit) — if he could
-    // read them. The database hides both from him, and so must the recap.
+    // him: the work would be the household's and the visit his (ownVisit) — if
+    // he could read them. The database hides both from him, and so must the recap.
     done(MARIA, 'secret-task', '2026-09-20', { assigneeId: JOE, shared: false }),
     done(MARIA, 'secret-visit', '2026-09-21', { tags: ['visit'], peopleIds: ['rosa'], assigneeId: JOE, shared: false }),
     // Joe's journal, the last nine days of the month; Maria's, every day of it
@@ -225,35 +226,60 @@ describe('what the recap says, and to whom', () => {
     expect(push.body).toBe(notice.data.lines.join('\n'))
     expect(notice.data.lines).toEqual([
       'Journal 9 days in a row · your longest yet',
-      '4 tasks done in September, ↑4 on August · Tuesdays were your best',
+      '6 tasks done in September, ↑6 on August · Tuesdays were the busiest',
       'You saw Tio Marco in September, ↑1 on August · on 1 day',
     ])
     // …and the morning digest still went, first, as on any other day
     expect(log.map(e => e.title)).toEqual(['Good morning — today in Drafter', 'Your September in Drafter'])
   })
 
-  it('counts only the member’s own log, and nothing the database would not let them read', async () => {
+  it('counts the household’s tasks as each member can read them, and only their own visits and journal', async () => {
     settings = [account(JOE), account(MARIA)]
     rows = september()
     await runAt('2026-10-01T15:00:00.000Z')
     const joe = kept.get(recapNoticeId(JOE, '2026-09'))!.data.lines.join('\n')
-    // four tasks: not Maria's two, and not her private one handed to him
-    expect(joe).toContain('4 tasks done in September')
+    // six tasks: his four and the two Maria shared, as the app counts them;
+    // never the private one she handed him, which he cannot read
+    expect(joe).toContain('6 tasks done in September')
     // Tio Marco alone: not Maria's Ana, and not the private visit with Rosa
     expect(joe).toContain('You saw Tio Marco in September')
     expect(joe).not.toMatch(/Ana|Rosa/)
     // his nine days of journal, never her thirty
     expect(joe).toContain('Journal 9 days in a row')
     expect(joe).not.toContain('30 days')
-    // and Maria's own recap is hers: her thirty days, her two tasks, her Ana
-    // …and Maria's is hers: her thirty days, her own two tasks (the one she
-    // handed Joe is his to do), and whom she saw, Rosa's private visit included
+    // …and Maria's is hers: the household's work as she reads it (his four,
+    // her two and the private one only she can read), her thirty days, and
+    // whom she saw, Rosa's private visit included
     const maria = kept.get(recapNoticeId(MARIA, '2026-09'))!.data.lines.join('\n')
     expect(maria).toContain('Journal 30 days in a row')
-    expect(maria).toContain('2 tasks done in September')
+    expect(maria).toContain('7 tasks done in September')
     expect(maria).toContain('You saw 2 people in September')
     expect(maria).not.toContain('Tio Marco')
     expect(kept.get(recapNoticeId(MARIA, '2026-09'))!.user_id).toBe(MARIA)
+  })
+
+  it('counts the household’s tasks and meals the way the app does, never another member’s private ones', () => {
+    const now = new Date('2026-10-01T15:00:00.000Z')
+    const meals = [
+      // a dinner Maria planned for both of them, and a lunch she kept to herself
+      record(MARIA, { kind: 'meal', id: 'meal~2026-09-05~dinner~maria', date: '2026-09-05', slot: 'dinner', title: 'Soup' }),
+      record(MARIA, { kind: 'meal', id: 'meal~2026-09-06~lunch~maria', date: '2026-09-06', slot: 'lunch', title: 'Salad', shared: false }),
+    ]
+    const recap = (userId: string, peer: string) => buildRecap([...september(), ...meals], userId, [peer], JOE, 'America/Phoenix', now, '2026-09').cards
+    const card = (cards: ReturnType<typeof recap>, id: string) => cards.find(c => c.id === id)
+    const joe = recap(JOE, MARIA)
+    const maria = recap(MARIA, JOE)
+    // the household's work: whoever did it, as far as each can read it
+    expect(card(joe, 'tasks-done')?.title).toBe('6 tasks done in September')
+    expect(card(maria, 'tasks-done')?.title).toBe('7 tasks done in September')
+    // the dinner is the household's; the lunch she kept to herself is hers alone
+    expect(card(joe, 'kitchen')?.title).toBe('Cooked 1 meal in September')
+    expect(card(maria, 'kitchen')?.title).toBe('Cooked 2 meals in September')
+    // …while whom each saw stays their own
+    expect(card(joe, 'people')?.title).toBe('You saw Tio Marco in September')
+    expect(card(maria, 'people')?.title).toBe('You saw 2 people in September')
+    // and no line says whose it is
+    for (const c of [...joe, ...maria]) expect(c.line, c.id).not.toMatch(/^(Both of us|Just you)/)
   })
 
   it('agrees line for line with what the app’s Highlights say about the same month', () => {
@@ -267,7 +293,7 @@ describe('what the recap says, and to whom', () => {
     const of = (kind: string) => mine.filter(r => r.kind === kind) as never[]
     const cards = pickHighlights(
       insightFigures(
-        { tasks: of('task'), people: of('person'), journal: of('journal'), myId: JOE, whose: 'mine', now, today: '2026-10-01', dayKeyOf: iso => day(Date.parse(iso)) },
+        { tasks: of('task'), people: of('person'), journal: of('journal'), myId: JOE, now, today: '2026-10-01', dayKeyOf: iso => day(Date.parse(iso)) },
         periodSpan('month', '2026-09-01', '2026-10-01'),
       ),
     )

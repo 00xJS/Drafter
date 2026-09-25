@@ -37,10 +37,10 @@
 // unread on the lock screen can still be read.
 //
 // On the 1st of each month, from its digest hour, an account is also sent
-// last month's highlights (lib/recap.mjs): Insights' own lines, from its own
-// log, once — the notice for that month is its watermark, written first. The
-// rows are the digest's, plus that member's journal, habits and clothes, read
-// only on a run where a recap is still to go.
+// last month's highlights (lib/recap.mjs): Insights' own lines, counted as
+// Insights counts them, once — the notice for that month is its watermark,
+// written first. The rows are the digest's, plus that member's journal,
+// habits and clothes, read only on a run where a recap is still to go.
 
 import { buildDigest, localParts, visibleItemsFor } from '../../shared/digest.mts'
 import { isMineTask } from '../../shared/domain.mts'
@@ -205,7 +205,7 @@ async function recapsToSend(active, now, ownerId) {
 }
 
 /**
- * One account's recap: worked out from its own log, and its notice written
+ * One account's recap: counted as Insights counts, and its notice written
  * for its month. Resolves what to push — or null when the month held nothing
  * worth saying, when the notice was there already (another run sent it), or
  * when notices cannot be kept yet, since a push with no watermark behind it

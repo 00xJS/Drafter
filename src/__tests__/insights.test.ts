@@ -20,7 +20,6 @@ import {
   type Highlight,
   type InsightInput,
   type InsightPeriod,
-  type Whose,
 } from '../../shared/insights.mts'
 import { localDayKey } from '../../shared/journal.mts'
 import { dayKeysIn } from '../../shared/people.mts'
@@ -56,7 +55,7 @@ const recipe = (id: string, name: string): Recipe => ({ kind: 'recipe', id, name
 /** The days from `from` for `n` days. */
 const run = (from: string, n: number) => Array.from({ length: n }, (_, i) => localDayKey(new Date(Number(from.slice(0, 4)), Number(from.slice(5, 7)) - 1, Number(from.slice(8, 10)) + i)))
 
-const input = (over: Partial<InsightInput> = {}): InsightInput => ({ tasks: [], myId: JOE, whose: 'mine', now: NOW, today: TODAY, dayKeyOf, ...over })
+const input = (over: Partial<InsightInput> = {}): InsightInput => ({ tasks: [], myId: JOE, now: NOW, today: TODAY, dayKeyOf, ...over })
 const cards = (over: Partial<InsightInput> = {}, period: InsightPeriod = 'week', anchor = TODAY): Highlight[] => {
   const i = input(over)
   return pickHighlights(insightFigures(i, periodSpan(period, anchor, i.today)))
@@ -147,7 +146,7 @@ describe('what the highlights count', () => {
     for (const c of cards({ tasks: [done('a', '2026-09-22')], journal: [entry('2026-09-22')] })) expect(c.title, c.id).not.toMatch(/\b0\b/)
   })
 
-  it('counts finished work in the week, against the same days of last week, and names the best weekday', () => {
+  it('counts finished work in the week, against the same days of last week, and names the busiest weekday', () => {
     const tasks = [
       // Tuesday 22nd ×3, Monday 21st, Wednesday 23rd
       done('a', '2026-09-22'),
@@ -166,8 +165,9 @@ describe('what the highlights count', () => {
     const c = card(cards({ tasks }), 'tasks-done')!
     expect(c.title).toBe('5 tasks done this week')
     expect(c.delta).toMatchObject({ by: 4, text: '↑4', than: 'on last week' })
-    expect(c.detail).toBe('Tuesday was your best day')
-    expect(c.line).toBe('5 tasks done this week, ↑4 on last week · Tuesday was your best day')
+    // the household's work, so the busiest day rather than "your best"
+    expect(c.detail).toBe('Tuesday was the busiest day')
+    expect(c.line).toBe('5 tasks done this week, ↑4 on last week · Tuesday was the busiest day')
     expect(c.area).toBe('tasks')
     // Sunday to Thursday, a point a day
     expect(c.visual).toEqual({ kind: 'spark', series: [0, 1, 3, 1, 0] })
@@ -229,7 +229,7 @@ describe('what the highlights count', () => {
     const c = card(cards({ tasks, people }), 'people')!
     expect(c.title).toBe('You saw 2 people this week')
     expect(c.detail).toBe('most often Tio Marco')
-    expect(c.who).toBeNull()
+    expect(c.line).toBe('You saw 2 people this week, ↑2 on last week · most often Tio Marco')
     // no picture: a ring of days beside a count of people read as people
     expect(c.visual).toBeUndefined()
   })
@@ -341,8 +341,8 @@ describe('what the highlights count', () => {
   })
 })
 
-describe('whose log: Mine and Both of us', () => {
-  // Joe and Maria each log visits, each keep a journal, and each finish work
+describe('one view: the household’s tasks, money and meals; your own people, places, journal, habits and clothes', () => {
+  // Joe and Maria each finish work, each log visits, and each keep a journal, habits and clothes
   const people = [person('marco', 'Tio Marco'), person('ana', 'Ana'), person('rosa', 'Rosa')]
   const places = [place('luna', 'Luna’s')]
   const household: Partial<InsightInput> = {
@@ -354,66 +354,78 @@ describe('whose log: Mine and Both of us', () => {
       done('maria-outing', '2026-09-22', { placeId: 'luna', tags: ['visit'], ownerId: MARIA }),
       done('joe-chore', '2026-09-22', { ownerId: JOE }),
       done('maria-chore', '2026-09-22', { ownerId: MARIA }),
-      // filed by Joe, handed to Maria: hers to do, so hers done
+      // filed by Joe, handed to Maria
       done('handed', '2026-09-23', { ownerId: JOE, assigneeId: MARIA }),
+      // the rent, which Maria paid
+      done('rent', '2026-09-21', { title: 'Rent', bill: { kind: 'bill', payee: 'Landlord' }, estimateCost: 900, ownerId: MARIA }),
     ],
-    // a record the device should never hold, and would never count if it did
+    // Maria's own kinds: records Joe's device should never hold, and would never count if it did
     journal: [...run('2026-09-20', 5).map(d => entry(d, { ownerId: MARIA })), entry('2026-09-22', { ownerId: JOE })],
     habits: [habit('Maria’s walk', run('2026-09-01', 24), { ownerId: MARIA })],
+    garments: [garment('dress', 'Red dress', { ownerId: MARIA })],
+    wears: [wear('2026-09-21', ['dress'], { ownerId: MARIA }), wear('2026-09-22', ['dress'], { ownerId: MARIA })],
   }
-  const as = (whose: Whose) => cards({ ...household, whose })
+  const as = (myId: string) => cards({ ...household, myId })
 
-  it('counts only your own visits and your own work under Mine', () => {
-    const mine = as('mine')
-    expect(card(mine, 'people')?.title).toBe('You saw Tio Marco this week')
-    expect(card(mine, 'tasks-done')?.title).toBe('1 task done this week')
-    // Maria went to Luna’s; you did not
-    expect(card(mine, 'places')).toBeUndefined()
-    for (const c of mine) expect(c.who, c.id).toBeNull()
-  })
-
-  it('counts every member’s log under Both of us, and says so on every card', () => {
-    const both = as('both')
-    expect(card(both, 'people')?.title).toBe('3 people seen between you this week')
-    expect(card(both, 'tasks-done')?.title).toBe('3 tasks done this week')
-    expect(card(both, 'places')?.title).toBe('Went to Luna’s this week')
-    for (const c of both.filter(c => ['tasks', 'money', 'people', 'places', 'kitchen'].includes(c.area))) {
-      expect(c.who, c.id).toBe('both')
-      expect(c.line, c.id).toMatch(/^Both of us: /)
+  it('counts every member’s finished work and money paid, the same for each of them', () => {
+    for (const me of [JOE, MARIA]) {
+      const list = as(me)
+      // two chores, the task handed to Maria and the rent, whoever did them
+      expect(card(list, 'tasks-done')?.line, me).toBe('4 tasks done this week, ↑4 on last week · Tuesday was the busiest day')
+      expect(card(list, 'money')?.title, me).toBe('Paid $900.00 this week')
     }
   })
 
-  it('never counts another member’s journal or habits, under either', () => {
-    for (const whose of ['mine', 'both'] as const) {
-      const list = as(whose)
-      const journal = card(list, 'journal')!
-      // one day of Joe's own, never Maria's run of five
-      expect(journal.title, whose).toBe('Wrote in the journal on 1 day this week')
-      expect(card(list, 'habits'), whose).toBeUndefined()
+  it('counts only your own visits and outings', () => {
+    const joe = as(JOE)
+    expect(card(joe, 'people')?.title).toBe('You saw Tio Marco this week')
+    // Maria went to Luna’s; Joe did not
+    expect(card(joe, 'places')).toBeUndefined()
+    const maria = as(MARIA)
+    expect(card(maria, 'people')?.title).toBe('You saw 2 people this week')
+    expect(card(maria, 'places')?.title).toBe('You went to Luna’s this week')
+  })
+
+  it('never counts another member’s journal, habits or clothes', () => {
+    const joe = as(JOE)
+    // one day of Joe's own, never Maria's run of five
+    expect(card(joe, 'journal')?.title).toBe('Wrote in the journal on 1 day this week')
+    expect(card(joe, 'habits')).toBeUndefined()
+    expect(card(joe, 'wardrobe-days')).toBeUndefined()
+    expect(card(joe, 'wardrobe-never')).toBeUndefined()
+    // …and each is Maria's own, on her device
+    const maria = as(MARIA)
+    expect(card(maria, 'journal')?.title).toBe('Journal 5 days in a row')
+    expect(card(maria, 'habits')?.title).toBe('Habits kept 100% of the time')
+    expect(card(maria, 'wardrobe-days')?.title).toBe('Outfit logged on 2 days this week')
+  })
+
+  it('labels no card: no badge to draw, and no prefix in its line', () => {
+    for (const c of [...as(JOE), ...as(MARIA)]) {
+      expect(c.line, c.id).not.toMatch(/^(Both of us|Just you)/)
+      expect(Object.keys(c), c.id).not.toContain('who')
     }
-    // …and under Both, a personal figure says it is yours alone
-    expect(card(as('both'), 'journal')?.who).toBe('just-you')
-    expect(card(as('both'), 'journal')?.line).toBe('Just you: Wrote in the journal on 1 day this week, ↑1 on last week')
   })
 
   it('scopes the areas’ own pages by the same rule', () => {
-    const tasks = household.tasks!
-    const mine = scopeRecords({ tasks, journal: household.journal, myId: JOE, whose: 'mine' })
-    expect(mine.work.map(t => t.id).sort()).toEqual(['joe-chore', 'joe-visit'])
-    expect(mine.visitsOf).toBe(JOE)
-    expect(mine.journal.every(e => e.ownerId === JOE)).toBe(true)
-    const both = scopeRecords({ tasks, journal: household.journal, myId: JOE, whose: 'both' })
-    expect(both.work).toHaveLength(tasks.length)
-    expect(both.visitsOf).toBeNull()
-    expect(both.journal.every(e => e.ownerId === JOE)).toBe(true)
+    const scoped = scopeRecords({ ...household, tasks: household.tasks!, myId: JOE })
+    // every task the device holds is the household's work
+    expect(scoped.work.map(t => t.id)).toEqual(household.tasks!.map(t => t.id))
+    // …and only the personal records that are Joe's
+    expect(scoped.journal.map(e => e.ownerId)).toEqual([JOE])
+    expect([scoped.habits, scoped.garments, scoped.wears]).toEqual([[], [], []])
     // with nobody signed in, every record on the device is its own
-    expect(scopeRecords({ tasks, journal: household.journal, myId: null, whose: 'mine' }).journal).toHaveLength(household.journal!.length)
+    const local = scopeRecords({ ...household, tasks: household.tasks!, myId: null })
+    expect(local.journal).toHaveLength(household.journal!.length)
+    expect(local.garments).toHaveLength(1)
   })
 
-  it('counts a meal shared with the household for both, and one kept to herself for Maria alone', () => {
+  it('counts the household’s meals whoever planned them; one kept to herself is on Maria’s device alone', () => {
     const places = [place('luna', 'Luna’s')]
-    const meals = [meal('ours', '2026-09-22', { out: true, placeId: 'luna', ownerId: MARIA }), meal('hers', '2026-09-23', { out: true, placeId: 'luna', ownerId: MARIA, shared: false })]
-    expect(card(cards({ meals, places }), 'kitchen')?.title).toBe('Out once this week')
-    expect(card(cards({ meals, places, myId: MARIA }), 'kitchen')?.title).toBe('Out twice this week')
+    const ours = meal('ours', '2026-09-22', { out: true, placeId: 'luna', ownerId: MARIA })
+    const hers = meal('hers', '2026-09-23', { out: true, placeId: 'luna', ownerId: MARIA, shared: false })
+    // Joe's device holds the one she shared with the household; the database keeps the other from it
+    expect(card(cards({ meals: [ours], places }), 'kitchen')?.title).toBe('Out once this week')
+    expect(card(cards({ meals: [ours, hers], places, myId: MARIA }), 'kitchen')?.title).toBe('Out twice this week')
   })
 })

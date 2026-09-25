@@ -9,7 +9,6 @@ import {
   LEGACY_VIEW_TO_TASKS,
   PEOPLE_TAB_KEY,
   INSIGHTS_PERIOD_KEY,
-  INSIGHTS_WHOSE_KEY,
   STATS_AREAS,
   STATS_PAGE_TITLES,
   STATS_VIEW_TO_PEOPLE,
@@ -35,7 +34,6 @@ import {
   storedInsightsPeriod,
   storedKeepTab,
   storedTasksTab,
-  storedWhose,
   periodOfKey,
   viewIn,
   wardrobeTabOfView,
@@ -117,7 +115,7 @@ describe('five tabs, the same on the phone and the desktop', () => {
     expect(VIEW_TO_WARDROBE['wardrobe-stats']).toBe('stats')
   })
 
-  it('remembers the Highlights’ period and whose log, each by its own key, and nothing it does not know', () => {
+  it('remembers the Highlights’ period by its own key, and nothing it does not know', () => {
     const read = <T,>(key: string, v: string | null, fn: () => T) => {
       vi.stubGlobal('localStorage', { getItem: (k: string) => (k === key ? v : null) })
       return fn()
@@ -127,18 +125,13 @@ describe('five tabs, the same on the phone and the desktop', () => {
     expect(read(INSIGHTS_PERIOD_KEY, 'year', storedInsightsPeriod)).toBe('year')
     expect(read(INSIGHTS_PERIOD_KEY, 'decade', storedInsightsPeriod)).toBe('week')
     expect(read(INSIGHTS_PERIOD_KEY, '__proto__', storedInsightsPeriod)).toBe('week')
-    // Mine unless this device chose Both of us
-    expect(read(INSIGHTS_WHOSE_KEY, null, storedWhose)).toBe('mine')
-    expect(read(INSIGHTS_WHOSE_KEY, 'both', storedWhose)).toBe('both')
-    expect(read(INSIGHTS_WHOSE_KEY, 'everyone', storedWhose)).toBe('mine')
-    // storage that will not answer is the defaults, never a throw
+    // storage that will not answer is the default, never a throw
     vi.stubGlobal('localStorage', {
       getItem: () => {
         throw new Error('blocked')
       },
     })
     expect(storedInsightsPeriod()).toBe('week')
-    expect(storedWhose()).toBe('mine')
   })
 
   it('reads a period’s key in a link or a notice, and nothing else', () => {

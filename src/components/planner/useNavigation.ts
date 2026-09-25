@@ -7,7 +7,6 @@ import {
   INNER_VIEW_KEYS,
   INSIGHTS_PERIOD_KEY,
   INSIGHTS_TAB_KEY,
-  INSIGHTS_WHOSE_KEY,
   KEEP_TAB_KEY,
   TASKS_TAB_KEY,
   storedCalMode,
@@ -17,7 +16,6 @@ import {
   storedInsightsTab,
   storedKeepTab,
   storedTasksTab,
-  storedWhose,
   type CalendarMode,
   type HomeTab,
   type InnerView,
@@ -31,7 +29,7 @@ import {
   type View,
   type WardrobeTab,
 } from './routes'
-import type { InsightPeriod, Whose } from '../../../shared/insights.mts'
+import type { InsightPeriod } from '../../../shared/insights.mts'
 
 /**
  * A way into Home → Wardrobe — the Today card's Pick… and Change, the palette
@@ -125,16 +123,6 @@ export function useNavigation() {
       /* ignore */
     }
   }
-  /** Mine · Both of us: whose log the shared areas count, remembered on this device. */
-  const [whose, showWhose] = useState<Whose>(storedWhose)
-  const setWhose = (w: Whose) => {
-    startTransition(() => showWhose(w))
-    try {
-      localStorage.setItem(INSIGHTS_WHOSE_KEY, w)
-    } catch {
-      /* ignore */
-    }
-  }
   /** Home's segment. It is not persisted: tapping Home always returns to the
    *  day, the app's base surface; Week, Journal and Wardrobe are opt-in from there. */
   const [homeTab, showHomeTab] = useState<HomeTab>('today')
@@ -195,12 +183,11 @@ export function useNavigation() {
     }
     if (v === 'insights') {
       goInsightsTab(storedInsightsTab())
-      // the Highlights, on now, counting whose log this device was told to
+      // the Highlights, on now, by the period this device last chose
       startTransition(() => {
         showStatsTab('highlights')
         showInsightsPeriod(storedInsightsPeriod())
         setInsightsAt(null)
-        showWhose(storedWhose())
       })
     }
     setView(v)
@@ -213,15 +200,14 @@ export function useNavigation() {
   }
   /**
    * The Highlights on one period, `at` its key (`2026-09`), for this visit
-   * only: the monthly recap's link and its row in the hub. On Mine, as the
-   * recap counts only your own log; the choice the device keeps is untouched.
+   * only: the monthly recap's link and its row in the hub. The period the
+   * device keeps is untouched.
    */
   const openInsights = (period: InsightPeriod, at: string | null) => {
     startTransition(() => {
       showStatsTab('highlights')
       showInsightsPeriod(period)
       setInsightsAt(at)
-      showWhose('mine')
     })
     goInsightsTab('stats')
     setView('insights')
@@ -388,8 +374,6 @@ export function useNavigation() {
     setInsightsPeriod,
     insightsAt,
     setInsightsAt,
-    whose,
-    setWhose,
     openLens,
     openInsights,
     openReview,

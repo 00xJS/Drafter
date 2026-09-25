@@ -102,7 +102,7 @@ describe('Settings offers the email switch only where email can go', () => {
     for (const configured of [true, false]) {
       const html = draw(configured)
       expect(html.match(/last month’s highlights/g), String(configured)).toHaveLength(1)
-      expect(html).toContain('<p class="field-hint">On the 1st it also brings last month’s highlights, from your own log.</p>')
+      expect(html).toContain('<p class="field-hint">On the 1st it also brings last month’s highlights from Insights.</p>')
     }
   })
 

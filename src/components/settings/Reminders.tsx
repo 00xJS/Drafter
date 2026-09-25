@@ -181,7 +181,7 @@ export function DigestEmail({
           <small>{Intl.DateTimeFormat().resolvedOptions().timeZone}</small>
         </label>
       </p>
-      <p className="field-hint">On the 1st it also brings last month’s highlights, from your own log.</p>
+      <p className="field-hint">On the 1st it also brings last month’s highlights from Insights.</p>
       {!configured && <p className="field-hint">The digest comes by push only: email isn’t set up on this site.</p>}
     </>
   )
