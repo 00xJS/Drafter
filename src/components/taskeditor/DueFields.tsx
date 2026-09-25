@@ -6,6 +6,8 @@ import { isDayKey } from '../../../shared/weeks.mts'
 interface Props {
   form: Pick<TaskForm, 'dueAt' | 'completedAt' | 'status' | 'bill'>
   set: SetForm
+  /** Logging something already done: when it was done comes first, and the due chips, which look ahead, are left out. */
+  logged?: boolean
 }
 
 /**
@@ -54,7 +56,7 @@ function atHour(now: Date, days: number, hour: number): Date {
  * time that + Bill writes (localMidnightIso) and that every due date reads.
  * One with no date says what that costs.
  */
-export function DueFields({ form, set }: Props) {
+export function DueFields({ form, set, logged = false }: Props) {
   const { dueAt, completedAt, status, bill } = form
   const id = useId()
   const hintId = `${id}-hint`
@@ -116,11 +118,11 @@ export function DueFields({ form, set }: Props) {
     )
   }
 
-  return (
-    <>
-      <div className="field">
-        <span id={labelId}>Due</span>
-        <WhenFields value={dueAt} onChange={v => set({ dueAt: v })} labelId={labelId} timeLabel="Due time" />
+  const due = (
+    <div className="field">
+      <span id={labelId}>Due</span>
+      <WhenFields value={dueAt} onChange={v => set({ dueAt: v })} labelId={labelId} timeLabel="Due time" />
+      {!logged && (
         <div className="due-chips">
           {CHIPS.map(c => (
             <button key={c.label} type="button" className="btn subtle" onClick={() => set({ dueAt: toLocalInput(c.at(new Date()).toISOString()) })}>
@@ -131,8 +133,18 @@ export function DueFields({ form, set }: Props) {
             Clear
           </button>
         </div>
-      </div>
+      )}
+    </div>
+  )
 
+  return logged ? (
+    <>
+      {completed}
+      {due}
+    </>
+  ) : (
+    <>
+      {due}
       {completed}
     </>
   )

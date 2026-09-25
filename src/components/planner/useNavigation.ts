@@ -344,6 +344,17 @@ export function useNavigation() {
     goTasksTab('bills')
     setView('tasks')
   }
+  /**
+   * A task for Tasks → List to bring into view, its filter moved to show it:
+   * one just logged as done, which the Open filter hides (the toast's Show).
+   * Consumed by the list, which may be up already or not.
+   */
+  const [taskShown, setTaskShown] = useState<string | null>(null)
+  const showTaskInList = (id: string) => {
+    setTaskShown(id)
+    goTasksTab('list')
+    setView('tasks')
+  }
   /** A day for the Calendar to open, its day sheet up (the month calendar in People → Stats or Places → Stats); consumed by the view. */
   const [calendarOpenDay, setCalendarOpenDay] = useState<string | null>(null)
   const openCalendarDay = (day: string) => {
@@ -424,5 +435,8 @@ export function useNavigation() {
     financeCheckIn,
     setFinanceCheckIn,
     openFinanceCheckIn,
+    taskShown,
+    setTaskShown,
+    showTaskInList,
   }
 }

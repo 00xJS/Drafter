@@ -9,7 +9,7 @@ import { TASKS_TABS } from './routes'
 /** Tasks: the list, the board, Finance and the project notes, four segments of one tab. */
 export function TasksScreen({ p }: { p: PlannerCtx }) {
   const { store, upsert, remove, restore, household, projectMap, inHousehold } = p
-  const { tasksTab, setTasksTab, notesProjectId, setNotesProjectId, setTrashOpen, noteOpenId, setNoteOpenId, financeCheckIn, setFinanceCheckIn } = p
+  const { tasksTab, setTasksTab, notesProjectId, setNotesProjectId, setTrashOpen, noteOpenId, setNoteOpenId, financeCheckIn, setFinanceCheckIn, taskShown, setTaskShown } = p
   const { openTask, newTask, deleteTask, changeStatus, applyStatus, showToast } = p
   // a change of an account's with an Undo that puts back the account as it was (or takes a new one away)
   const undoAccount = (before: Account | null, after: Account) => () => (before ? upsert({ ...before, updatedAt: newerStamp(after.updatedAt) }) : remove(after.id))
@@ -60,6 +60,8 @@ export function TasksScreen({ p }: { p: PlannerCtx }) {
           inHousehold={inHousehold}
           myId={household.myId}
           nameOf={id => memberName(household.info, id)}
+          reveal={taskShown}
+          onRevealed={() => setTaskShown(null)}
         />
       )}
       {tasksTab === 'board' && (

@@ -36,6 +36,15 @@ export function clockAt(h: number, m = 0): string {
   return m ? `${h12}:${String(m).padStart(2, '0')}${ampm}` : `${h12}${ampm}`
 }
 
+/**
+ * How a scroll the app starts should travel: smoothly, or at once for someone
+ * who has asked the system for less motion (Reduce Motion), which a CSS
+ * blanket rule cannot reach — scrollIntoView takes its behaviour from here.
+ */
+export function scrollBehavior(): ScrollBehavior {
+  return typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'
+}
+
 export function excerpt(s: string, n = 90): string {
   const t = s.replace(/\s+/g, ' ').trim()
   return t.length > n ? t.slice(0, n - 1) + '…' : t

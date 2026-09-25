@@ -296,6 +296,8 @@ export function TaskEditor({
   }
 
   const project = projects.find(p => p.id === form.projectId)
+  // "✓ Log a finished task": a new task that is done already, written down after the fact
+  const logging = !task && preset?.status === 'done'
   // A blank new task is title, due and who can see it. Everything else —
   // description, checklist, people, photos, repeat — waits behind More
   // details. A bill, or any saved task, opens already expanded.
@@ -318,7 +320,7 @@ export function TaskEditor({
         }
       }}
     >
-        <ModalHead title={task ? 'Edit task' : 'New task'} variant="compose">
+        <ModalHead title={task ? 'Edit task' : logging ? 'Log something done' : 'New task'} variant="compose">
           <button type="button" className="btn primary" onClick={save}>
             Save
           </button>
@@ -350,7 +352,7 @@ export function TaskEditor({
 
               {!details && (
                 <>
-                  <DueFields form={form} set={set} />
+                  <DueFields form={form} set={set} logged={logging} />
                   <AssignFields form={form} set={set} members={members} candidates={[]} taskId={base.id} myId={myId} ownerId={base.ownerId} essentials />
                 </>
               )}
@@ -391,7 +393,7 @@ export function TaskEditor({
             {details && (
               <aside className="editor-side">
                 <AssignFields form={form} set={set} members={members} candidates={candidates} taskId={base.id} myId={myId} ownerId={base.ownerId} />
-                <DueFields form={form} set={set} />
+                <DueFields form={form} set={set} logged={logging} />
                 <BillCost form={form} set={set} showCosts={costsVisible(form, base)} members={members} />
                 <PeoplePlace form={form} set={set} people={people} places={places} onSavePlace={onSavePlace} onSavePerson={onSavePerson} />
                 <Images mediaIds={form.mediaIds} set={set} />
