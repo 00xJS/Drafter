@@ -459,7 +459,7 @@ describe('phone: the grocery list survives a real shop', () => {
     expect(seg, 'the 44pt floor is the coarse block\u2019s, not a second copy here').not.toMatch(/min-height:/)
   })
 
-  it('reserves the Clear ticked line before the first tick, at a real 44pt', () => {
+  it('keeps the Clear ticked line before the first tick, at a real 44pt', () => {
     const clear = narrow.find(b => rule(b.body, '.grocery-clear'))
     expect(clear, 'no @media (max-width: 640px) rule for .grocery-clear').toBeTruthy()
     expect(rule(clear!.body, '.grocery-clear')).toMatch(/width:\s*100%/)
@@ -473,8 +473,11 @@ describe('phone: the grocery list survives a real shop', () => {
     // in the Kitchen's own sheet (styles/views/kitchen.css): only the Kitchen draws the filter row
     const kept = narrow.find(b => rule(b.body, '.grocery-filter-row .grocery-clear:disabled'))
     const off = kept ? rule(kept.body, '.grocery-filter-row .grocery-clear:disabled') : ''
-    expect(off, 'the phone must keep the line whether or not anything is ticked').toMatch(/visibility:\s*hidden/)
+    expect(off, 'the phone must keep the line whether or not anything is ticked').toMatch(/display:\s*block/)
     expect(off).not.toMatch(/display:\s*none/)
+    // …and draw the button there, dimmed as a disabled one is: hidden, its line
+    // was a 60pt band of nothing between the filters and the list
+    expect(off).not.toMatch(/visibility:\s*hidden/)
   })
 
   it('keeps the desktop row unchanged, with no empty stub beside the segments', () => {
