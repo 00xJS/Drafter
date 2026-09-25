@@ -7,12 +7,13 @@ import WidgetKit
 /// `setSnapshot` writes the day the web view worked out — by Today's own rules,
 /// and counts only when the lock-screen privacy switch is on — into the App
 /// Group, and asks WidgetKit to draw it again. The page writes only a day that
-/// changed, or one close to going stale: WidgetKit allows so many redraws. `drainCaptures` hands the page
-/// what Siri queued (CaptureQueue.swift) and empties the queue; the page drains
-/// at launch and on resume, and on `capturesQueued`, which this sends when Siri
-/// adds something while Drafter is already open. Registered by
-/// DrafterBridgeViewController in SceneDelegate.swift, because `cap sync` lists
-/// only the plugins that come from node_modules.
+/// changed, or one close to going stale: WidgetKit allows so many redraws.
+/// `drainCaptures` hands the page what Siri queued (CaptureQueue.swift) and
+/// empties the queue; the page drains at launch and on resume, and on
+/// `capturesQueued`, which this sends when Siri adds something while Drafter
+/// is already open. Registered by DrafterBridgeViewController in
+/// SceneDelegate.swift, because `cap sync` lists only the plugins that come
+/// from node_modules.
 @objc(WidgetBridgePlugin)
 public class WidgetBridgePlugin: CAPPlugin, CAPBridgedPlugin {
     public let identifier = "WidgetBridgePlugin"
