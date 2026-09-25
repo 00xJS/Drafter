@@ -448,7 +448,7 @@ export function Admin({ initialGroup = 'users', initial }: Props) {
               Send reset email
             </button>
             {sentTo !== '' && sentTo === resetEmail && !busy ? (
-              <ConfirmButton className="btn" confirmLabel="Cancels the emailed link — click again" onConfirm={() => void makeResetLink()}>
+              <ConfirmButton className="btn" confirmLabel="Tap again to cancel the emailed link" onConfirm={() => void makeResetLink()}>
                 Link only
               </ConfirmButton>
             ) : (
@@ -530,7 +530,7 @@ export function Admin({ initialGroup = 'users', initial }: Props) {
                     </span>
                     <ConfirmButton
                       className="btn subtle danger"
-                      confirmLabel={u.disabled ? 'Enable?' : 'Disable?'}
+                      confirmLabel={u.disabled ? 'Tap again to enable' : 'Tap again to disable'}
                       onConfirm={() =>
                         runNamed(`disable:${u.id}`, async () => {
                           await adminAction('setDisabled', { userId: u.id, disabled: !u.disabled })
@@ -543,7 +543,7 @@ export function Admin({ initialGroup = 'users', initial }: Props) {
                     {!isOwnerRow(u) && (
                       <ConfirmButton
                         className="btn subtle danger"
-                        confirmLabel="Delete for good?"
+                        confirmLabel="Tap again to delete for good"
                         title={`Delete ${u.email}. Their shared records become yours; their journal, habits and other personal records are deleted, and their wardrobe photos with them.`}
                         onConfirm={() =>
                           runNamed(`delete:${u.id}`, async () => {
@@ -882,7 +882,7 @@ export function Admin({ initialGroup = 'users', initial }: Props) {
                   {digestTest && digestTest.lines.length > 0 && (
                     <ConfirmButton
                       className="btn"
-                      confirmLabel="Send it?"
+                      confirmLabel="Tap again to send"
                       onConfirm={() => runNamed('sendDigest', async () => setDigestTest(await adminAction<DigestTest>('runDigest', { send: true })))}
                     >
                       {pending === 'sendDigest' ? 'Sending…' : 'Send it now'}

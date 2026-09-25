@@ -487,7 +487,7 @@
 
 /* ---------- Grocery: taking a line off the list ---------- */
 /* The ✕ at the end of a line: quiet until its first tap arms it (.btn.armed
-   paints it red and it reads "Remove?"); a second tap within four seconds takes
+   paints it red and it reads "Tap again to remove"); a second tap within four seconds takes
    the line off. flex: none, so the name gives way to it rather than the row. */
 .grocery-remove {
   flex: none;
@@ -588,7 +588,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* the chip's ✕: quiet until its first tap arms it (.btn.armed reads "Remove?"),
+/* the chip's ✕: quiet until its first tap arms it (.btn.armed reads "Tap again to remove"),
    like the grocery line's */
 .meal-side-remove {
   flex: none;

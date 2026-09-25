@@ -171,7 +171,7 @@ export function TasksTable({ tasks, onOpen, onNew, onDelete, inHousehold, myId, 
                 {mark(t)}
                 <DueBadge task={t} />
                 <span className="spacer" />
-                <ConfirmButton className="btn subtle danger" stopPropagation confirmLabel="Sure? Click again" onConfirm={() => onDelete(t)}>
+                <ConfirmButton className="btn subtle danger" stopPropagation confirmLabel="Tap again to delete" onConfirm={() => onDelete(t)}>
                   Delete
                 </ConfirmButton>
               </div>
@@ -224,7 +224,7 @@ export function TasksTable({ tasks, onOpen, onNew, onDelete, inHousehold, myId, 
                   <td className="cell-date">{t.dueAt ? <DueBadge task={t} /> : '—'}</td>
                   <td className="cell-date">{new Date(t.updatedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</td>
                   <td onClick={e => e.stopPropagation()}>
-                    <ConfirmButton className="btn subtle danger" stopPropagation confirmLabel="Sure? Click again" onConfirm={() => onDelete(t)}>
+                    <ConfirmButton className="btn subtle danger" stopPropagation confirmLabel="Tap again to delete" onConfirm={() => onDelete(t)}>
                       Delete
                     </ConfirmButton>
                   </td>

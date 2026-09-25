@@ -1,7 +1,7 @@
 import { Suspense, useEffect, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { noteMessageSent } from '../../activity'
 import { messageNoticesShown } from '../../hub'
-import { newerStamp } from '../../itemops'
+import { newerStamp, trashedLine } from '../../itemops'
 import type { CalendarEntry, Meal, Task } from '../../types'
 import type { ChatOpen, ChatShell } from '../Chat'
 import { ErrorBoundary } from '../ErrorBoundary'
@@ -164,7 +164,7 @@ export function ChatScreen({ p }: { p: PlannerCtx }) {
         }}
         onRemoveMessage={id => {
           remove(id)
-          showToast('Message deleted', () => restore([id]))
+          showToast(trashedLine(null, 'Message'), () => restore([id]))
         }}
         onWriteTurn={t => upsert(t)}
         onClearChat={ids => {

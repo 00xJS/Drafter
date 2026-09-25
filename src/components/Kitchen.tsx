@@ -1269,7 +1269,7 @@ function GroceryPane({
                   {/* two-step like every delete: the first tap arms it, a
                       second within four seconds takes the line off. The name
                       is in the button for a screen reader ("Remove Milk"). */}
-                  <ConfirmButton className="btn subtle grocery-remove" confirmLabel="Remove?" onConfirm={() => remove(line.id)}>
+                  <ConfirmButton className="btn subtle grocery-remove" confirmLabel="Tap again to remove" onConfirm={() => remove(line.id)}>
                     <span aria-hidden="true">✕</span>
                     <span className="grocery-sr">Remove {line.name}</span>
                   </ConfirmButton>
@@ -1877,7 +1877,7 @@ export function RecipeForm({
       </div>
       {recipe && onDelete && (
         <footer className="modal-foot">
-          <ConfirmButton className="btn subtle danger" confirmLabel="Click again to remove" onConfirm={() => onDelete(recipe.id)}>
+          <ConfirmButton className="btn subtle danger" confirmLabel="Tap again to delete" onConfirm={() => onDelete(recipe.id)}>
             Delete
           </ConfirmButton>
         </footer>

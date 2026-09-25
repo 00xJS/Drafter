@@ -191,7 +191,7 @@ export function AccountSheet({ account, members, today, onSave, onRemove, onClos
             <button type="button" className="btn subtle" onClick={archive}>
               {account.archivedAt ? 'Unarchive' : 'Archive'}
             </button>
-            <ConfirmButton className="btn subtle danger" confirmLabel="Delete it?" onConfirm={() => onRemove(account.id)}>
+            <ConfirmButton className="btn subtle danger" confirmLabel="Tap again to delete" onConfirm={() => onRemove(account.id)}>
               Delete
             </ConfirmButton>
           </div>

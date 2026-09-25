@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef } from 'react'
 import { STATUS_META, type Project, type Task, type TaskStatus } from '../../types'
 import type { Store } from '../../store'
-import { newerStamp, nextOccurrence } from '../../itemops'
+import { newerStamp, nextOccurrence, trashedLine } from '../../itemops'
 import { parseGithubUrl, setIssueState } from '../../github'
 import { boardDateToDue, cancelQueuedPushes, projectSyncEnabled, queueProjectPush, useGithubProjectSync, type ProjectPull } from '../../githubboard'
 import { fmtDateTime, uid } from '../../utils'
@@ -86,7 +86,7 @@ export function useTaskActions({ store, showToast, setEditor, setProjectEditor, 
   const deleteTask = (t: Task) => {
     store.remove(t.id)
     setEditor(null)
-    showToast(`Deleted “${t.title || 'Untitled'}”`, () => store.restore([t.id]))
+    showToast(trashedLine(t.title, 'Untitled task'), () => store.restore([t.id]))
   }
 
   const deleteProject = (p: Project) => {
@@ -96,7 +96,7 @@ export function useTaskActions({ store, showToast, setEditor, setProjectEditor, 
     setProjectEditor(null)
     // a deleted project's notepad closes back to the index
     setNotesProjectId(cur => (cur === p.id ? null : cur))
-    showToast(`Deleted project “${p.name}”`, () => store.restore([p.id]))
+    showToast(trashedLine(p.name, 'Project'), () => store.restore([p.id]))
   }
 
   /** Done in Drafter closes the linked GitHub issue (when the host can write). Quiet on failure. */

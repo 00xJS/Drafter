@@ -504,7 +504,7 @@ export function OutfitComposer(props: Props) {
             {current && (
               <ConfirmButton
                 className="btn subtle danger wardrobe-remove"
-                confirmLabel="Remove?"
+                confirmLabel="Tap again to remove"
                 ariaLabel={planned ? 'Remove plan' : 'Remove look'}
                 onConfirm={() => {
                   onRemoveLook(day, current.id)

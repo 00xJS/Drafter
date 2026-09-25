@@ -557,7 +557,7 @@ export function ProjectEditor({ project, tasks, getLatest, onSave, onDelete, onC
       </div>
 
       <footer className="modal-foot">
-        <ConfirmButton onConfirm={() => onDelete(project.id)} confirmLabel="Click again to delete project">
+        <ConfirmButton onConfirm={() => onDelete(project.id)} confirmLabel="Tap again to delete the project">
           Delete
         </ConfirmButton>
         {onSaveTemplate && (

@@ -28,7 +28,7 @@ export function CacheError({ error, retry, withServer }: { error: string; retry(
         <p>
           <ConfirmButton
             className="btn subtle danger"
-            confirmLabel="Lose unsynced changes? Click again"
+            confirmLabel="Tap again to lose unsynced changes"
             onConfirm={() => void clearLocalData().finally(() => window.location.reload())}
           >
             Start again from the server

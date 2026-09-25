@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { memberName } from '../../household'
 import { Icon } from '../Icon'
-import { inTrash, newerStamp } from '../../itemops'
+import { inTrash, newerStamp, trashedLine } from '../../itemops'
 import type { Account } from '../../types'
 import type { PlannerCtx } from './ctx'
 import { Board, Finance, NotesView, TasksTable } from './lazy'
@@ -142,7 +142,7 @@ export function TasksScreen({ p }: { p: PlannerCtx }) {
           onArchiveTask={(t, archive) => {
             const change = applyStatus(t.id, archive ? 'canceled' : 'todo')
             if (!change) return
-            showToast(`${archive ? 'Archived' : 'Restored'} “${t.title || 'Untitled'}”`, () => {
+            showToast(`${archive ? 'Archived' : 'Unarchived'} “${t.title || 'Untitled'}”`, () => {
               upsert({ ...change.prev, updatedAt: newerStamp(change.next.updatedAt) })
               if (change.spawnedId) remove(change.spawnedId)
             })
@@ -152,8 +152,9 @@ export function TasksScreen({ p }: { p: PlannerCtx }) {
             showToast(message, undoAccount(before, after))
           }}
           onRemoveAccount={id => {
+            const account = store.accounts.find(a => a.id === id)
             remove(id)
-            showToast('Account removed', () => restore([id]))
+            showToast(trashedLine(account?.name, 'Account'), () => restore([id]))
           }}
           onCheckIn={(changes, done) => {
             for (const c of changes) upsert(c.after)
@@ -200,7 +201,7 @@ export function TasksScreen({ p }: { p: PlannerCtx }) {
           onDeleteNote={id => {
             const note = store.notes.find(x => x.id === id)
             remove(id)
-            showToast(`“${note?.title || 'Untitled note'}” moved to Trash`, () => restore([id]))
+            showToast(trashedLine(note?.title, 'Untitled note'), () => restore([id]))
           }}
           // a note picked in the palette's search opens once, then is forgotten
           openNoteId={noteOpenId ?? undefined}

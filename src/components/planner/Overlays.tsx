@@ -1,7 +1,7 @@
 import { Suspense, useMemo, useState, type ReactNode } from 'react'
 import { mediaIdsOf } from '../../../shared/media.mts'
 import { proposeWeek, targetWeek } from '../../../shared/weekplan.mts'
-import { newerStamp } from '../../itemops'
+import { newerStamp, trashedLine } from '../../itemops'
 import { COOK_TASK_PREFIX, saveCookToRecipe } from '../../kitchen'
 import { OPEN_STATUSES, type Task } from '../../types'
 import { deleteMedia } from '../../media'
@@ -374,7 +374,7 @@ export function Overlays({ p }: { p: PlannerCtx }) {
             onSaveJournal={e => upsert(e)}
             onDeleteJournal={id => {
               remove(id)
-              showToast('Journal entry removed', () => restore([id]))
+              showToast(trashedLine(null, 'Journal entry'), () => restore([id]))
             }}
             onApply={r => {
               closeSheet()

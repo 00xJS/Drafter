@@ -500,7 +500,7 @@ export function MealPicker({
         <footer className="modal-foot meal-pick-foot">
           <ConfirmButton
             className="btn subtle danger"
-            confirmLabel="Remove?"
+            confirmLabel="Tap again to remove"
             ariaLabel={`Remove ${meal.title}`}
             onConfirm={() => {
               onRemove()

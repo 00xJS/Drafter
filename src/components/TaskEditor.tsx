@@ -423,7 +423,7 @@ export function TaskEditor({
 
         {task && (
           <footer className="modal-foot">
-            <ConfirmButton onConfirm={() => onDelete(task.id)} confirmLabel="Click again to delete">
+            <ConfirmButton onConfirm={() => onDelete(task.id)} confirmLabel="Tap again to delete">
               Delete
             </ConfirmButton>
             {onDuplicate && (

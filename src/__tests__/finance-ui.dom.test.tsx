@@ -528,7 +528,7 @@ describe('the short sheets', () => {
     const del = within(dialog()).getByRole('button', { name: 'Delete' })
     fireEvent.click(del)
     expect(p.onDeleteTask).not.toHaveBeenCalled()
-    fireEvent.click(within(dialog()).getByRole('button', { name: 'Delete it?' }))
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Tap again to delete' }))
     expect(p.onDeleteTask).toHaveBeenCalledWith(rows[4])
 
     fireEvent.click(screen.getByRole('button', { name: /^Thu 1 Rent/ }))
@@ -570,7 +570,9 @@ describe('the short sheets', () => {
     manage('Bills')
     const archived = screen.getByRole('group', { name: 'Archived' })
     fireEvent.click(within(archived).getByRole('button', { name: /^Gym/ }))
-    fireEvent.click(within(dialog()).getByRole('button', { name: 'Restore' }))
+    // brought back is Unarchive, the word Archive's other half has everywhere
+    expect(within(dialog()).queryByRole('button', { name: 'Restore' })).toBeNull()
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Unarchive' }))
     expect(p.onArchiveTask).toHaveBeenCalledWith(stopped, false)
   })
 })
@@ -779,7 +781,7 @@ describe('an account', () => {
     expect(message).toBe('Archived “Amex”')
     fireEvent.click(screen.getByRole('button', { name: /^Amex:/ }))
     fireEvent.click(within(dialog()).getByRole('button', { name: 'Delete' }))
-    fireEvent.click(within(dialog()).getByRole('button', { name: 'Delete it?' }))
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Tap again to delete' }))
     expect(p.onRemoveAccount).toHaveBeenCalledWith('amex')
     expect(screen.queryByRole('dialog')).toBeNull()
   })

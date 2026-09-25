@@ -54,10 +54,10 @@ export function EmailIn({ feed: { feed, setFeed, feedBusy } }: SettingsCtx) {
             {copied ? 'Copied' : 'Copy'}
           </button>
           {/* both stop the address that is set up in a forwarding rule somewhere, so each asks first */}
-          <ConfirmButton className="btn subtle" confirmLabel="Reset? The old one stops" onConfirm={() => act('inbound-rotate')}>
+          <ConfirmButton className="btn subtle" confirmLabel="Tap again to reset — the old one stops" onConfirm={() => act('inbound-rotate')}>
             {label('inbound-rotate', 'Reset', 'Resetting…')}
           </ConfirmButton>
-          <ConfirmButton className="btn subtle danger" confirmLabel="Turn it off?" onConfirm={() => act('inbound-disable')}>
+          <ConfirmButton className="btn subtle danger" confirmLabel="Tap again to turn it off" onConfirm={() => act('inbound-disable')}>
             {label('inbound-disable', 'Turn off', 'Turning off…')}
           </ConfirmButton>
         </div>

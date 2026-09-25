@@ -85,7 +85,7 @@ export function OutlookCalendars({ store, calendars, microsoftSync }: SettingsCt
                       <span className="spacer" />
                       <ConfirmButton
                         className="btn subtle danger"
-                        confirmLabel="Disconnect?"
+                        confirmLabel="Tap again to disconnect"
                         onConfirm={async () => {
                           setMsError('')
                           // the server first: a refused disconnect must not look done here

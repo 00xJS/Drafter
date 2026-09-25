@@ -1,3 +1,4 @@
+import { trashedLine } from '../../itemops'
 import type { PlannerCtx } from './ctx'
 import { JournalView, Review } from './lazy'
 import { INSIGHTS_TABS, STATS_PAGE_TITLES } from './routes'
@@ -49,7 +50,7 @@ export function InsightsScreen({ p }: { p: PlannerCtx }) {
           onSave={(e: Parameters<typeof upsert>[0]) => upsert(e)}
           onDelete={(id: string) => {
             remove(id)
-            showToast('Journal entry removed', () => restore([id]))
+            showToast(trashedLine(null, 'Journal entry'), () => restore([id]))
           }}
           openDate={journalOpenDate}
           onOpenDateConsumed={() => setJournalOpenDate(null)}

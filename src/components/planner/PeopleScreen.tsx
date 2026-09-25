@@ -1,3 +1,4 @@
+import { trashedLine } from '../../itemops'
 import type { PlannerCtx } from './ctx'
 import { People, PeopleStats, Places, PlacesStats } from './lazy'
 import { ListStatsSwitch } from './ListStatsSwitch'
@@ -77,8 +78,9 @@ export function PeopleScreen({ p }: { p: PlannerCtx }) {
               onFilter={setPlaceFilter}
               onSave={p => upsert(p)}
               onDelete={id => {
+                const place = store.places.find(x => x.id === id)
                 remove(id)
-                showToast('Removed', () => restore([id]))
+                showToast(trashedLine(place?.name, 'Place'), () => restore([id]))
               }}
               onLogOuting={(place, at, note, peopleIds) =>
                 logOuting({
@@ -146,8 +148,9 @@ export function PeopleScreen({ p }: { p: PlannerCtx }) {
               onOpenJournal={date => openJournal(date)}
               onSave={p => upsert(p)}
               onDelete={id => {
+                const person = store.people.find(x => x.id === id)
                 remove(id)
-                showToast('Removed', () => restore([id]))
+                showToast(trashedLine(person?.name, 'Person'), () => restore([id]))
               }}
               onSavePlace={p => upsert(p)}
               // Places with that row open, as search opens one; the segment moves

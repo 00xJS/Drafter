@@ -124,7 +124,7 @@ export function MealSides({
                 </span>
                 {/* two steps like every ✕: the first tap arms it */}
                 {editable && (
-                  <ConfirmButton className="btn subtle meal-side-remove" confirmLabel="Remove?" ariaLabel={`Remove ${s.title}`} onConfirm={() => onSave(mealWithoutSide(meal, i))}>
+                  <ConfirmButton className="btn subtle meal-side-remove" confirmLabel="Tap again to remove" ariaLabel={`Remove ${s.title}`} onConfirm={() => onSave(mealWithoutSide(meal, i))}>
                     <span aria-hidden="true">✕</span>
                   </ConfirmButton>
                 )}

@@ -138,7 +138,7 @@ export function Trash({ items, projectMap, onRestore, onPurge, onClose }: Props)
                     <button className="btn" onClick={() => onRestore(i.id)}>
                       Restore
                     </button>
-                    <ConfirmButton className="btn subtle danger" confirmLabel="Forever? Click again" onConfirm={() => onPurge(i.id)}>
+                    <ConfirmButton className="btn subtle danger" confirmLabel="Tap again to delete for good" onConfirm={() => onPurge(i.id)}>
                       Delete forever
                     </ConfirmButton>
                   </span>

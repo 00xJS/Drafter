@@ -168,7 +168,7 @@ export function PersonForm({ person, onSave, onDelete, onClose }: { person?: Per
         <footer className="modal-foot">
           <ConfirmButton
             className="btn subtle danger"
-            confirmLabel="Click again to remove"
+            confirmLabel="Tap again to remove"
             onConfirm={() => {
               onDelete(person.id)
               onClose()
