@@ -74,6 +74,9 @@ begin
 end;
 $$;
 
+-- a trigger's function is never called by anyone, and needs no grant to fire
+revoke execute on function public.posts_write_as() from public, anon, authenticated;
+
 drop trigger if exists posts_write_as on public.posts;
 create trigger posts_write_as
   before insert on public.posts

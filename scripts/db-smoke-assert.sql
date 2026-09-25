@@ -3785,7 +3785,11 @@ begin
      or has_function_privilege('anon', 'public.posts_history_record_loss(text, jsonb)', 'execute') then
     raise exception 'FAIL v3.34-5: posts_history_record_loss should keep its grants';
   end if;
-  raise notice 'ok v3.34-5: sync_posts_as is the service role''s alone; posts_history_record_loss keeps its grants';
+  -- nobody calls the trigger's function, and it fires without a grant (v3.34-4's writes ran through it)
+  if has_function_privilege('authenticated', 'public.posts_write_as()', 'execute') or has_function_privilege('anon', 'public.posts_write_as()', 'execute') then
+    raise exception 'FAIL v3.34-5: a client role can execute posts_write_as';
+  end if;
+  raise notice 'ok v3.34-5: sync_posts_as is the service role''s alone; posts_history_record_loss keeps its grants; the trigger''s function has none to give';
 end $$;
 
 -- ------------- v3.34-6. the rate limits' day-old sweep reads an index, not the whole table
