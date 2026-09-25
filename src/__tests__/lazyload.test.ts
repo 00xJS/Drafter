@@ -262,8 +262,88 @@ describe('the lazy set stays out of the first load', () => {
     expect(leaked).toEqual([])
   })
 
-  it('loads every one of them through planner/lazy.ts', () => {
-    const lazy = readFileSync(resolve(SRC, 'components/planner/lazy.ts'), 'utf8')
+  it('loads every one of them through planner/lazy.ts, or the Stats registry it re-exports', () => {
+    // the four areas' Stats sit in lazystats.ts, which the Kitchen and the
+    // Stats lens import: lazy.ts names every lazy chunk, and a view that
+    // imported it was renamed with it on every deploy
+    const lazy = readFileSync(resolve(SRC, 'components/planner/lazy.ts'), 'utf8') + readFileSync(resolve(SRC, 'components/planner/lazystats.ts'), 'utf8')
     for (const name of LAZY_VIEWS) expect(lazy).toContain(`import('../${name}')`)
+  })
+})
+
+/*
+ * The iPhone's warm-up (planner/lazy.ts NATIVE_PRELOAD_ORDER) parses the task
+ * editor, the palette and Settings a moment after launch, and it parsed the
+ * assistant's code (ai.ts and the retrieval Ask runs, ask.ts) and the
+ * calendar mirrors' engine (calendars.ts) with them, through a few static
+ * imports: the palette's question rule, the editor's ✨ buttons, and Settings'
+ * calendar sections. Those load when used now, and none is on the way.
+ */
+describe('the warm-up parses no assistant code and no calendar mirrors', () => {
+  const warm = reachable(['TaskEditor', 'Search', 'Settings'].map(component))
+
+  it('walks the real graph: the three reach their small halves', () => {
+    for (const file of ['questions.ts', 'refine.ts', 'calendarsettings.ts', 'taskform.ts'].map(f => resolve(SRC, f))) expect(warm).toContain(file)
+  })
+
+  it('reaches neither the assistant nor the mirrors’ engine', () => {
+    const reached = ['ai.ts', 'ask.ts', 'chatactions.ts', 'calendars.ts', 'components/settings/GoogleCalendar.tsx', 'components/settings/OutlookCalendars.tsx'].filter(f => warm.has(resolve(SRC, f)))
+    expect(reached).toEqual([])
+  })
+
+  it('still loads them where they are used: the editor’s ✨ buttons and Settings → Calendars', () => {
+    expect(readFileSync(component('TaskEditor'), 'utf8')).toContain("const assistant = () => import('../ai')")
+    expect(readFileSync(component('Settings'), 'utf8')).toContain("import('./settings/Calendars')")
+  })
+})
+
+/*
+ * The screens behind every tab but Home, and the pushed ones, are chunks of
+ * their own, fetched with their views: none is drawn at launch. A screen
+ * draws the views the shell hands it (p.views), and imports neither the
+ * views' files nor planner/lazy.ts, which names every lazy chunk — a chunk
+ * that did was renamed whenever any view changed. Today's wardrobe card is
+ * fetched when the wardrobe can dress you.
+ */
+describe('the screens and the wardrobe card load on demand', () => {
+  const SCREENS = ['CalendarScreen', 'TasksScreen', 'KeepScreen', 'InsightsScreen', 'SettingsScreen', 'ChatScreen', 'AdminScreen']
+  const planner = (name: string) => resolve(SRC, 'components/planner', `${name}.tsx`)
+  const lazySrc = readFileSync(resolve(SRC, 'components/planner/lazy.ts'), 'utf8')
+
+  it('loads each through planner/lazy.ts, and Home with the shell', () => {
+    for (const name of SCREENS) expect(lazySrc).toContain(`import('./${name}')`)
+    expect(lazySrc).toContain("import('../wardrobe/WardrobeCard')")
+    const shell = reachable([resolve(SRC, 'main.tsx'), component('Planner')])
+    expect(shell).toContain(planner('HomeScreen'))
+    expect([...SCREENS.map(planner), component('wardrobe/WardrobeCard')].filter(f => shell.has(f)).map(f => f.slice(SRC.length))).toEqual([])
+  })
+
+  it('draws the views the shell hands it, reaching neither lazy.ts nor a view’s file', () => {
+    for (const name of SCREENS) {
+      const reach = reachable([planner(name)])
+      expect(reach.has(resolve(SRC, 'components/planner/lazy.ts')), name).toBe(false)
+      expect(LAZY_VIEWS.map(component).filter(f => reach.has(f)).map(f => f.slice(SRC.length)), name).toEqual([])
+    }
+  })
+})
+
+/*
+ * Finance's sheets and the Kitchen's two big ones — planning the week's meals,
+ * filling recipes in — open on a tap, and each loads then, from a chunk of
+ * its own: none comes with its view (finance-sheets.dom.test.tsx and
+ * kitchen-week.dom.test.tsx open one on its first tap).
+ */
+describe('Finance’s and the Kitchen’s sheets load on their first open', () => {
+  it('are loaded where they are drawn, and neither view reaches them statically', () => {
+    const finance = readFileSync(component('Finance'), 'utf8')
+    const sheets = ['AddSheet', 'CheckInSheet', 'BillSheet', 'PaydaySheet', 'GoalSheet', 'AccountSheet', 'LineSheet']
+    for (const sheet of sheets) expect(finance).toContain(`import('./finance/${sheet}')`)
+    const financeReach = reachable([component('Finance')])
+    expect(sheets.map(s => component(`finance/${s}`)).filter(f => financeReach.has(f)).map(f => f.slice(SRC.length))).toEqual([])
+    const kitchen = readFileSync(component('Kitchen'), 'utf8')
+    expect(kitchen).toContain("import('./MealPlanSheet')")
+    expect(kitchen).toContain("import('./kitchen/RecipeFillFlow')")
+    const kitchenReach = reachable([component('Kitchen')])
+    expect([component('MealPlanSheet'), component('kitchen/RecipeFillFlow')].filter(f => kitchenReach.has(f)).map(f => f.slice(SRC.length))).toEqual([])
   })
 })

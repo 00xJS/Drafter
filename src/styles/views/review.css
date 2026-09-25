@@ -6,6 +6,59 @@
    themselves; the partial each came from is named above it. */
 
 /* ---------- from 09-tasks-today.css ---------- */
+.you-said-reflections {
+  margin: 8px 0 0;
+  color: var(--text-2);
+  white-space: pre-wrap;
+}
+
+/* ---------- from 11-people-review-search.css ---------- */
+.review-days {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 36px;
+  margin-bottom: 8px;
+}
+.review-top {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.review-costs {
+  font-size: 1.25rem;
+  margin: 0;
+}
+.review-actions {
+  gap: 8px;
+}
+
+/* ---------- from 15-journal.css ---------- */
+.review-habits .journal-mood {
+  /* same column as the avatar circles in the People card next door */
+  width: 28px;
+  text-align: center;
+}
+.review-habits .dash-main {
+  /* a short name would otherwise float to the middle under space-between */
+  flex: 1;
+  min-width: 0;
+}
+
+/* ---------- from 18-wardrobe.css ---------- */
+/* the Week review's looks: a strip of small collages, one a day */
+.review-looks {
+  list-style: none;
+  margin: 0;
+  padding: 2px 0 6px;
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
+/* ---------- from 09-tasks-today.css ---------- */
 .review-top-row {
   display: flex;
   gap: 8px;

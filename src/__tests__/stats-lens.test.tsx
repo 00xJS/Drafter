@@ -709,14 +709,19 @@ describe('the Insights tab', () => {
   it('draws one view per area, from that area\u2019s own chunk, so nothing ships twice', () => {
     const lazySrc = readSource('components/planner/lazy.ts')
     // the wardrobe's figures get a chunk entry of their own, so the lens does
-    // not drag the composer, the clothes grid and the photo pipeline in with them
-    expect(lazySrc).toContain("import('../wardrobe/WardrobeStats')")
+    // not drag the composer, the clothes grid and the photo pipeline in with
+    // them — in the four areas' Stats registry (lazystats.ts), which lazy.ts
+    // re-exports and the lens imports instead of lazy.ts, which names every
+    // lazy chunk and so was renamed on every deploy
+    expect(readSource('components/planner/lazystats.ts')).toContain("import('../wardrobe/WardrobeStats')")
     // …and a finger on the Insights tab warms every view it can draw: the
     // lens's areas, then the journal's archive and the review
-    expect(lazySrc).toMatch(/insights: \[StatsLens\.preload, PeopleStats\.preload, PlacesStats\.preload, KitchenStats\.preload, WardrobeStats\.preload, JournalView\.preload, Review\.preload\]/)
-    // the lens reaches them through lazy.ts, never by importing the files
+    // lens's areas, then the journal's archive and the review — after the
+    // Insights screen's own chunk, which draws what the shell hands it
+    expect(lazySrc).toMatch(/insights: \[InsightsScreen\.preload, StatsLens\.preload, PeopleStats\.preload, PlacesStats\.preload, KitchenStats\.preload, WardrobeStats\.preload, JournalView\.preload, Review\.preload\]/)
+    // the lens reaches them through the registry, never by importing the files
     const lens = readSource('components/StatsLens.tsx')
-    expect(lens).toContain("from './planner/lazy'")
+    expect(lens).toContain("from './planner/lazystats'")
     expect(lens).not.toMatch(/from '\.\/(PeopleStats|PlacesStats)'/)
   })
 })

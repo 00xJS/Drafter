@@ -2,7 +2,7 @@ import { useEffect, useEffectEvent, useReducer, useRef, useState } from 'react'
 import { Person, Place, Project, Task } from '../types'
 import { duplicateTask } from '../taskutils'
 import { uid } from '../utils'
-import { RefineMode, parseCapture, refineDescription, suggestChecklist, suggestTags } from '../ai'
+import type { RefineMode } from '../refine'
 import { CapturedFields, captureSeed, simpleDateCapture } from '../capture'
 import { AiBusy, FormPatch, StepOp, appendOnce, commitStep, costsVisible, formReducer, initForm, isDirty, isEmpty, mergeOnto, pendingRenames } from '../taskform'
 import { ConfirmButton } from './ConfirmButton'
@@ -59,11 +59,21 @@ interface Props {
 }
 
 /**
+ * The assistant's code (ai.ts): its prompts and parsers, and the retrieval Ask
+ * runs, which it brings along. Fetched when a sentence is read or a ✨ button
+ * is pressed, not with the editor: the app warms the editor at launch, and on
+ * the iPhone that meant parsing all of it then. Out here, not in the editor:
+ * the React Compiler leaves a component with an import() in it as written.
+ */
+const assistant = () => import('../ai')
+
+/**
  * What a new task's sentence says beyond its title: fields to take at once (a
  * date alone), a proposal to review, or nothing. Out here, not in the editor:
  * the React Compiler leaves a component with a choice inside a try as written.
  */
 async function openingCapture(seed: { text: string; url?: string }, title: string, personNames: string[]): Promise<{ simple: CapturedFields } | { proposal: CapturedFields } | null> {
+  const { parseCapture } = await assistant()
   const parsed = await parseCapture(seed.text || seed.url || title, { personNames })
   const extra = parsed.dueAt || parsed.priority || parsed.peopleNames?.length || parsed.tags?.length || parsed.recurrence || parsed.title !== title
   if (!extra) return null
@@ -199,11 +209,12 @@ export function TaskEditor({
     const refining = kind === 'clarify' || kind === 'expand' || kind === 'summarize'
     const about = description || title
     try {
+      const ai = await assistant()
       if (refining) {
-        const text = await refineDescription(kind, title, description)
+        const text = await ai.refineDescription(kind, title, description)
         setProposal({ mode: kind, text })
       } else if (kind === 'tags') {
-        const suggested = await suggestTags(about)
+        const suggested = await ai.suggestTags(about)
         set(f => {
           const existing = f.tags
             .split(',')
@@ -212,7 +223,7 @@ export function TaskEditor({
           return { tags: [...existing, ...suggested.filter(t => !existing.includes(t))].join(', ') }
         })
       } else {
-        const steps = await suggestChecklist(title, description)
+        const steps = await ai.suggestChecklist(title, description)
         addChecks(steps)
       }
     } catch (e) {

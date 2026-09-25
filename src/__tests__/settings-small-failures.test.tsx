@@ -8,8 +8,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const env = vi.hoisted(() => ({ calls: [] as string[], answer: (_action: string): Promise<{ inboundUrl: string | null }> => Promise.resolve({ inboundUrl: null }) }))
 
-vi.mock('../calendars', async importOriginal => ({
-  ...(await importOriginal<typeof import('../calendars')>()),
+// Email in's address actions, where Settings reads them from (calendars.ts re-exports them)
+vi.mock('../calendarsettings', async importOriginal => ({
+  ...(await importOriginal<typeof import('../calendarsettings')>()),
   inboundAction: (action: string) => {
     env.calls.push(action)
     return env.answer(action)

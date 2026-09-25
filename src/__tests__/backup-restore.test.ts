@@ -5,6 +5,7 @@ import { CannotDecrypt, unwrapSnapshot } from '../backupcrypto'
 import { migrateStored, sanitizeItem } from '../schema'
 import type { Item, Task } from '../types'
 import { FakeServer, device, idle, ready, task } from './sync-fakes'
+import { pageResponse } from './postgrest'
 
 // A backup nobody has restored is a hope. This restores one, end to end, with
 // the code each step really runs:
@@ -62,11 +63,8 @@ beforeEach(() => {
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input).replace(SUPABASE, '')
       const method = init?.method ?? 'GET'
-      // every live record in one page, as PostgREST answers restAll
-      if (method === 'GET' && url.startsWith('/rest/v1/posts?select=id,data,user_id&deleted=is.false')) {
-        const all = rows()
-        return new Response(JSON.stringify(all), { headers: { 'content-range': `0-${all.length - 1}/${all.length}` } })
-      }
+      // every live record, a page at a time as PostgREST answers restAll
+      if (method === 'GET' && url.startsWith('/rest/v1/posts?select=id,data,user_id&deleted=is.false')) return pageResponse(url, rows())
       if (method === 'GET' && url.startsWith('/rest/v1/posts?select=id,user_id,data&kind=eq.garment')) return new Response('[]', { headers: { 'content-range': '*/0' } })
       if (method === 'POST' && url.startsWith('/storage/v1/object/media/backups/')) {
         uploads.set(url.slice('/storage/v1/object/media/'.length), JSON.parse(String(init?.body)))

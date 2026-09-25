@@ -6,6 +6,35 @@
    themselves; the partial each came from is named above it. */
 
 /* ---------- from 18-notices.css ---------- */
+.notices-day + .notices-day {
+  margin-top: 16px;
+}
+.notices-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.notices-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 24px 8px;
+  text-align: center;
+  color: var(--muted);
+}
+.notices-empty p {
+  margin: 0;
+}
+.notices-empty p:first-of-type {
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* ---------- from 18-notices.css ---------- */
 .notices-read-all {
   margin-left: auto;
   margin-right: 4px;

@@ -43,11 +43,6 @@
   font-variant-numeric: tabular-nums;
 }
 
-.row-body {
-  color: var(--text-2);
-  font-size: 0.8125rem;
-}
-
 .empty {
   color: var(--muted);
   text-align: center;

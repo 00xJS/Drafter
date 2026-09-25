@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { garmentMediaIds, isPersonalMediaOf, mediaIdsOf, personalFolder } from '../../shared/media.mts'
 import { PHOTO_GRACE_MS, TOMBSTONE_TTL_MS, TRASH_KEEPS_PHOTOS_MS, photosToSweep, restAll, runBackup, sweepPersonalPhotos } from '../../netlify/functions/lib/backup.mjs'
 import { unwrapSnapshot } from '../backupcrypto'
+import { pageOf as postgrestPage } from './postgrest'
 
 // Wardrobe photos are private, under personal/<user id>/ in the media bucket,
 // and nothing used to clear them out: a replaced photo, a piece aged out of
@@ -37,7 +38,8 @@ let objects: Map<string, { updated_at?: string; created_at?: string }>
 let calls: string[]
 /** PostgREST's max_rows: a page is never longer, whatever limit was asked for. */
 let maxRows: number
-let noCount: boolean
+/** Every page after the first fails, as a read that times out part-way does. */
+let laterPagesFail: boolean
 let garmentsFail: boolean
 let listFails: string | null
 /** Each snapshot runBackup wrote, by its path in the bucket. */
@@ -45,16 +47,12 @@ let snapshots: Map<string, { exportedAt: string; userId: string; items: { id: st
 
 /**
  * One page of `rows` as PostgREST answers restAll: the rows after the id it
- * carried on from, in id order, never more than maxRows, and how many were
- * still to come (unless noCount).
+ * carried on from, in id order, never more than maxRows — or, with
+ * laterPagesFail, a statement timeout for any page but the first.
  */
 function pageOf(url: string, rows: Row[]) {
-  const q = new URL(`https://x${url}`).searchParams
-  const after = q.get('id')?.replace(/^gt\./, '') ?? null
-  const left = rows.filter(p => after === null || p.id > after).sort((x, y) => (x.id < y.id ? -1 : 1))
-  const page = left.slice(0, Math.min(Number(q.get('limit')), maxRows)).map(({ id, user_id, data }) => ({ id, user_id, data }))
-  const headers: Record<string, string> = noCount ? {} : { 'content-range': page.length ? `0-${page.length - 1}/${left.length}` : `*/${left.length}` }
-  return new Response(JSON.stringify(page), { headers })
+  if (laterPagesFail && new URL(`https://x${url}`).searchParams.has('id')) return Response.json({ message: 'canceling statement due to statement timeout' }, { status: 500 })
+  return Response.json(postgrestPage(url, rows, maxRows).map(({ id, user_id, data }) => ({ id, user_id, data })))
 }
 
 /** What the storage list endpoint answers for a prefix: its objects, and a null-id entry per folder under it. */
@@ -75,7 +73,7 @@ beforeEach(() => {
   vi.stubEnv('SUPABASE_SERVICE_KEY', 'service-key')
   calls = []
   maxRows = 1000
-  noCount = false
+  laterPagesFail = false
   garmentsFail = false
   listFails = null
   snapshots = new Map()
@@ -239,13 +237,39 @@ describe('restAll: every row, or a throw', () => {
     maxRows = 2
     const rows = await restAll('posts?select=id,user_id,data&kind=eq.garment')
     expect(rows.map(r => r.id)).toEqual(['g-b', 'g-b2', 'g-expired', 'g-live', 'g-purged', 'g-trash'])
-    expect(calls.filter(c => c.startsWith('GET /rest/v1/posts')).length).toBe(3)
+    // three pages of two, and a fourth, empty, that says the third was the last
+    expect(calls.filter(c => c.startsWith('GET /rest/v1/posts')).length).toBe(4)
     expect(calls[1]).toContain('&id=gt.g-b2&')
+    // carried on at the size the server answered with
+    expect(calls[1]).toContain('&limit=2')
   })
 
-  it('refuses an answer that does not say how many rows there are', async () => {
-    noCount = true
-    await expect(restAll('posts?select=id,user_id,data&kind=eq.garment')).rejects.toThrow(/did not say how many rows/)
+  it('asks for no count, and ends at a page shorter than a full one', async () => {
+    const asked: (string | null)[] = []
+    const answer = vi.mocked(fetch).getMockImplementation()!
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      asked.push(new Headers(init?.headers).get('prefer'))
+      return answer(input, init)
+    })
+    // a short first page could be the server's cap: one more read says it was the end
+    expect(await restAll('posts?select=id,user_id,data&kind=eq.garment')).toHaveLength(6)
+    expect(calls.filter(c => c.startsWith('GET /rest/v1/posts'))).toEqual([
+      'GET /rest/v1/posts?select=id,user_id,data&kind=eq.garment&order=id.asc&limit=1000',
+      'GET /rest/v1/posts?select=id,user_id,data&kind=eq.garment&id=gt.g-trash&order=id.asc&limit=6',
+    ])
+    expect(asked).toEqual([null, null])
+    // after a full page, a short one is the end at once
+    calls.length = 0
+    expect(await restAll('posts?select=id,user_id,data&kind=eq.garment', 4)).toHaveLength(6)
+    expect(calls.filter(c => c.startsWith('GET /rest/v1/posts'))).toHaveLength(2)
+  })
+
+  it('refuses an answer that is not a list of rows, and a page that does not carry on', async () => {
+    vi.mocked(fetch).mockImplementationOnce(async () => Response.json({ message: 'not rows' }))
+    await expect(restAll('posts?select=id,user_id,data&kind=eq.garment')).rejects.toThrow(/did not answer with rows/)
+    // a server that ignores where the read carried on from answers the same page again
+    vi.mocked(fetch).mockImplementation(async () => Response.json([{ id: 'g-1' }, { id: 'g-2' }]))
+    await expect(restAll('posts?select=id,user_id,data&kind=eq.garment')).rejects.toThrow(/did not carry on after the last row/)
   })
 })
 
@@ -278,7 +302,7 @@ describe('sweepPersonalPhotos: the nightly pass', () => {
   })
 
   it('deletes nothing when the pieces cannot all be read', async () => {
-    noCount = true
+    laterPagesFail = true
     const before = objects.size
     await expect(sweepPersonalPhotos(NOW)).rejects.toThrow()
     expect(objects.size).toBe(before)
@@ -368,8 +392,8 @@ describe('runBackup reads every live record, however many there are', () => {
 
   it('writes no snapshot at all when the read cannot be finished, rather than a short one', async () => {
     posts.push(...Array.from({ length: 1500 }, (_, n) => task(n)))
-    noCount = true
-    await expect(runBackup(NOW)).rejects.toThrow('posts: the server did not say how many rows there are')
+    laterPagesFail = true
+    await expect(runBackup(NOW)).rejects.toThrow(/^posts: 500 .*statement timeout/)
     expect(snapshots.size).toBe(0)
   })
 })

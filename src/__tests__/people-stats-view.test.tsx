@@ -473,8 +473,11 @@ describe('List · Stats', () => {
     expect(screen).toContain('+ Add person')
     expect(source('components/People.tsx')).not.toContain('+ Add person')
     expect(screen).toMatch(/innerViews\.people === 'stats' \? \(\s*<PeopleStats/)
-    expect(screen).toContain("import { People, PeopleStats, Places, PlacesStats } from './lazy'")
-    expect(source('components/planner/lazy.ts')).toContain("import('../PeopleStats')")
+    // the screen is a chunk of its own, and draws the views the shell hands it (p.views)
+    expect(screen).toContain('const { People, PeopleStats, Places, PlacesStats } = p.views')
+    // from the Stats registry lazy.ts re-exports (lazystats.ts)
+    expect(source('components/planner/lazystats.ts')).toContain("import('../PeopleStats')")
+    expect(source('components/planner/lazy.ts')).toContain("from './lazystats'")
     // under Keep's own track, never inside it: KeepScreen closes that div
     // before it renders any segment's body (v3.29)
     const keep = source('components/planner/KeepScreen.tsx')
@@ -700,12 +703,12 @@ describe('?view=people-stats', () => {
 describe('its styles', () => {
   const css = sheetSource()
   const phone = [...css.matchAll(/@media \(max-width: 640px\) \{([\s\S]*?)\n\}/g)].map(m => m[1]).join('\n')
-  // its block in the partial, and the desktop half of its own sheet
-  // (styles/views/people-stats.css), which holds the rules only it draws
+  // its block in the partial, and the desktop rules of its own sheet
+  // (styles/views/people-stats.css, its phone blocks left out), which holds the rules only it draws
   const own = viewSheet('people-stats.css')
   const block =
     css.slice(css.indexOf('People → Stats (PeopleStats)'), css.indexOf('@media (max-width: 640px)', css.indexOf('People → Stats (PeopleStats)'))) +
-    own.slice(0, own.indexOf('@media (max-width: 640px)'))
+    own.replace(/@media \(max-width: 640px\) \{[\s\S]*?\n\}/g, '')
 
   it('keeps the phone’s rules behind the phone guard: two faces a line in a 375pt month', () => {
     expect(phone).toMatch(/\.people-cal-face \{[^}]*width: 14px/)

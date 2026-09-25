@@ -1,6 +1,5 @@
 import type { PlannerCtx } from './ctx'
 import { KitchenScreen } from './KitchenScreen'
-import { Wardrobe } from './lazy'
 import { PeopleScreen } from './PeopleScreen'
 import { KEEP_TABS } from './routes'
 import { Segmented } from '../stats/Segmented'
@@ -20,6 +19,7 @@ import { Segmented } from '../stats/Segmented'
  * nothing underneath it.
  */
 export function KeepScreen({ p }: { p: PlannerCtx }) {
+  const { Wardrobe } = p.views
   const { store, upsert, remove, restore, household, showToast, keepTab, setKeepTab, wardrobeOpen, setWardrobeOpen } = p
   return (
     <>

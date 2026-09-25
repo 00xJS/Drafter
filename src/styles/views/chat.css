@@ -6,6 +6,94 @@
    themselves; the partial each came from is named above it. */
 
 /* ---------- from 11-people-review-search.css ---------- */
+/* the four openers ride in one sideways row rather than four stacked lines */
+.chat-prompts {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-bottom: 2px;
+  margin: 0 -4px;
+  padding-inline: 4px;
+  scroll-snap-type: x proximity;
+}
+.chat-thread {
+  list-style: none;
+  /* auto, so a short thread sits just above the composer instead of clinging
+     to the segmented control with a screen of blank under it */
+  margin: auto 0 12px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.chat-day {
+  align-self: center;
+  margin: 10px 0 2px;
+  color: var(--text-2);
+  font-size: calc(0.75rem * var(--type-scale));
+}
+/* the × on your own line: only where the pointer is, so a thread reads as
+   words rather than as a column of delete buttons */
+.chat-unsend {
+  align-self: flex-end;
+  padding: 0 6px;
+  opacity: 0;
+}
+.chat-cites {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+.chat-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+}
+.chat-card-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.chat-card-details {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text-2);
+  font-size: calc(0.8125rem * var(--type-scale));
+  white-space: pre-wrap;
+}
+.chat-card-acts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+/* a name nothing matched: what was said, and the saved ones it could mean */
+.chat-card-edit > .btn {
+  align-self: flex-start;
+}
+.chat-card-row > .field {
+  flex: 1 1 8rem;
+  min-width: 0;
+}
+.chat-card-items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.chat-card-slots {
+  align-self: flex-start;
+}
+
+/* ---------- from 11-people-review-search.css ---------- */
 .chat-what {
   margin: 0 0 4px;
   color: var(--text-2);

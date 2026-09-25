@@ -2,12 +2,13 @@ import { createHash } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { defineConfig, type Plugin } from 'vite'
+import { defineConfig, type Plugin, type Rolldown } from 'vite'
 import { configDefaults } from 'vitest/config'
 import babel from '@rolldown/plugin-babel'
 import react, { reactCompilerPreset } from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 import { cspHeadersFile } from './shared/csp.mts'
+import { planChunks } from './scripts/lib/chunkplan.mjs'
 
 // Every build is stamped (src/appupdate.ts): index.html carries the stamp the
 // page was built with, /version.json the one the server has now. Netlify's
@@ -155,6 +156,26 @@ const ONLINE_ONLY_CHUNKS = ['Admin', 'cutoutweb']
 /** The assistant's own modules: the lazy views load them, the launch never does (see chunkFileNames below). */
 const ASSISTANT_MODULE = /\/src\/(ai|ask|chatactions|recipefill|recipeimport)\.ts$/
 
+/**
+ * What a signed-in launch loads first — the page's entry and the Planner — and
+ * which of its modules go in the one stable chunk the lazy views share it
+ * through (scripts/lib/chunkplan.mjs, which says why). Worked out once per
+ * chunking pass: Rolldown hands back the same module objects within one.
+ */
+const ROOT = fileURLToPath(new URL('./', import.meta.url))
+const LAUNCH_ROOTS = { page: join(ROOT, 'index.html'), planner: join(ROOT, 'src/components/Planner.tsx') }
+const isPackage = (id: string) => /[\\/]node_modules[\\/]/.test(id)
+const plans = new WeakMap<object, ReturnType<typeof planChunks>>()
+function chunkPlan(ctx: Rolldown.ChunkingContext): ReturnType<typeof planChunks> | null {
+  const key = ctx.getModuleInfo(LAUNCH_ROOTS.page)
+  if (!key) return null
+  let plan = plans.get(key)
+  if (!plan) plans.set(key, (plan = planChunks(id => ctx.getModuleInfo(id), LAUNCH_ROOTS, isPackage)))
+  return plan
+}
+/** A shared module that names a lazy chunk gets a chunk of its own, called after it: calendarstate.ts, calendarstate-[hash].js. */
+const ownChunkName = (id: string) => id.split(/[\\/]/).pop()!.replace(/\.[^.]+$/, '')
+
 export default defineConfig({
   test: {
     // agent worktrees live under .claude/worktrees and carry their own copy of
@@ -272,13 +293,28 @@ export default defineConfig({
         codeSplitting: {
           groups: [
             // stable vendor chunks survive app-code deploys in the service-worker cache
-            { name: 'vendor-react', test: /node_modules[\\/](react|react-dom)[\\/]/, priority: 2 },
-            { name: 'vendor-supabase', test: /node_modules[\\/]@supabase[\\/]/, priority: 2 },
-            // Everything the page imports statically, in the entry. Left to
-            // itself, Rolldown splits what the entry shares with the lazy views
-            // into chunks of their own, and the page fetched eight more files
-            // before it could draw; Rollup kept them in the entry, as this does.
-            // scripts/check-precache.mjs fails a build whose launch loads more.
+            { name: 'vendor-react', test: /node_modules[\\/](react|react-dom)[\\/]/, priority: 3 },
+            { name: 'vendor-supabase', test: /node_modules[\\/]@supabase[\\/]/, priority: 3 },
+            // the iOS bridge's core, which each of its plugins' own chunks
+            // imports: apart, those chunks name nothing an app deploy changes
+            { name: 'vendor-capacitor', test: /node_modules[\\/]@capacitor[\\/]core[\\/]/, priority: 3 },
+            // What the lazy views share with the entry and the Planner, in a
+            // stable chunk that names no lazy chunk, so a deploy renames only
+            // what it changed (scripts/lib/chunkplan.mjs). They took it from
+            // the entry and the Planner chunks themselves, and were renamed
+            // with them on every deploy: 86 of 115 precached files. In two
+            // halves: the page's, which loads before anything draws, and the
+            // Planner's, which a sign-in page does not wait on.
+            { name: (id, ctx) => (chunkPlan(ctx)?.page.has(id) ? 'app' : null), debugName: 'app', priority: 2 },
+            { name: (id, ctx) => (chunkPlan(ctx)?.planner.has(id) ? 'app-planner' : null), debugName: 'app-planner', priority: 2 },
+            // …and one of those that does name a lazy chunk, in a chunk of its own
+            { name: (id, ctx) => (chunkPlan(ctx)?.hubs.has(id) ? ownChunkName(id) : null), debugName: 'shared', priority: 2 },
+            // Everything else the page imports statically, in the entry. Left
+            // to itself, Rolldown splits what the entry shares with the lazy
+            // views into chunks of their own, and the page fetched eight more
+            // files before it could draw; Rollup kept them in the entry, as
+            // this does. scripts/check-precache.mjs fails a build whose launch
+            // loads more.
             { name: 'index', tags: ['$initial'], priority: 1 },
           ],
         },

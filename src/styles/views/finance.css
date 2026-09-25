@@ -6,6 +6,86 @@
    themselves; the partial each came from is named above it. */
 
 /* ---------- from 17-meals-work-bills.css ---------- */
+.bills-month {
+  min-width: 9ch;
+  text-align: center;
+  color: var(--text-2);
+}
+.bills-kpis {
+  margin: 8px 0 16px;
+}
+.bills-head {
+  margin: 14px 0 6px;
+  font-size: calc(0.78rem * var(--type-scale));
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.bills-head.overdue {
+  color: var(--danger);
+}
+.bill-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+/* A paid bill steps back in ink, not opacity, which took its meta line under
+   4.5:1: its title and amount take the quiet ink the meta already has, and
+   only the glyph fades. */
+.bill-glyph {
+  font-size: 1.2rem;
+}
+.bill-copy {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+.bill-copy strong,
+.bill-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bill-copy small {
+  color: var(--muted);
+}
+.bill-pay {
+  margin-right: 8px;
+}
+@media (pointer: coarse) {
+  .bill-pay {
+    min-height: 44px;
+  }
+}
+/* Bills: the totals read as a label above its figure everywhere, and a row
+   can never be wider than the screen — a grid track sized to its content let
+   the rows reach 381px in a 375pt viewport. */
+.bills-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+}
+.bill-list {
+  grid-template-columns: minmax(0, 1fr);
+}
+/* money in reads as money in, wherever it is: a payday's amount */
+.bill-amount.in {
+  color: var(--tone-mint);
+}
+.finance-totals {
+  margin: 12px 0;
+}
+/* Bills' own period bar: the month between its arrows, + Bill at the end.
+   "Bills" as a heading went with it — the segment above already says so. */
+.bills-period {
+  margin-bottom: 12px;
+}
+
+/* ---------- from 17-meals-work-bills.css ---------- */
 .bill-row {
   display: flex;
   align-items: center;

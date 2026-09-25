@@ -1,11 +1,11 @@
 import { memberName } from '../../household'
 import { recipeStarred } from '../../kitchen'
 import type { PlannerCtx } from './ctx'
-import { Calendar } from './lazy'
 
 /** Calendar: the month and week grids, or one day in full. */
 export function CalendarScreen({ p }: { p: PlannerCtx }) {
   const { store, household, projectMap, allEvents, sourceMap, calMode, setCalMode, calendarOpenDay, setCalendarOpenDay } = p
+  const { Calendar } = p.views
   const { openTask, newTask, openProject, setEventEditor, setAttendance, reschedule, openWardrobe } = p
   const { saveMeal, clearMeal, createPlaceInline, createRecipeInline, planForEvent, planOccasion } = p
   return (

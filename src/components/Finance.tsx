@@ -1,20 +1,34 @@
-import { useEffect, useMemo, useState } from 'react'
+import { Suspense, useEffect, useMemo, useState } from 'react'
 import { isMoney } from '../bills'
 import { TIMELINE_DAYS, checkInDone, checkInTask, countable, nextSlot, openCheckIn } from '../finance'
 import { localMidnightIso, newerStamp } from '../itemops'
 import { OPEN_STATUSES, isIncomeKind, type Account, type Task } from '../types'
 import { dateKey, uid } from '../utils'
 import { noonOf, useDayKey } from '../useDayKey'
-import { AccountSheet } from './finance/AccountSheet'
-import { AddSheet } from './finance/AddSheet'
-import { BillEditSheet, BillSheet } from './finance/BillSheet'
-import { CheckInSheet, type CheckInChange } from './finance/CheckInSheet'
-import { GoalSheet } from './finance/GoalSheet'
+import { preloadable } from '../lazyload'
+import type { CheckInChange } from './finance/CheckInSheet'
 import { WEEKDAYS } from './finance/labels'
-import { LineSheet } from './finance/LineSheet'
 import { Manage, type ManageTab } from './finance/Manage'
-import { PaydayEditSheet, PaydaySheet } from './finance/PaydaySheet'
 import { Periods, type CheckInFocus } from './finance/Periods'
+
+// Finance's sheets — adding, checking in, a bill, a payday, a goal, an
+// account, the line — each open on a tap, and each loads then, from a chunk
+// of its own, rather than with Finance: they were a third of its code, parsed
+// every time the segment opened. A sheet on its way draws nothing for the
+// moment it takes (the Suspense below), never a blank segment.
+const AddSheet = preloadable(() => import('./finance/AddSheet').then(m => m.AddSheet), 'AddSheet')
+const CheckInSheet = preloadable(() => import('./finance/CheckInSheet').then(m => m.CheckInSheet), 'CheckInSheet')
+const BillSheet = preloadable(() => import('./finance/BillSheet').then(m => m.BillSheet), 'BillSheet')
+const BillEditSheet = preloadable(() => import('./finance/BillSheet').then(m => m.BillEditSheet), 'BillEditSheet')
+const PaydaySheet = preloadable(() => import('./finance/PaydaySheet').then(m => m.PaydaySheet), 'PaydaySheet')
+const PaydayEditSheet = preloadable(() => import('./finance/PaydaySheet').then(m => m.PaydayEditSheet), 'PaydayEditSheet')
+const GoalSheet = preloadable(() => import('./finance/GoalSheet').then(m => m.GoalSheet), 'GoalSheet')
+const AccountSheet = preloadable(() => import('./finance/AccountSheet').then(m => m.AccountSheet), 'AccountSheet')
+const LineSheet = preloadable(() => import('./finance/LineSheet').then(m => m.LineSheet), 'LineSheet')
+const SHEETS = [AddSheet, CheckInSheet, BillSheet, BillEditSheet, PaydaySheet, PaydayEditSheet, GoalSheet, AccountSheet, LineSheet]
+
+/** Every sheet's chunk, fetched now: for a caller that wants them here before the first tap. */
+export const preloadFinanceSheets = (): Promise<unknown> => Promise.all(SHEETS.map(s => s.preload()))
 
 // Finance (v3.27): what Bills was, plus the two things it could not answer.
 //
@@ -242,80 +256,82 @@ export function Finance(props: Props) {
         />
       )}
 
-      {sheet?.kind === 'add' && <AddSheet onClose={close} onPick={choice => setSheet(choice === 'checkin' ? { kind: 'checkin' } : { kind: choice })} />}
-      {sheet?.kind === 'checkin' && (
-        <CheckInSheet
-          accounts={live}
-          focus={sheet.focus}
-          today={today}
-          onClose={close}
-          onSave={changes => {
-            onCheckIn(changes, checkInDone(tasks, myId, new Date()))
-            close()
-          }}
-        />
-      )}
-      {sheet?.kind === 'bill' && (
-        <BillSheet
-          inHousehold={inHousehold}
-          onClose={close}
-          onMore={preset => {
-            close()
-            onNew(preset)
-          }}
-          onAdd={t => {
-            onAdd(t, `Added “${t.title}”`)
-            close()
-          }}
-        />
-      )}
-      {sheet?.kind === 'payday' && (
-        <PaydaySheet
-          members={members}
-          myId={myId}
-          inHousehold={inHousehold}
-          onClose={close}
-          onMore={preset => {
-            close()
-            onNew(preset)
-          }}
-          onAdd={t => {
-            onAdd(t, `Added “${t.title}”`)
-            close()
-          }}
-        />
-      )}
-      {sheet?.kind === 'goal' && (
-        <GoalSheet
-          today={today}
-          at={at}
-          inHousehold={inHousehold}
-          onClose={close}
-          onAdd={t => {
-            onAdd(t, `Saving for “${t.title}”`)
-            close()
-          }}
-        />
-      )}
-      {editing && (isIncomeKind(editing.bill.kind) ? <PaydayEditSheet key={editing.id} task={editing} {...edits} /> : <BillEditSheet key={editing.id} task={editing} {...edits} />)}
-      {sheet?.kind === 'account' && (sheet.id === null || account) && (
-        <AccountSheet
-          key={sheet.id ?? 'new'}
-          account={account}
-          members={members}
-          today={today}
-          onClose={close}
-          onSave={(before, after, message) => {
-            onChangeAccount(before, after, message)
-            close()
-          }}
-          onRemove={id => {
-            onRemoveAccount(id)
-            close()
-          }}
-        />
-      )}
-      {sheet?.kind === 'line' && <LineSheet accounts={accounts} tasks={tasks} at={at} onClose={close} />}
+      <Suspense fallback={null}>
+        {sheet?.kind === 'add' && <AddSheet onClose={close} onPick={choice => setSheet(choice === 'checkin' ? { kind: 'checkin' } : { kind: choice })} />}
+        {sheet?.kind === 'checkin' && (
+          <CheckInSheet
+            accounts={live}
+            focus={sheet.focus}
+            today={today}
+            onClose={close}
+            onSave={changes => {
+              onCheckIn(changes, checkInDone(tasks, myId, new Date()))
+              close()
+            }}
+          />
+        )}
+        {sheet?.kind === 'bill' && (
+          <BillSheet
+            inHousehold={inHousehold}
+            onClose={close}
+            onMore={preset => {
+              close()
+              onNew(preset)
+            }}
+            onAdd={t => {
+              onAdd(t, `Added “${t.title}”`)
+              close()
+            }}
+          />
+        )}
+        {sheet?.kind === 'payday' && (
+          <PaydaySheet
+            members={members}
+            myId={myId}
+            inHousehold={inHousehold}
+            onClose={close}
+            onMore={preset => {
+              close()
+              onNew(preset)
+            }}
+            onAdd={t => {
+              onAdd(t, `Added “${t.title}”`)
+              close()
+            }}
+          />
+        )}
+        {sheet?.kind === 'goal' && (
+          <GoalSheet
+            today={today}
+            at={at}
+            inHousehold={inHousehold}
+            onClose={close}
+            onAdd={t => {
+              onAdd(t, `Saving for “${t.title}”`)
+              close()
+            }}
+          />
+        )}
+        {editing && (isIncomeKind(editing.bill.kind) ? <PaydayEditSheet key={editing.id} task={editing} {...edits} /> : <BillEditSheet key={editing.id} task={editing} {...edits} />)}
+        {sheet?.kind === 'account' && (sheet.id === null || account) && (
+          <AccountSheet
+            key={sheet.id ?? 'new'}
+            account={account}
+            members={members}
+            today={today}
+            onClose={close}
+            onSave={(before, after, message) => {
+              onChangeAccount(before, after, message)
+              close()
+            }}
+            onRemove={id => {
+              onRemoveAccount(id)
+              close()
+            }}
+          />
+        )}
+        {sheet?.kind === 'line' && <LineSheet accounts={accounts} tasks={tasks} at={at} onClose={close} />}
+      </Suspense>
     </div>
   )
 }

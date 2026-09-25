@@ -73,6 +73,8 @@ export async function saveMedia(
   if (opts.thumb) item.thumb = opts.thumb
   if (sb) item.pending = true
   await idbSet('media', id, item)
+  // listed once it is there to be found, never before (see PENDING_KEY)
+  if (item.pending) listPending([id])
   // just made: it belongs to an edit that may not be saved yet, so no trim takes it
   noteUse(id)
   grew(file.size)
@@ -121,6 +123,94 @@ async function toBucket(item: MediaItem): Promise<boolean> {
 /** Written back only while it is still here: a photo deleted forever mid-upload must not come back. */
 async function keepUploaded(item: MediaItem): Promise<void> {
   if (await idbGet<MediaItem>('media', item.id)) await idbSet('media', item.id, item)
+  unlistPending([item.id])
+}
+
+// ---- the list of photos waiting to upload
+//
+// A flush ran on every return to the app and every reconnect, and read every
+// photo this device holds, blobs and all, to find the few (usually none)
+// still waiting to upload. The ids of those are listed here instead, so a
+// flush reads just them, and with none waiting reads nothing. A photo is
+// listed once it is saved and unlisted once the bucket has it, and the list
+// is read and written with no await between, so another tab's change a moment
+// before is kept. It is a drafter:* key, so sign-out forgets it with the
+// photos. With no list yet (the first flush on this device, or since sign-out)
+// the flush looks through every photo once and lists what it finds; and the
+// trim, which reads every photo anyway, lists any it finds missing — a photo
+// saved before the list, or one lost to two tabs writing at once.
+
+/** The ids of the photos waiting to upload. */
+export const PENDING_KEY = 'drafter:media-pending'
+
+/** The list, or null when there is none yet (or it cannot be read), and every photo must be looked through. */
+function readPending(kv: KV = browserKV): string[] | null {
+  try {
+    const raw = kv.getItem(PENDING_KEY)
+    if (raw === null) return null
+    const list: unknown = JSON.parse(raw)
+    return Array.isArray(list) ? strings(list) : null
+  } catch {
+    return null
+  }
+}
+
+function writePending(ids: readonly string[], kv: KV = browserKV): void {
+  try {
+    kv.setItem(PENDING_KEY, JSON.stringify(ids))
+  } catch {
+    /* storage full or blocked: with no list, a flush looks through every photo, as it always did */
+  }
+}
+
+/** Add these to the list, when there is one: with none, the next flush looks through every photo and finds them. */
+function listPending(ids: readonly string[]): void {
+  const listed = readPending()
+  if (!listed) return
+  const add = ids.filter(id => !listed.includes(id))
+  if (add.length) writePending([...listed, ...add])
+}
+
+function unlistPending(ids: readonly string[]): void {
+  const listed = readPending()
+  if (listed?.some(id => ids.includes(id))) writePending(listed.filter(id => !ids.includes(id)))
+}
+
+/**
+ * The photos a flush sends: the listed ones, read one by one — an id whose
+ * photo is gone, or already up (another tab sent it), leaves the list. With no
+ * list yet, every photo is looked through once, and those waiting are listed:
+ * the list is started before the look, so a photo saved during it is listed
+ * too, and a look that fails leaves it to the next flush again.
+ */
+async function waitingItems(): Promise<MediaItem[]> {
+  const listed = readPending()
+  if (!listed) {
+    writePending([])
+    let all: MediaItem[]
+    try {
+      all = await idbAll<MediaItem>('media')
+    } catch (e) {
+      try {
+        browserKV.removeItem(PENDING_KEY)
+      } catch {
+        /* the next flush looks again either way */
+      }
+      throw e
+    }
+    const waiting = all.filter(i => i.pending)
+    listPending(waiting.map(i => i.id))
+    return waiting
+  }
+  const out: MediaItem[] = []
+  const done: string[] = []
+  for (const id of listed) {
+    const item = await idbGet<MediaItem>('media', id)
+    if (item?.pending) out.push(item)
+    else done.push(id)
+  }
+  if (done.length) unlistPending(done)
+  return out
 }
 
 let flushing: Promise<number> | null = null
@@ -141,7 +231,7 @@ export function flushPendingMedia(): Promise<number> {
     let sent = 0
     do {
       again = false
-      sent += await uploadPending({ items: () => idbAll<MediaItem>('media'), put: keepUploaded, upload: toBucket }).catch(() => 0)
+      sent += await uploadPending({ items: waitingItems, put: keepUploaded, upload: toBucket }).catch(() => 0)
     } while (again)
     // what just went up may be what a swapped-out photo was waiting on
     await retireSwapped().catch(() => {})
@@ -358,6 +448,7 @@ export async function deleteMedia(ids: readonly (string | undefined)[]): Promise
     forgetUse(id)
     await idbDel('media', id).catch(() => {})
   }
+  unlistPending(gone)
   const sb = getSupabase()
   if (sb) await sb.storage.from('media').remove(gone).catch(() => {})
 }
@@ -595,14 +686,46 @@ function forgetUse(id: string): void {
   if (shownMap().delete(id)) saveUse()
 }
 
+/**
+ * When the cache was last trimmed (epoch ms), kept across launches: a cold
+ * launch trimmed again, reading every photo this device holds, however
+ * recently the last one had. A drafter:* key, so sign-out forgets it.
+ */
+export const TRIMMED_KEY = 'drafter:media-trimmed'
+
 /** Bytes downloaded since the last trim: past the cap, the next trim comes sooner. */
 let grownSince = 0
-let lastTrim = 0
+/** When the last trim ran: read from TRIMMED_KEY by the first trim of a launch. */
+let lastTrim: number | null = null
 let cacheBytes: number | null = null
+
+function trimmedAt(kv: KV = browserKV): number {
+  if (lastTrim === null) {
+    let at = 0
+    try {
+      at = Number(kv.getItem(TRIMMED_KEY)) || 0
+    } catch {
+      /* unreadable: trimmed as if never */
+    }
+    lastTrim = at
+  }
+  return lastTrim
+}
+
+/** 0 asks for a trim at the next chance, this launch or the next. */
+function setTrimmedAt(at: number, kv: KV = browserKV): void {
+  lastTrim = at
+  try {
+    if (at) kv.setItem(TRIMMED_KEY, String(at))
+    else kv.removeItem(TRIMMED_KEY)
+  } catch {
+    /* kept for this launch only */
+  }
+}
 
 function grew(bytes: number): void {
   grownSince += bytes
-  if (cacheBytes !== null && cacheBytes + grownSince > cacheBytesMax()) lastTrim = 0
+  if (cacheBytes !== null && cacheBytes + grownSince > cacheBytesMax()) setTrimmedAt(0)
 }
 
 /** A cached photo as the trim weighs it. */
@@ -666,10 +789,21 @@ export function mediaReferences(records: readonly unknown[], extra: Iterable<str
  * Does nothing in local mode.
  */
 export async function trimMediaCache(referenced: () => ReadonlySet<string>, now = Date.now()): Promise<number> {
-  if (!getSupabase() || now - lastTrim < TRIM_EVERY_MS) return 0
-  lastTrim = now
+  // a last trim "in the future" is a clock set back: trimmed as if due
+  const last = trimmedAt()
+  if (!getSupabase() || (last <= now && now - last < TRIM_EVERY_MS)) return 0
+  setTrimmedAt(now)
   const items = await idbAll<MediaItem>('media').catch(() => null)
   if (!items) return 0
+  // every photo is in hand here: one waiting to upload that the queue's list
+  // is missing (saved before there was a list, or lost to two tabs writing it
+  // at once) is listed, and sent now
+  const listed = readPending()
+  const missed = listed ? items.filter(i => i.pending && !listed.includes(i.id)).map(i => i.id) : []
+  if (missed.length) {
+    listPending(missed)
+    void flushPendingMedia()
+  }
   // a picture's small copy is in its entry, and goes with it
   const photos = items.map(i => ({ id: i.id, bytes: (i.blob?.size ?? 0) + (i.thumb?.size ?? 0), pending: i.pending }))
   const drop = photosToTrim(photos, referenced(), shownMap(), cacheBytesMax(), now)

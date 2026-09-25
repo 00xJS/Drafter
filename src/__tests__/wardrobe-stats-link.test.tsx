@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import type { PlannerCtx } from '../components/planner/ctx'
 import { KeepScreen } from '../components/planner/KeepScreen'
-import { Wardrobe as LazyWardrobe } from '../components/planner/lazy'
+import { SCREEN_VIEWS, Wardrobe as LazyWardrobe } from '../components/planner/lazy'
 import { useDeepLinks } from '../components/planner/useDeepLinks'
 import { useNavigation, type WardrobeOpen } from '../components/planner/useNavigation'
 import { GarmentSheet } from '../components/wardrobe/GarmentSheet'
@@ -142,7 +142,7 @@ describe('a way in while the Wardrobe is already on screen', () => {
 describe('?view=wardrobe-stats, through the shell', () => {
   type Nav = ReturnType<typeof useNavigation>
   const store = { loaded: true, journal: [], tasks: [], people: [], places: [], garments: GARMENTS, outfits: [FRIDAY], wears: [], upsert: noop, remove: noop, restore: noop }
-  const ctx = (nav: Nav) => ({ ...nav, store, household: { myId: null }, showToast: noop }) as unknown as PlannerCtx
+  const ctx = (nav: Nav) => ({ ...nav, store, household: { myId: null }, showToast: noop, views: SCREEN_VIEWS }) as unknown as PlannerCtx
 
   /** The shell's own navigation and link reader, walked through `steps` a render at a time, as people-stats-view.test.tsx's journey walks; where it ended. */
   function walk(steps: ((nav: Nav, link: (raw: string) => void) => void)[]): Nav {

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { inboundAction } from '../../calendars'
+import { inboundAction } from '../../calendarsettings'
 import { ConfirmButton } from '../ConfirmButton'
 import type { SettingsCtx } from './context'
 import { useAsyncAction } from './useAsyncAction'

@@ -19,7 +19,7 @@ import { dateKey } from '../utils'
 import { wearIndex } from '../../shared/wardrobe.mts'
 import { AreaCard, ChartCard, DeltaBadge, HeatGrid, MonthBars, RankedBars, Ring, StatTile, Stepper, WindowSwitch } from './stats'
 import { Highlights } from './insights/Highlights'
-import { KitchenStats, PeopleStats, PlacesStats, WardrobeStats } from './planner/lazy'
+import { KitchenStats, PeopleStats, PlacesStats, WardrobeStats } from './planner/lazystats'
 import type { StatsTab } from './planner/routes'
 
 /*

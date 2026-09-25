@@ -1,16 +1,11 @@
 import { useEffect } from 'react'
-import { preloadable, schedulePreload, warm } from '../../lazyload'
+import { preloadable, schedulePreload, warm, withSheet } from '../../lazyload'
 import { isNative } from '../../native'
+import { KitchenStats, PeopleStats, PlacesStats, WardrobeStats } from './lazystats'
 import type { View } from './routes'
 
-/**
- * A view's chunk together with its own style sheet (styles/views/): the rules
- * only that view can match, which used to load before the first paint with
- * everything else. Vite loads the sheet alongside the chunk and waits for it,
- * so the view is never drawn unstyled; the warm-up and a finger on a tab
- * fetch both.
- */
-const withSheet = <T>(view: Promise<T>, sheet: Promise<unknown>): Promise<T> => Promise.all([view, sheet]).then(([m]) => m)
+// the four areas' Stats, in a registry of their own that the Kitchen and the Stats lens import too
+export { KitchenStats, PeopleStats, PlacesStats, WardrobeStats }
 
 // Everything a launch does not paint first, each in a chunk of its own: the
 // views behind the other tabs and segments, and every overlay. Today (with its
@@ -20,22 +15,14 @@ const withSheet = <T>(view: Promise<T>, sheet: Promise<unknown>): Promise<T> => 
 // scripts/check-precache.mjs checks the built launch holds no assistant code).
 export const Calendar = preloadable(() => withSheet(import('../Calendar'), import('../../styles/views/calendar.css')).then(m => m.Calendar), 'Calendar')
 export const TasksTable = preloadable(() => withSheet(import('../TasksTable'), import('../../styles/views/tasks-table.css')).then(m => m.TasksTable), 'TasksTable')
-export const Board = preloadable(() => import('../Board').then(m => m.Board), 'Board')
+export const Board = preloadable(() => withSheet(import('../Board'), import('../../styles/views/board.css')).then(m => m.Board), 'Board')
 // Tasks → Finance: the month of bills, the paydays and the accounts. Bills.tsx
 // is drawn inside it, so the two share one chunk rather than shipping twice.
 export const Finance = preloadable(() => withSheet(import('../Finance'), import('../../styles/views/finance.css')).then(m => m.Finance), 'Finance')
 export const NotesView = preloadable(() => withSheet(import('../NotesView'), import('../../styles/views/notes.css')).then(m => m.NotesView), 'NotesView')
 export const People = preloadable(() => import('../People').then(m => m.People), 'People')
 export const Places = preloadable(() => import('../Places').then(m => m.Places), 'Places')
-// People → People's Stats and People → Places' Stats, behind each segment's
-// List · Stats switch, each with the counting only it reads (peoplestats.ts,
-// placestats.ts) in a chunk of its own
-export const PeopleStats = preloadable(() => withSheet(import('../PeopleStats'), import('../../styles/views/people-stats.css')).then(m => m.PeopleStats), 'PeopleStats')
-export const PlacesStats = preloadable(() => import('../PlacesStats').then(m => m.PlacesStats), 'PlacesStats')
 export const Kitchen = preloadable(() => withSheet(import('../Kitchen'), import('../../styles/views/kitchen.css')).then(m => m.Kitchen), 'Kitchen')
-// Kitchen → Stats and the Stats kit it draws with: a chunk of its own, which
-// the Kitchen imports from here and a finger on the Kitchen tab warms too
-export const KitchenStats = preloadable(() => withSheet(import('../kitchen/KitchenStats'), import('../../styles/views/kitchen-stats.css')).then(m => m.KitchenStats), 'KitchenStats')
 export const Review = preloadable(() => withSheet(import('../Review'), import('../../styles/views/review.css')).then(m => m.Review), 'Review')
 // Insights → Journal: the archive of what you wrote, with its mood chart and
 // its search. Writing today's line is Today's, and that card and the editor it
@@ -48,11 +35,6 @@ export const Chat = preloadable(() => withSheet(import('../Chat'), import('../..
 // Home → Wardrobe: the composer, the clothes, the stats and the piece sheet.
 // Only Today's card and the thumbnails it draws stay in the Planner chunk.
 export const Wardrobe = preloadable(() => withSheet(import('../wardrobe/Wardrobe'), import('../../styles/views/wardrobe.css')).then(m => m.Wardrobe), 'Wardrobe')
-// …and the wardrobe's figures on their own, because the Stats lens draws them
-// too and must not drag the composer, the clothes grid and the photo pipeline
-// in behind them. Wardrobe.tsx still imports the view directly, so the two
-// share one chunk rather than shipping it twice.
-export const WardrobeStats = preloadable(() => import('../wardrobe/WardrobeStats').then(m => m.WardrobeStats), 'WardrobeStats')
 // The Stats lens: Insights' Highlights (components/insights, and the rules
 // they pick by, shared/insights.mts), the pages the lens counts itself —
 // Tasks, Money, Habits, Journal and the year — and the counting only it reads
@@ -62,12 +44,12 @@ export const StatsLens = preloadable(() => withSheet(import('../StatsLens'), imp
 
 export const TaskEditor = preloadable(() => withSheet(import('../TaskEditor'), import('../../styles/views/task-editor.css')).then(m => m.TaskEditor), 'TaskEditor')
 export const ProjectEditor = preloadable(() => import('../ProjectEditor').then(m => m.ProjectEditor), 'ProjectEditor')
-export const EventEditor = preloadable(() => import('../EventEditor').then(m => m.EventEditor), 'EventEditor')
+export const EventEditor = preloadable(() => withSheet(import('../EventEditor'), import('../../styles/views/event-editor.css')).then(m => m.EventEditor), 'EventEditor')
 export const AttendancePicker = preloadable(() => import('../AttendancePicker').then(m => m.AttendancePicker), 'AttendancePicker')
 export const Search = preloadable(() => withSheet(import('../Search'), import('../../styles/views/search.css')).then(m => m.Search), 'Search')
 export const Trash = preloadable(() => import('../Trash').then(m => m.Trash), 'Trash')
-export const Settings = preloadable(() => import('../Settings').then(m => m.Settings), 'Settings')
-export const Admin = preloadable(() => import('../Admin').then(m => m.Admin), 'Admin')
+export const Settings = preloadable(() => withSheet(import('../Settings'), import('../../styles/views/settings.css')).then(m => m.Settings), 'Settings')
+export const Admin = preloadable(() => withSheet(import('../Admin'), import('../../styles/views/admin.css')).then(m => m.Admin), 'Admin')
 // the daily routines' sheets, opened from Today's strip, the palette and ?plan=
 export const PlanDaySheet = preloadable(() => import('../PlanDaySheet').then(m => m.PlanDaySheet), 'PlanDaySheet')
 export const ShutdownSheet = preloadable(() => import('../ShutdownSheet').then(m => m.ShutdownSheet), 'ShutdownSheet')
@@ -76,24 +58,43 @@ export const WeekPlanSheet = preloadable(() => import('../WeekPlanSheet').then(m
 export const AskSheet = preloadable(() => import('../AskSheet').then(m => m.AskSheet), 'AskSheet')
 export const ImHereSheet = preloadable(() => import('../ImHereSheet').then(m => m.ImHereSheet), 'ImHereSheet')
 // Who, and how often: Today's cold-start card and the People and Places rows open it
-export const RhythmSheet = preloadable(() => import('../RhythmSheet').then(m => m.RhythmSheet), 'RhythmSheet')
+export const RhythmSheet = preloadable(() => withSheet(import('../RhythmSheet'), import('../../styles/views/rhythm-sheet.css')).then(m => m.RhythmSheet), 'RhythmSheet')
 // The notification hub, behind the bell on Home: only the bell is in the launch
 export const NoticesSheet = preloadable(() => withSheet(import('../NoticesSheet'), import('../../styles/views/notices.css')).then(m => m.NoticesSheet), 'NoticesSheet')
 
+// The screens behind every tab but Home, and the pushed ones: each hands the
+// planner's context on to its views, none is drawn at launch, and so each is
+// a chunk of its own, fetched with its views (VIEW_CHUNKS, the warm-up). A
+// screen draws its views from `p.views` (SCREEN_VIEWS), never from this file:
+// this file names every lazy chunk, and a chunk that imported it was renamed
+// whenever any view changed (scripts/lib/chunkplan.mjs).
+export const CalendarScreen = preloadable(() => import('./CalendarScreen').then(m => m.CalendarScreen), 'CalendarScreen')
+export const TasksScreen = preloadable(() => import('./TasksScreen').then(m => m.TasksScreen), 'TasksScreen')
+export const KeepScreen = preloadable(() => import('./KeepScreen').then(m => m.KeepScreen), 'KeepScreen')
+export const InsightsScreen = preloadable(() => import('./InsightsScreen').then(m => m.InsightsScreen), 'InsightsScreen')
+export const SettingsScreen = preloadable(() => import('./SettingsScreen').then(m => m.SettingsScreen), 'SettingsScreen')
+export const ChatScreen = preloadable(() => import('./ChatScreen').then(m => m.ChatScreen), 'ChatScreen')
+export const AdminScreen = preloadable(() => import('./AdminScreen').then(m => m.AdminScreen), 'AdminScreen')
+// Today's wardrobe card, drawn only when the wardrobe can dress you (Today.tsx)
+export const WardrobeCard = preloadable(() => withSheet(import('../wardrobe/WardrobeCard'), import('../../styles/views/wardrobe-today.css')).then(m => m.WardrobeCard), 'WardrobeCard')
+
+/** The views the lazy screens draw: handed down in the planner's context, as `p.views`, so a screen's chunk names none of them. */
+export const SCREEN_VIEWS = { Admin, Board, Calendar, Chat, EventEditor, Finance, JournalView, Kitchen, NotesView, People, PeopleStats, Places, PlacesStats, Review, Settings, StatsLens, TaskEditor, TasksTable, Wardrobe }
+
 /** What each tab can show, so a finger landing on it starts the fetch before the tap completes. */
 const VIEW_CHUNKS: Record<View, (() => Promise<void>)[]> = {
-  home: [Review.preload, Chat.preload, PlanDaySheet.preload, ShutdownSheet.preload, WeekPlanSheet.preload, NoticesSheet.preload],
-  tasks: [TasksTable.preload, Board.preload, Finance.preload, NotesView.preload],
-  calendar: [Calendar.preload],
+  home: [Review.preload, ChatScreen.preload, Chat.preload, PlanDaySheet.preload, ShutdownSheet.preload, WeekPlanSheet.preload, NoticesSheet.preload],
+  tasks: [TasksScreen.preload, TasksTable.preload, Board.preload, Finance.preload, NotesView.preload],
+  calendar: [CalendarScreen.preload, Calendar.preload],
   // four segments, and a finger cannot say which — so all four, as the lens does
-  keep: [People.preload, Places.preload, PeopleStats.preload, PlacesStats.preload, ImHereSheet.preload, RhythmSheet.preload, Kitchen.preload, KitchenStats.preload, Wardrobe.preload],
+  keep: [KeepScreen.preload, People.preload, Places.preload, PeopleStats.preload, PlacesStats.preload, ImHereSheet.preload, RhythmSheet.preload, Kitchen.preload, KitchenStats.preload, Wardrobe.preload],
   // the lens draws every area's Stats, so a finger on it warms all of them
-  insights: [StatsLens.preload, PeopleStats.preload, PlacesStats.preload, KitchenStats.preload, WardrobeStats.preload, JournalView.preload, Review.preload],
+  insights: [InsightsScreen.preload, StatsLens.preload, PeopleStats.preload, PlacesStats.preload, KitchenStats.preload, WardrobeStats.preload, JournalView.preload, Review.preload],
 }
 export const preloadView = (v: View) => warm(...VIEW_CHUNKS[v])
 
 /** The background warm-up on the web, most-opened first. Admin is not in it:
- *  only the owner fetches that chunk.
+ *  only the owner fetches that chunk (and the screen it opens in).
  *
  *  Settings sits near the front because the top bar reaches it from every
  *  screen — it was dead last of 29, from when it was a dialog you rarely
@@ -102,10 +103,49 @@ export const preloadView = (v: View) => warm(...VIEW_CHUNKS[v])
  *  actions, the retrieval Ask runs), it was parsed at the front while the
  *  first sync ran, and a finger on the chat's button or the Home tab warms
  *  them anyway. */
-export const PRELOAD_ORDER = [TaskEditor, Search, Settings, NoticesSheet, PlanDaySheet, ShutdownSheet, WeekPlanSheet, ImHereSheet, RhythmSheet, Calendar, TasksTable, Board, Finance, NotesView, People, Places, PeopleStats, PlacesStats, Kitchen, KitchenStats, StatsLens, Review, JournalView, Wardrobe, WardrobeStats, ProjectEditor, EventEditor, AttendancePicker, Trash, Chat, AskSheet].map(c => c.preload)
+export const PRELOAD_ORDER = [
+  TaskEditor,
+  Search,
+  Settings,
+  SettingsScreen,
+  WardrobeCard,
+  NoticesSheet,
+  PlanDaySheet,
+  ShutdownSheet,
+  WeekPlanSheet,
+  ImHereSheet,
+  RhythmSheet,
+  CalendarScreen,
+  Calendar,
+  TasksScreen,
+  TasksTable,
+  Board,
+  Finance,
+  NotesView,
+  KeepScreen,
+  People,
+  Places,
+  PeopleStats,
+  PlacesStats,
+  Kitchen,
+  KitchenStats,
+  InsightsScreen,
+  StatsLens,
+  Review,
+  JournalView,
+  Wardrobe,
+  WardrobeStats,
+  ProjectEditor,
+  EventEditor,
+  AttendancePicker,
+  Trash,
+  ChatScreen,
+  Chat,
+  AskSheet,
+].map(c => c.preload)
 
-/** The warm-up in the iOS app: what the top bar opens from every screen, and nothing else. */
-export const NATIVE_PRELOAD_ORDER = [TaskEditor, Search, Settings].map(c => c.preload)
+/** The warm-up in the iOS app: what the top bar opens from every screen (Settings, and the screen it opens in), and nothing else. */
+export const NATIVE_PRELOAD_ORDER = [TaskEditor, Search, Settings, SettingsScreen].map(c => c.preload)
 
 /**
  * Which warm-up a launch runs. On the web every chunk is a download the next
@@ -122,6 +162,6 @@ export function useWarmChunks(isOwner: boolean) {
   useEffect(() => schedulePreload(preloadOrder(isNative())), [])
   useEffect(() => {
     // in the app its code is on disk, and parsed when the owner opens it
-    if (isOwner && !isNative()) warm(Admin.preload)
+    if (isOwner && !isNative()) warm(Admin.preload, AdminScreen.preload)
   }, [isOwner])
 }

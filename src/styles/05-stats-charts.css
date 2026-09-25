@@ -223,11 +223,6 @@
   fill: var(--area-ink-hot, var(--viz-series-1-hot));
 }
 
-.hit {
-  fill: transparent;
-  outline: none;
-}
-
 .chart-table th,
 .chart-table td {
   text-align: left;

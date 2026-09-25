@@ -14,36 +14,10 @@
   color: var(--muted);
 }
 
-.media-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-}
-
 .media-thumb img {
   width: 100%;
   height: 100%;
   object-fit: cover;
-}
-
-.media-add {
-  width: 64px;
-  height: 64px;
-  border: 1px dashed var(--border);
-  border-radius: 8px;
-  background: transparent;
-  color: var(--muted);
-}
-
-.media-add:hover {
-  border-color: var(--accent);
-  color: var(--accent-ink);
-}
-
-.card-flag {
-  font-size: 0.6875rem;
-  color: var(--muted);
 }
 
 /* ---------- settings & dialogs ---------- */
@@ -83,10 +57,6 @@
 .sync-ok {
   color: var(--ok);
   font-weight: 600;
-}
-
-.sync-off {
-  color: var(--muted);
 }
 
 .notice.error {
@@ -145,60 +115,6 @@
 }
 
 /* ---------- new interaction chrome ---------- */
-
-.card-title-row {
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
-}
-
-.card-title-row .card-title {
-  flex: 1;
-  min-width: 0;
-}
-
-.card-status {
-  position: relative;
-  flex-shrink: 0;
-  width: 26px;
-  height: 22px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 6px;
-  background: var(--surface-2);
-}
-
-.card-status select {
-  position: absolute;
-  inset: 0;
-  opacity: 0;
-  cursor: pointer;
-  width: 100%;
-  height: 100%;
-}
-
-.card-status-icon {
-  /* a glyph in a fixed-size tap target */
-  font-size: 12px;
-  color: var(--text-2);
-  pointer-events: none;
-}
-
-/* On a phone that pill measured 26x22pt — half the 44pt floor every other
-   control on the board meets, and the only way to move a card without a
-   mouse to drag with. The select is already an invisible overlay, so it can
-   reach past the pill to a full 44 square while the pill itself stays the
-   quiet glyph it is: the target grows, the card does not (v3.28). */
-@media (max-width: 640px) {
-  .card-status {
-    width: 28px;
-    height: 28px;
-  }
-  .card-status select {
-    inset: -8px;
-  }
-}
 
 .board-more {
   font-size: 0.75rem;
@@ -278,31 +194,9 @@
   margin: 0 0 16px;
 }
 
-.day-time {
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
-}
-
 .show-all {
   display: block;
   margin: 12px auto;
-}
-
-/* mobile posts list */
-.mpost-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.mpost-top {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 8px;
 }
 
 /* ---------- garment cut-out ----------
@@ -310,28 +204,6 @@
    side by side on a desktop; on the phone one stage, switched by a Cut-out ·
    Photo row. Every colour is a token; the cut-out's ground is --photo-white,
    which stays white in every theme because it is the product image. */
-
-.cutout {
-  gap: 10px;
-}
-
-.cutout-panes {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 12px;
-}
-
-.cutout-panes.two {
-  grid-template-columns: 1fr 1fr;
-}
-
-.cutout-pane {
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  min-width: 0;
-}
 
 .cutout-stage img,
 .cutout-dot {
@@ -370,10 +242,6 @@
 
   .cutout-seg .seg {
     flex: 1 1 0;
-  }
-
-  .cutout-panes.two {
-    grid-template-columns: 1fr;
   }
 
   /* the switch above names the stage */

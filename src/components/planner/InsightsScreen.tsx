@@ -1,6 +1,5 @@
 import { trashedLine } from '../../itemops'
 import type { PlannerCtx } from './ctx'
-import { JournalView, Review } from './lazy'
 import { INSIGHTS_TABS, STATS_PAGE_TITLES } from './routes'
 import { PushedScreen } from './PushedScreen'
 import { StatsScreen } from './StatsScreen'
@@ -27,6 +26,7 @@ import { Segmented } from '../stats/Segmented'
  * on the day; reading back what you wrote is this tab's.
  */
 export function InsightsScreen({ p }: { p: PlannerCtx }) {
+  const { JournalView, Review } = p.views
   const { store, upsert, remove, restore, household, showToast, insightsTab, setInsightsTab, statsTab, closeStatsPage } = p
   const { journalOpenDate, setJournalOpenDate, openTask, newTask, changeStatus, changeStatusAll, deferAll, openSheet, openWardrobe } = p
   // an area's figures, or the year, pushed over the Highlights: the page and ‹ Back, and no segments

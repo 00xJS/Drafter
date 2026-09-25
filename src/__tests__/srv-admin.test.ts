@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SYNC_KINDS } from '../../shared/kinds.mts'
 // @ts-expect-error — a function file ships with no .d.mts: Netlify would deploy one as a function of its own
 import adminFunction from '../../netlify/functions/admin.mjs'
+import { pageResponse } from './postgrest'
 
 // Deleting an account that owned a single row used to fail outright:
 // posts.user_id is NOT NULL, and its foreign key is ON DELETE SET NULL. Admin
@@ -67,10 +68,7 @@ beforeEach(() => {
       if (url === `/auth/v1/admin/users/${LEAVER}` && method === 'DELETE') {
         return deleteFails ? Response.json({ msg: 'Database error deleting user' }, { status: 500 }) : Response.json({})
       }
-      if (url.startsWith('/rest/v1/posts?select=id,user_id,data&kind=eq.garment') && method === 'GET') {
-        const range = garmentRows.length ? `0-${garmentRows.length - 1}/${garmentRows.length}` : '*/0'
-        return new Response(JSON.stringify(garmentRows), { headers: { 'content-range': range } })
-      }
+      if (url.startsWith('/rest/v1/posts?select=id,user_id,data&kind=eq.garment') && method === 'GET') return pageResponse(url, garmentRows)
       if (url === '/storage/v1/object/list/media' && method === 'POST') {
         expect(body.prefix).toBe(`personal/${LEAVER}/`)
         if (listFails) return new Response('{"message":"storage is down"}', { status: 503 })

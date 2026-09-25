@@ -1,0 +1,66 @@
+/* Admin's own rules: the ones only it can match, loaded with its chunk
+   (components/planner/lazy.ts) instead of before the first paint. Nothing
+   the launch draws may need one (styles.test.ts holds that). Rules the shell
+   or another view also match, and any that must keep their place against a
+   later partial, stay in the partials. These keep their order among
+   themselves; the partial each came from is named above it. */
+
+/* ---------- from 12-household-settings.css ---------- */
+.admin-health {
+  margin-bottom: 1.1rem;
+  padding-bottom: 0.85rem;
+  border-bottom: 1px solid var(--border);
+}
+.admin-health:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+  padding-bottom: 0;
+}
+.admin-users .cal-source-name {
+  flex: 1;
+  min-width: 0;
+}
+/* Admin → Backups: what Read it or Download brought back, under its own row.
+   The bottom margin keeps it clear of the phone's tab bar when it scrolls in. */
+.backup-open {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  scroll-margin: 12px 0 calc(var(--tabbar-h) + var(--safe-b) + 16px);
+}
+.backup-open .check-add {
+  margin-top: 4px;
+}
+/* zero backups is not a detail — give it the orange it deserves */
+.admin-alarm {
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--warn-bg);
+  padding: 10px 12px;
+  margin-bottom: 1.1rem;
+}
+/* inline result of a live integration test */
+.admin-test {
+  margin: 6px 0 0;
+  font-size: 0.75rem;
+}
+.admin-test-error {
+  display: block;
+  color: var(--danger);
+  word-break: break-word;
+}
+/* Admin → Data's Integration health, folded away (v3.25). Its <summary> holds
+   an <h3> so the heading still reads as one; the marker sits with it rather
+   than on a line of its own. */
+.admin-integrations > details > summary {
+  cursor: pointer;
+  list-style-position: outside;
+}
+.admin-integrations > details > summary h3 {
+  display: inline;
+  margin: 0;
+}
+.admin-integrations > details[open] > summary {
+  margin-bottom: 8px;
+}

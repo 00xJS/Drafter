@@ -68,15 +68,25 @@ import { lockAxis } from '../pull'
 import { ConfirmButton } from './ConfirmButton'
 import { RecipeCapture, draftNote, linkHost } from './kitchen/RecipeCapture'
 import type { CaptureMode } from './kitchen/RecipeCapture'
-import { RecipeFillFlow } from './kitchen/RecipeFillFlow'
 import { Icon } from './Icon'
 import { MealDayCard } from './kitchen/MealCards'
 import { Modal, ModalHead, useChanged } from './Modal'
-import { MealPlanSheet, mealsForPicks, type MealPick } from './MealPlanSheet'
+import { mealsForPicks, type MealPick } from './kitchen/mealpicks'
 import { RecipeSuggestions } from './RecipeSuggestions'
-import { KitchenStats } from './planner/lazy'
+import { KitchenStats } from './planner/lazystats'
 import { KITCHEN_TABS, KITCHEN_TAB_KEY, storedKitchenTab, type KitchenTab } from './planner/routes'
 import type { CalendarEntry, CalendarEvent, Task } from '../types'
+import { preloadable } from '../lazyload'
+
+// The Kitchen's two big sheets — planning the week's meals, and filling
+// recipes in — open on a tap, and each loads then, from a chunk of its own,
+// rather than with the Kitchen. A sheet on its way draws nothing for the
+// moment it takes (the Suspense around each), never a blank Kitchen.
+const MealPlanSheet = preloadable(() => import('./MealPlanSheet').then(m => m.MealPlanSheet), 'MealPlanSheet')
+const RecipeFillFlow = preloadable(() => import('./kitchen/RecipeFillFlow').then(m => m.RecipeFillFlow), 'RecipeFillFlow')
+
+/** Both sheets' chunks, fetched now: for a caller that wants them here before the first tap. */
+export const preloadKitchenSheets = (): Promise<unknown> => Promise.all([MealPlanSheet.preload(), RecipeFillFlow.preload()])
 
 /** The recipe list: every recipe, or "Not lately" — the ones not cooked in a month and not on the plan, longest ago first. */
 type RecipeView = 'all' | 'lately'
@@ -697,21 +707,23 @@ export function Kitchen({ myId = null, nameOf, inHousehold, members = NO_MEMBERS
       )}
 
       {seg === 'week' && planningMeals && (
-        <MealPlanSheet
-          week={week}
-          items={[...recipes, ...meals, ...places, ...(tasks ?? []), ...(entries ?? [])]}
-          events={feedEvents}
-          recipes={recipes}
-          places={places}
-          meals={meals}
-          myId={myId}
-          onCreatePlace={onCreatePlace}
-          onCreateRecipe={onCreateRecipe}
-          onStar={star}
-          onApply={applyMealPlan}
-          onToast={onToast}
-          onClose={() => setPlanningMeals(false)}
-        />
+        <Suspense fallback={null}>
+          <MealPlanSheet
+            week={week}
+            items={[...recipes, ...meals, ...places, ...(tasks ?? []), ...(entries ?? [])]}
+            events={feedEvents}
+            recipes={recipes}
+            places={places}
+            meals={meals}
+            myId={myId}
+            onCreatePlace={onCreatePlace}
+            onCreateRecipe={onCreateRecipe}
+            onStar={star}
+            onApply={applyMealPlan}
+            onToast={onToast}
+            onClose={() => setPlanningMeals(false)}
+          />
+        </Suspense>
       )}
 
       {seg === 'grocery' && (
@@ -776,18 +788,20 @@ export function Kitchen({ myId = null, nameOf, inHousehold, members = NO_MEMBERS
       {/* Out of the way while Edit has one of its recipes in the editor: the
           run keeps the drafts, so Cancel comes back to the same one */}
       {fillRun && editing?.from !== 'fill' && (
-        <RecipeFillFlow
-          run={fillRun}
-          recipes={recipes}
-          waiting={recipeDrafts}
-          onDraftRow={onSave}
-          myId={myId}
-          onDraft={(id, draft) => setFillRun(run => run && fillRunWithDraft(run, id, draft))}
-          onSave={saveFill}
-          onEdit={(recipe, draft) => setEditing({ recipe, from: 'fill', draft })}
-          onSkip={recipe => setFillRun(run => run && fillRunDone(run, recipe.id, 'skipped'))}
-          onStop={endFill}
-        />
+        <Suspense fallback={null}>
+          <RecipeFillFlow
+            run={fillRun}
+            recipes={recipes}
+            waiting={recipeDrafts}
+            onDraftRow={onSave}
+            myId={myId}
+            onDraft={(id, draft) => setFillRun(run => run && fillRunWithDraft(run, id, draft))}
+            onSave={saveFill}
+            onEdit={(recipe, draft) => setEditing({ recipe, from: 'fill', draft })}
+            onSkip={recipe => setFillRun(run => run && fillRunDone(run, recipe.id, 'skipped'))}
+            onStop={endFill}
+          />
+        </Suspense>
       )}
 
       {editing && (

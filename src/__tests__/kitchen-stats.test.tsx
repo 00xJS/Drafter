@@ -725,9 +725,12 @@ describe('its chunk and its styles', () => {
     return seen
   }
 
-  it('loads through planner/lazy.ts, warmed with the Kitchen tab, and no static import of the Kitchen reaches it or the kit', () => {
+  it('loads through the Stats registry lazy.ts re-exports, warmed with the Kitchen tab, and no static import of the Kitchen reaches it or the kit', () => {
+    // the four areas' Stats sit in a registry of their own (lazystats.ts), which
+    // the Kitchen imports instead of lazy.ts: lazy.ts names every lazy chunk
     const lazy = readFileSync(resolve(SRC, 'components/planner/lazy.ts'), 'utf8')
-    expect(lazy).toContain("import('../kitchen/KitchenStats')")
+    expect(readFileSync(resolve(SRC, 'components/planner/lazystats.ts'), 'utf8')).toContain("import('../kitchen/KitchenStats')")
+    expect(lazy).toContain("from './lazystats'")
     expect(lazy).toContain('Kitchen.preload, KitchenStats.preload')
     const kitchen = reach([resolve(SRC, 'components/Kitchen.tsx')])
     const heavy = [resolve(SRC, 'components/kitchen/KitchenStats.tsx'), resolve(SRC, 'kitchenstats.ts'), ...['index.ts', 'ChartCard.tsx', 'RankedBars.tsx', 'Podium.tsx', 'MonthCalendar.tsx', 'ListCard.tsx'].map(f => resolve(SRC, 'components/stats', f))]

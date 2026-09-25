@@ -3,7 +3,7 @@ import { act, fireEvent, render, screen, within } from './dom'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PlannerCtx } from '../components/planner/ctx'
 import { InsightsScreen } from '../components/planner/InsightsScreen'
-import { PeopleStats, StatsLens } from '../components/planner/lazy'
+import { PeopleStats, SCREEN_VIEWS, StatsLens } from '../components/planner/lazy'
 import { INSIGHTS_PERIOD_KEY } from '../components/planner/routes'
 import { useNavigation } from '../components/planner/useNavigation'
 import { NO_PERSON_FILTER } from '../people'
@@ -87,6 +87,8 @@ function Shell({ inHousehold }: { inHousehold: boolean }) {
     inHousehold,
     peopleFilter: NO_PERSON_FILTER,
     placeFilter: NO_PLACE_FILTER,
+    // the lazy views, as the shell hands them to its screens
+    views: SCREEN_VIEWS,
     ...nav,
   }
   const p = new Proxy(known, { get: (t, k: string) => (k in t ? t[k] : noop) }) as unknown as PlannerCtx

@@ -30,30 +30,8 @@
   flex: 1;
   min-width: 8rem;
 }
-.kitchen-week-head {
-  justify-content: center;
-  gap: 10px;
-}
-.kitchen-week-head h2 {
-  flex: 1;
-  min-width: 0;
-  text-align: center;
-}
-.kitchen-recipes-head {
-  flex-direction: column;
-  align-items: stretch;
-}
 .kitchen-recipes-head .chart-sub {
   margin: 2px 0 0;
-}
-/* Paste on the left, + Recipe on the right: each half of the row, not two
-   chips tucked beside the title. The empty list uses the same pair. */
-.kitchen-recipe-compose,
-.kitchen-empty-actions {
-  display: flex;
-  flex-wrap: nowrap;
-  gap: 8px;
-  width: 100%;
 }
 .kitchen-recipe-compose .btn,
 .kitchen-empty-actions .btn {
@@ -64,39 +42,6 @@
   justify-content: center;
   text-align: center;
 }
-.kitchen-recipe-tools {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 12px;
-  margin: 0 0 16px;
-}
-.recipe-includes {
-  flex: 1 1 100%;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-.recipe-includes-label {
-  font-size: 0.75rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-/* (`.segmented` already wraps; the rule that restated it here only outranked
-   .kind-chips' one-line scroll on a phone, so it is gone.) */
-.kitchen-recipe-q {
-  flex: 1 1 12rem;
-  min-width: 0;
-  margin: 0;
-}
-.recipe-book {
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-}
 .recipe-group h3 {
   margin: 0 0 8px;
   font-size: 0.72rem;
@@ -104,16 +49,6 @@
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--muted);
-}
-@media (min-width: 720px) {
-  .recipe-book .recipe-list {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
-  }
-}
-.recipe-suggest-inline {
-  margin: 18px 0 0;
 }
 .week-strip-day {
   display: flex;
@@ -152,18 +87,9 @@
     min-width: 0;
   }
 }
-.kitchen-empty {
-  padding: 20px 16px;
-  border: 1px dashed var(--border);
-  border-radius: var(--radius);
-  text-align: center;
-}
 .kitchen-empty p {
   margin: 0 0 12px;
   color: var(--text-2);
-}
-.kitchen-empty-actions {
-  margin-top: 4px;
 }
 .recipe-card > .btn,
 .recipe-card-edit {
@@ -197,9 +123,6 @@
   min-height: 56px;
   padding: 10px 12px;
 }
-.recipe-card:hover {
-  background: color-mix(in srgb, var(--accent) 4%, var(--surface));
-}
 .recipe-card .dash-main {
   flex: 1;
   min-width: 0;
@@ -215,39 +138,6 @@
   border-radius: 12px;
   font-size: 1rem;
 }
-.recipe-cook-meta,
-.recipe-notes {
-  margin: 0 0 12px;
-  color: var(--text-2);
-  font-size: 0.875rem;
-}
-.recipe-ings {
-  margin: 0;
-  padding-left: 1.2rem;
-  line-height: 1.55;
-}
-.recipe-steps {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.recipe-step {
-  display: flex;
-  gap: 12px;
-  align-items: flex-start;
-  width: 100%;
-  text-align: left;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 12px;
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
-}
 /* A ticked step steps back in ink, not opacity: 0.45 took its text under
    3:1. The strike-through and aria-pressed say it is done. */
 .recipe-steps li.done .recipe-step {
@@ -257,18 +147,6 @@
 .recipe-steps li.done .recipe-step-n {
   background: var(--surface-3);
   color: var(--muted);
-}
-.recipe-step-n {
-  flex: none;
-  width: 1.6rem;
-  height: 1.6rem;
-  border-radius: 999px;
-  background: var(--accent);
-  color: var(--on-accent);
-  font-size: 0.75rem;
-  font-weight: 700;
-  display: grid;
-  place-items: center;
 }
 /* Today and the Week view are each one column of blocks — Today: the header,
    the briefing, the KPI row, the journal, habits, routines, Next up; Week: the
@@ -397,18 +275,6 @@
   border-radius: 8px;
   padding: 8px 10px;
 }
-/* Reading a pasted recipe, above the fields it fills in. */
-.recipe-paste {
-  margin-bottom: 12px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--border);
-}
-.recipe-paste-foot {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 8px;
-}
 .recipe-paste .chart-sub,
 .recipe-paste .warn {
   margin: 8px 0 0;
@@ -422,9 +288,6 @@
 }
 .ing-row input {
   width: 100%;
-}
-.grocery-states {
-  margin-left: auto;
 }
 /* the mouse page has no reflow problem and no row to reserve: it sits inline
    beside the segments, so with nothing to clear it simply goes */
@@ -449,10 +312,6 @@
 @media (max-width: 640px) {
   .meal-slot-label {
     width: 100%;
-  }
-  .grocery-states {
-    width: 100%;
-    margin-left: 0;
   }
   /* Have | Need | Got it are three adjacent targets under one thumb in a shop,
      and they were ~59x30px chips sized by their own text — the shortest label
@@ -495,28 +354,11 @@
   padding: 6px 8px;
   line-height: 1;
 }
-/* a line removed in this session keeps its slot until the view is cleaned —
-   the tick's rule — struck through, with Restore where its state buttons were */
-.grocery-line.removed {
-  border-style: dashed;
-}
-/* "Removed (n)" at the very bottom of the pane, closed until asked for */
-.grocery-removed {
-  margin-top: 16px;
-}
 .grocery-removed > summary {
   cursor: pointer;
   color: var(--text-2);
   font-weight: 600;
   padding: 8px 0;
-}
-.grocery-removed-list {
-  list-style: none;
-  margin: 4px 0 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
 }
 .grocery-removed-line .dash-main {
   flex: 1;
@@ -607,53 +449,6 @@
 .meal-slot .meal-side-pick {
   flex: 1 1 180px;
 }
-/* All | Not lately beside the recipe search */
-.recipe-view-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  margin: 0;
-}
-.recipe-view-hint {
-  color: var(--muted);
-  font-size: 0.8125rem;
-}
-/* "Last cooked 3 weeks ago · 5 times": the Places tab's line, for a recipe */
-.recipe-cooked {
-  display: block;
-  margin-top: 2px;
-  font-size: 0.75rem;
-  color: var(--text-2);
-}
-.recipe-on-plan {
-  display: block;
-  margin-top: 1px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--accent-text);
-}
-.recipe-cook-history {
-  margin: -6px 0 12px;
-  font-size: 0.8125rem;
-  color: var(--muted);
-}
-/* cook mode's sides: a saved recipe opens over the main, a typed dish is only a name */
-.cook-sides {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 4px 0 0;
-  padding: 0;
-  list-style: none;
-}
-.cook-side-dish {
-  display: inline-block;
-  padding: 7px 12px;
-  border: 1px dashed var(--border);
-  border-radius: 8px;
-  color: var(--text-2);
-}
 
   @media (max-width: 640px) {
   /* the label has the whole first line on a phone: nothing to line up with */
@@ -709,29 +504,8 @@
   font-size: 0.9375rem;
   line-height: 1.5;
 }
-
-.recipe-suggest {
-  margin: 18px 0 0;
-}
 .recipe-suggest .chart-head {
   flex-wrap: wrap;
-}
-.recipe-suggest-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.recipe-suggest-card {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface-2);
 }
 .recipe-suggest-card .dash-main {
   flex: 1;
@@ -739,14 +513,6 @@
   display: flex;
   flex-direction: column;
   gap: 3px;
-}
-.recipe-suggest-why {
-  color: var(--text-2);
-  font-size: 0.8125rem;
-}
-.recipe-suggest-like {
-  color: var(--accent-text);
-  font-size: 0.75rem;
 }
 .recipe-suggest-more summary {
   color: var(--text-2);
@@ -760,21 +526,8 @@
   font-size: 0.8125rem;
   line-height: 1.5;
 }
-.recipe-suggest-actions {
-  flex: none;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
 
 @media (max-width: 640px) {
-  .recipe-suggest-card {
-    flex-direction: column;
-  }
-  .recipe-suggest-actions {
-    width: 100%;
-    flex-direction: row;
-  }
   .recipe-suggest-actions .btn {
     flex: 1;
   }
@@ -832,18 +585,6 @@
 .kitchen-dish.podium-photo {
   font-size: 2rem;
 }
-/* a day's dinner under its date: its dish, where it was eaten, or 🥡 */
-.kitchen-cal-dish {
-  position: absolute;
-  inset: 12px 0 4px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--text-2);
-  font-size: 1rem;
-  font-weight: 700;
-  line-height: 1;
-}
 /* and a bar along the day's foot in the colour the chart below keys it by */
 .photo-cal-cell.dinner-cooked .photo-cal-day::after,
 .photo-cal-cell.dinner-out .photo-cal-day::after,
@@ -868,20 +609,6 @@
   fill: var(--viz-series-1);
   background: var(--viz-series-1);
 }
-.kitchen-month-bars .tick-label.now {
-  fill: var(--text-2);
-  font-weight: 700;
-}
-.kitchen-legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 14px;
-  margin: 8px 0 0;
-  padding: 0;
-  list-style: none;
-  font-size: 0.75rem;
-  color: var(--text-2);
-}
 .kitchen-legend li {
   display: inline-flex;
   align-items: center;
@@ -893,10 +620,6 @@
   height: 10px;
   border-radius: 3px;
 }
-/* the year's figures as a table, for a reader who wants them exact */
-.kitchen-by-month {
-  margin-top: 8px;
-}
 .kitchen-by-month summary {
   color: var(--text-2);
   font-size: 0.8125rem;
@@ -907,27 +630,6 @@
   outline: 2px solid var(--focus-ring);
   outline-offset: 1px;
   border-radius: 4px;
-}
-.kitchen-by-month td.num {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-/* lunch and dinner: each a bar split by how it was had, a 2px gap of the card between the parts */
-.kitchen-shares {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.kitchen-share-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 6px;
-  font-size: 0.8125rem;
 }
 
 /* Kitchen holds four segments since Stats joined it: on a phone their labels
@@ -944,14 +646,6 @@
     align-items: center;
     min-height: 44px;
   }
-}
-
-/* Kitchen's two period bars sit under their heading rather than beside it:
-   a week range and two arrows do not share a line with a large title at
-   402pt without one of them being squeezed to nothing. */
-.kitchen-week-head,
-.kitchen-grocery-week {
-  margin-bottom: 12px;
 }
 /* "Build from this week" is 163pt of the 402 on its own, which left the week
    it builds from reading "Sep 20 – Se…" beside it. On a phone it takes a line
@@ -979,89 +673,16 @@
 .kitchen-gap .btn {
   flex: none;
 }
-/* under the grocery list's how-it-works line, which sits tight to what is above it */
-.recipe-capture-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.recipe-draft-spare {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 12px;
-  border: 1px dashed var(--accent-ring);
-  border-radius: var(--radius);
-  background: var(--accent-softer);
-}
-.recipe-draft-part {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 6px;
-}
 .recipe-draft-part p {
   margin: 0;
   color: var(--text-2);
   font-size: 0.875rem;
   line-height: 1.45;
 }
-.recipe-draft-part ol {
-  margin: 0;
-  padding-left: 1.2rem;
-  font-size: 0.875rem;
-  line-height: 1.5;
-}
-.recipe-source {
-  margin: 0;
-  font-size: 0.8125rem;
-}
-/* in cook mode it sits under the history line, as close as that sits to the meta */
-.recipe-cook .recipe-source {
-  margin: -18px 0 12px;
-}
-.recipe-source a {
-  color: var(--accent-text);
-  text-decoration: none;
-}
-.recipe-source a:hover {
-  text-decoration: underline;
-}
-.recipe-source-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-.recipe-fill-progress {
-  margin: 0;
-  color: var(--muted);
-  font-size: 0.8125rem;
-  font-variant-numeric: tabular-nums;
-}
-.recipe-fill-name {
-  margin: 0;
-  font-size: 1.1rem;
-}
-.recipe-fill-steps {
-  margin: 0;
-  padding-left: 1.2rem;
-  line-height: 1.55;
-}
-.recipe-fill-failed {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
 .recipe-fill-failed .warn,
 .recipe-fill-done,
 .recipe-fill-busy {
   margin: 0;
-}
-.recipe-fill-done {
-  line-height: 1.5;
 }
 @media (max-width: 640px) {
   .kitchen-gap .btn {
@@ -1073,25 +694,5 @@
     flex: 1 1 calc(50% - 4px);
     min-width: 0;
     padding-inline: 8px;
-  }
-  .recipe-capture-row .recipe-fill-btn {
-    flex-basis: 100%;
-  }
-  /* Stop, Skip, Edit and Save share the line in quarters rather than letting
-     a spacer push Save onto a second row at 375pt */
-  .recipe-fill-foot {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-  .recipe-fill-foot .spacer {
-    display: none;
-  }
-}
-@media (pointer: coarse) {
-  .recipe-source a {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.3em;
-    min-height: 44px;
   }
 }

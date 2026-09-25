@@ -6,6 +6,31 @@
    themselves; the partial each came from is named above it. */
 
 /* ---------- from 11-people-review-search.css ---------- */
+/* a day's faces under its date chip: up to three, then +n */
+.people-cal-faces {
+  position: absolute;
+  inset: 18px 2px 2px;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-end;
+  justify-content: center;
+  gap: 2px;
+}
+/* Groups: a group's days beside its name, kept whole (the name gives way
+   first), so its bar ends with the share alone */
+.people-group-days {
+  flex: none;
+  white-space: nowrap;
+}
+@media (max-width: 640px) {
+  /* about 43pt a day at 375pt: two faces a line, clear of the date chip */
+  .people-cal-faces {
+    inset: 16px 1px 1px;
+    gap: 1px;
+  }
+}
+
+/* ---------- from 11-people-review-search.css ---------- */
 /* the all-time tiles lie flat in their card */
 .people-all-time .stat-tile {
   box-shadow: none;

@@ -1,0 +1,62 @@
+/* RhythmSheet's own rules: the ones only it can match, loaded with its chunk
+   (components/planner/lazy.ts) instead of before the first paint. Nothing
+   the launch draws may need one (styles.test.ts holds that). Rules the shell
+   or another view also match, and any that must keep their place against a
+   later partial, stay in the partials. These keep their order among
+   themselves; the partial each came from is named above it. */
+
+/* ---------- from 11-people-review-search.css ---------- */
+.rhythm-summary {
+  font-size: 0.8125rem;
+  color: var(--text-2);
+}
+.rhythm-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.rhythm-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 0;
+  border-top: 1px solid var(--hairline);
+}
+.rhythm-who {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.rhythm-name {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.rhythm-chip.on {
+  font-weight: 600;
+}
+.rhythm-chip.suggested {
+  border: 1px dashed var(--accent-ring);
+  background: var(--accent-softer);
+  color: var(--accent-text);
+  font-weight: 600;
+}
+.find-missing {
+  align-self: flex-start;
+}
+.missing-addresses {
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+.missing-progress {
+  margin: 0;
+}
+.missing-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}

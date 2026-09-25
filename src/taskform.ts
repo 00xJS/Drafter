@@ -1,4 +1,4 @@
-import type { RefineMode } from './ai'
+import type { RefineMode } from './refine'
 import type { CapturedFields } from './capture'
 import { parseGithubUrl } from './github'
 import { newerStamp } from './itemops'

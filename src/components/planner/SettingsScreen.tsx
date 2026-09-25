@@ -1,5 +1,4 @@
 import { useEffect } from 'react'
-import { Settings } from './lazy'
 import type { PlannerCtx } from './ctx'
 import { PushedScreen } from './PushedScreen'
 
@@ -12,6 +11,7 @@ import { PushedScreen } from './PushedScreen'
  * underneath. The screen's own header holds them still.
  */
 export function SettingsScreen({ p }: { p: PlannerCtx }) {
+  const { Settings } = p.views
   const { store, calendars, googlePush, microsoftSync, household, isOwner, setPushed, setAdminOpen, settingsNonce, settingsGroup, setSettingsGroup } = p
   // the group an opener asked for is for that visit: Settings opened any other way starts where it always has
   useEffect(() => () => setSettingsGroup(undefined), [setSettingsGroup])

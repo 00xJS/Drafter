@@ -1,13 +1,20 @@
 import type { ComponentProps } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { Today } from '../components/Today'
+import { WardrobeCard as LazyWardrobeCard } from '../components/planner/lazy'
 import type { WardrobeOpen } from '../components/planner/useNavigation'
 import { WardrobeCard } from '../components/wardrobe/WardrobeCard'
 import type { Garment, GarmentType, Outfit, Task, Wear } from '../types'
 import type { Forecast } from '../weather'
 import { button, press, settled } from './rendered'
 import { plannerSource } from './source'
+
+// Today's card is a chunk of its own, fetched when the wardrobe can dress you;
+// here it is loaded before anything draws, as it is once Today has asked for it
+beforeAll(async () => {
+  await LazyWardrobeCard.preload()
+})
 
 // Today's "What are you wearing?": when it shows at all, what it offers, the
 // one line once today has a look, "Forgot yesterday?", and where it sits on

@@ -1,15 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import {
-  boardDateToDue,
-  defaultColumnMap,
-  dueDateOf,
-  optionForStatus,
-  projectSyncEnabled,
-  pushPlan,
-  reconcileProjectItems,
-  sameGithubUrl,
-  statusForOption,
-} from '../githubsync'
+import { boardDateToDue, projectSyncEnabled } from '../githubboard'
+import { defaultColumnMap, dueDateOf, optionForStatus, pushPlan, reconcileProjectItems, sameGithubUrl, statusForOption } from '../githubsync'
 import { sanitizeProject } from '../schema'
 import { GithubProjectItem } from '../github'
 import { GithubProjectSync, Project, Task } from '../types'

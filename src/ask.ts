@@ -976,10 +976,5 @@ export function prepareAsk(q: string, src: AskSources, o: { now: Date; tz: strin
   }
 }
 
-const QUESTION_START_RE = /^(?:who|what|when|where|why|how|did|have|do|is|was|which)\b/i
-
-/** Whether the palette's "Ask Drafter" row should rank first for this query. */
-export function looksLikeQuestion(q: string): boolean {
-  const t = q.trim()
-  return t.length > 1 && (t.endsWith('?') || QUESTION_START_RE.test(t))
-}
+// the palette's question rule lives on its own (questions.ts), so the palette does not carry Ask
+export { looksLikeQuestion } from './questions'

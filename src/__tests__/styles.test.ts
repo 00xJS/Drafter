@@ -110,9 +110,11 @@ function launchModules(): Set<string> {
 const classesOf = (selector: string) => [...selector.replace(/\[[^\]]*\]/g, '').matchAll(/\.(-?[_a-zA-Z][\w-]*)/g)].map(m => m[1])
 
 describe('each lazy view\u2019s own sheet', () => {
-  const lazy = read('../components/planner/lazy.ts')
+  // planner/lazy.ts, and the four areas' Stats in their own registry (lazystats.ts)
+  const REGISTRIES = ['../components/planner/lazy.ts', '../components/planner/lazystats.ts']
+  const lazy = REGISTRIES.map(read).join('\n')
 
-  it('is loaded by planner/lazy.ts, once, with the view it is for', () => {
+  it('is loaded by planner/lazy.ts or the Stats registry, once, with the view it is for', () => {
     const sheets = viewSheets()
     expect(sheets.length).toBeGreaterThan(0)
     for (const sheet of sheets) {
@@ -121,7 +123,7 @@ describe('each lazy view\u2019s own sheet', () => {
     }
     // …and nothing else imports one
     const importers = modules().filter(f => cssImports(read(f)).some(css => css.includes('/styles/views/')))
-    expect(importers).toEqual(['../components/planner/lazy.ts'])
+    expect(importers.sort()).toEqual(REGISTRIES)
     expect(cssImports(lazy).filter(css => css.includes('/styles/views/'))).toHaveLength(sheets.length)
   })
 

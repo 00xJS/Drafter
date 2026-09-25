@@ -521,10 +521,6 @@
     font-size: 1.3125rem;
   }
 
-  .posts-table {
-    min-width: 620px;
-  }
-
   /* calendar: tighter cells, no hint text */
   .cal-toolbar h2 {
     min-width: 0;
@@ -543,12 +539,6 @@
   /* the month grid keeps px on a phone too -- see .cal-daynum above: these
      sit inside 96px-minimum cells and fixed-diameter day badges, so growing the text
      would spill out of the geometry rather than move it. */
-
-  .cal-daynum {
-    width: 18px;
-    height: 18px;
-    font-size: 11px;
-  }
 
   .modal-backdrop {
     padding: 12px 8px;

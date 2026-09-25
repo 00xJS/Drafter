@@ -2,18 +2,6 @@
 .modal.wide {
   width: 960px;
 }
-.editor-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1.6fr) minmax(260px, 1fr);
-  gap: 0 24px;
-}
-.editor-main,
-.editor-side {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
 .segmented.wrap .seg {
   flex: 1 1 auto;
 }
@@ -105,21 +93,6 @@
   padding: 0 4px;
   font-size: 0.6875rem;
 }
-/* whose words they are (v3.32): the name leads the time, in the text's own colour */
-.comment-by {
-  color: var(--text-2);
-  font-weight: 600;
-}
-.comment-body {
-  white-space: pre-wrap;
-  font-size: 0.8125rem;
-}
-.comment-form {
-  display: flex;
-  gap: 6px;
-  align-items: flex-end;
-  margin-top: 6px;
-}
 .comment-form textarea {
   flex: 1;
 }
@@ -208,21 +181,10 @@
   }
 }
 
-@media (max-width: 900px) {
-  .editor-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
 @media (max-width: 640px) {
   .today-grid {
     grid-template-columns: 1fr;
   }
-}
-
-/* AI description rewrites */
-.desc-ai {
-  margin-top: 6px;
 }
 .desc-ai .btn {
   font-size: 0.75rem;
@@ -330,19 +292,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.cal-add {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  align-items: center;
-  margin-bottom: 8px;
-}
-.cal-add-name {
-  flex: 1 1 120px;
-}
-.cal-add-url {
-  flex: 3 1 240px;
 }
 .swatches.small .swatch {
   width: 18px;
@@ -562,18 +511,8 @@
   gap: 10px;
   min-height: calc(100vh - 170px);
 }
-.notes-page .notes {
-  flex: 1;
-}
-.notes-page-head {
-  display: flex;
-  align-items: center;
-}
 .notes-index .toolbar {
   margin-bottom: 12px;
-}
-.notes-cards {
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
 }
 .notes-card {
   align-items: stretch;
@@ -647,20 +586,6 @@
   gap: 6px;
   flex: none;
 }
-
-/* task editor: what the description links to — the GitHub card, then every
-   other URL as a chip that opens in a new tab (Safari's sheet on the phone) */
-.desc-links {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-top: -6px;
-}
-.link-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
 .link-chip {
   display: inline-flex;
   align-items: center;
@@ -673,25 +598,6 @@
   color: var(--text-2);
   font-size: 0.75rem;
   text-decoration: none;
-}
-.link-chip-text {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* task editor: the foot of the form, full width under both columns — Repeat
-   and Tags, then the Activity feed (comments, newest last), then Versions */
-.editor-bottom {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  border-top: 1px solid var(--border);
-  padding-top: 14px;
-}
-.editor-bottom .versions {
-  margin-top: 0;
 }
 .activity .comments {
   position: relative;
@@ -723,171 +629,20 @@
   background: var(--accent);
   box-shadow: 0 0 0 3px var(--surface);
 }
-.activity-empty {
-  margin: 0;
-  font-size: 0.8125rem;
-  color: var(--muted);
-}
 @media (pointer: coarse) {
   .link-chip {
     min-height: 44px;
     padding: 6px 14px;
   }
 }
-
-/* ===================== Notes: the list and one note ========================
-   Tasks → Notes once the shell passes `notes`: one list of note records and
-   every non-empty project pad (notes/NotesIndex.tsx), and a note's own screen
-   (notes/NotePane.tsx: title, About, pin, delete, then the pad's editor). The
-   pad index and the pad keep the rules above; everything in this block hangs
-   off .notes-records, .note-list, .note-row and .note-page. Other streams
-   append their own blocks after this one — keep this one whole.
-   ========================================================================== */
-.notes-search {
-  display: block;
-  width: 100%;
-  max-width: 560px;
-  margin: 0 0 12px;
-  -webkit-appearance: none;
-  appearance: none;
-}
-.note-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  max-width: 860px;
-}
-.note-row {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  width: 100%;
-  min-width: 0;
-  padding: 11px 14px;
-  text-align: left;
-  color: var(--text);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
-}
-.note-row-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-.note-row-title {
-  flex: 1;
-  min-width: 0;
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.note-row-excerpt {
-  display: block;
-  min-width: 0;
-  font-size: 0.8125rem;
-  color: var(--text-2);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-/* Only a SHARED note is marked, so this is never on most rows: private is the
-   default and a badge on every row would say nothing. It sits between the
-   title and the time, and gives up its width first — the title is what a
-   person is reading the row for. */
-.notes-no-match {
-  margin: 4px 0;
-  color: var(--muted);
-}
 /* a row dims under a finger, as a .btn does */
-
-/* one note.
-   The header carries four controls now — back, share, pin and delete — and on
-   a phone they are thumbs, not a mouse. 4px put Unpin and Delete one mis-tap
-   apart, which was fine in a browser tab and is not fine in an app: "give
-   proper spacing between buttons now that we are on an application". So 8px
-   here, 10px under a finger, and a 44px-tall target there, which is the
-   smallest Apple's guidance allows. It wraps rather than squashes: at 375pt
-   the longest set of words ("All notes", "🔒 Private", "📌 Unpin", "Delete")
-   does not fit on one line, and a second line reads better than four
-   half-legible buttons. */
-.note-head {
-  gap: 8px;
-  flex-wrap: wrap;
-}
-/* The pad's header has no gap of its own, so All notes carries a 12px margin
-   there (14-kitchen-today.css). Here the gap does that job, and the margin on
-   top of it was what tipped the row over: measured at 375pt the four buttons
-   came to 355px in a 351px header, so Delete wrapped onto a line of its own. */
-.note-head .notes-back {
-  margin-right: 0;
-}
 .note-head .btn {
   white-space: nowrap;
 }
-/* Share, pin and delete as one block, right-aligned, wrapping within itself.
-   At 375pt with a note pinned they are ~9px too wide for one line; the button
-   that gives way then sits under the others instead of under All notes. */
-.note-head-actions {
-  display: flex;
-  /* grows so that when the group drops to a line of its own it still fills it,
-     and flex-end then keeps the buttons under the right edge rather than
-     stranding them under All notes */
-  flex: 1 1 auto;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-}
 @media (pointer: coarse) {
-  .note-head,
-  .note-head-actions {
-    gap: 10px;
-  }
   .note-head .btn {
     min-height: 44px;
   }
-}
-/* On a phone the group always drops to a line of its own (the measurements
-   above), and flex-end then held all three against the right edge with 92pt
-   of empty line to the left of them — stranded at the other end instead of
-   under "All notes", but stranded. With a whole line to themselves they
-   spread across it, which is neither (v3.28). */
-@media (max-width: 640px) {
-  .note-head-actions {
-    justify-content: space-between;
-  }
-}
-.note-pin.on {
-  color: var(--accent-text);
-}
-/* Shared reads as on, the way a pin does; private is the resting state and is
-   left alone, because it is what every note is until its owner decides. */
-.note-share.on {
-  color: var(--accent-text);
-}
-/* Somebody else's note: a statement, not a control. Only its owner can stop
-   sharing it, so there is nothing here to press. */
-.note-shared-by {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  max-width: 45%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--text-2);
-  background: var(--surface-2);
-  border-radius: 999px;
-  padding: 4px 10px;
 }
 /* ===================== end Notes: the list and one note ===================== */
 

@@ -1,4 +1,3 @@
-import { Admin } from './lazy'
 import type { PlannerCtx } from './ctx'
 import { PushedScreen } from './PushedScreen'
 
@@ -12,6 +11,7 @@ import { PushedScreen } from './PushedScreen'
  * floating over the text here for the same reason they did there.
  */
 export function AdminScreen({ p }: { p: PlannerCtx }) {
+  const { Admin } = p.views
   const { setPushed, adminGroup } = p
   return (
     <PushedScreen title="Admin" onBack={() => setPushed(null)}>

@@ -1,0 +1,80 @@
+/* Settings's own rules: the ones only it can match, loaded with its chunk
+   (components/planner/lazy.ts) instead of before the first paint. Nothing
+   the launch draws may need one (styles.test.ts holds that). Rules the shell
+   or another view also match, and any that must keep their place against a
+   later partial, stay in the partials. These keep their order among
+   themselves; the partial each came from is named above it. */
+
+/* ---------- from 07-dialogs-dashboard.css ---------- */
+.sync-off {
+  color: var(--muted);
+}
+
+/* ---------- from 10-editor-notes.css ---------- */
+.cal-add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.cal-add-name {
+  flex: 1 1 120px;
+}
+.cal-add-url {
+  flex: 3 1 240px;
+}
+
+/* ---------- from 11-people-review-search.css ---------- */
+.digest-hour {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+/* ---------- from 12-household-settings.css ---------- */
+/* connected Outlook accounts */
+.ms-account {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  background: var(--surface-2);
+}
+.ms-account .sync-line {
+  margin-top: 0;
+}
+/* Settings → You (v3.25): your picture beside what you can change about it,
+   and the two password boxes as their own block so Cancel sits with them. */
+.profile-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.profile-face-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 200px;
+  min-width: 180px;
+}
+.profile-password {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+/* "More…" in the Settings nav: the same chip as a group, dimmed, because it
+   opens the rest of the list rather than a page of its own. */
+.settings-more {
+  color: var(--text-2);
+}

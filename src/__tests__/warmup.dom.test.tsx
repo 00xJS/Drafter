@@ -38,10 +38,10 @@ beforeEach(() => {
 })
 
 describe('the warm-up on the web', () => {
-  it('warms every lazy view and sheet once, Admin aside', () => {
+  it('warms every lazy view, screen and sheet once, Admin and its screen aside', () => {
     const names = named(PRELOAD_ORDER)
     expect(new Set(names).size).toBe(names.length)
-    expect([...names].sort()).toEqual(views.map(([name]) => name).filter(n => n !== 'Admin').sort())
+    expect([...names].sort()).toEqual(views.map(([name]) => name).filter(n => n !== 'Admin' && n !== 'AdminScreen').sort())
   })
 
   it("starts with what the top bar opens from anywhere, and leaves the assistant's own views to last", () => {
@@ -54,13 +54,13 @@ describe('the warm-up on the web', () => {
     shell.native = false
     render(<Launch owner />)
     expect(load.scheduled).toEqual([PRELOAD_ORDER])
-    expect(load.warmed).toEqual([[lazy.Admin.preload]])
+    expect(load.warmed).toEqual([[lazy.Admin.preload, lazy.AdminScreen.preload]])
   })
 })
 
 describe('the warm-up in the iOS app', () => {
-  it('parses only the task editor, search and Settings ahead', () => {
-    expect(named(NATIVE_PRELOAD_ORDER)).toEqual(['TaskEditor', 'Search', 'Settings'])
+  it('parses only the task editor, search and Settings ahead, with the screen Settings opens in', () => {
+    expect(named(NATIVE_PRELOAD_ORDER)).toEqual(['TaskEditor', 'Search', 'Settings', 'SettingsScreen'])
     expect(preloadOrder(true)).toBe(NATIVE_PRELOAD_ORDER)
     expect(preloadOrder(false)).toBe(PRELOAD_ORDER)
   })

@@ -636,7 +636,9 @@ describe('Home → Wardrobe', () => {
     // the tab bar and the way in is Keep's own track.
     at10()
     const store = { garments: [...tops, ...bottoms], outfits: [], wears: [], upsert: noop, remove: noop, restore: noop }
-    const p = { store, household: { myId: null }, keepTab: 'wardrobe', wardrobeOpen: null, setKeepTab: noop, setWardrobeOpen: noop, showToast: noop } as unknown as PlannerCtx
+    // the views as the shell hands them down; the Wardrobe itself, as its warm-up leaves it loaded
+    const views = { Wardrobe }
+    const p = { store, household: { myId: null }, keepTab: 'wardrobe', wardrobeOpen: null, setKeepTab: noop, setWardrobeOpen: noop, showToast: noop, views } as unknown as PlannerCtx
     const html = renderToStaticMarkup(<KeepScreen p={p} />)
     const tabs = [...html.matchAll(/role="tab" aria-selected="(true|false)" class="seg(?: on)?">([^<]+)</g)].map(m => `${m[2]}${m[1] === 'true' ? '*' : ''}`)
     expect(tabs).toEqual(['People', 'Places', 'Kitchen', 'Wardrobe*', 'Outfit*', 'Clothes', 'Stats'])

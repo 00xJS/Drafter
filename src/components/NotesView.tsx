@@ -61,6 +61,9 @@ function NotesPane({ project, getLatest, onSave, onCreateTask, onBack }: PanePro
 
   const change = (next: string) => {
     setText(next)
+    // at once, not after the next draw: the pad writes out its last words as
+    // it closes or the page hides, and the save that follows must have them
+    textRef.current = next
     dirtyRef.current = true
     setDirty(true)
     window.clearTimeout(timer.current)

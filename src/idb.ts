@@ -34,27 +34,90 @@ interface StoredMeta {
   seq?: number
 }
 
+/*
+ * One connection for the page, opened on the first read or write and kept.
+ * Every call used to open its own and close it when its transaction finished
+ * — and a request that failed never finished, so its connection stayed open.
+ * The kept one is let go (closed, and forgotten, so the next call opens a
+ * fresh one) whenever it cannot be trusted any more:
+ *   - another tab or sign-out wants the database changed or deleted
+ *     (versionchange): a connection left open would hold that up;
+ *   - the browser closed it underneath the page (close): WebKit does so to a
+ *     frozen or backgrounded page, and under storage pressure;
+ *   - a request on it failed: WebKit's "Connection to Indexed Database server
+ *     lost" fails every later transaction on that connection too.
+ */
+let connection: Promise<IDBDatabase> | null = null
+let connected: IDBDatabase | null = null
+
+/** Close this connection and forget it, if it is the page's: the next call opens a fresh one. */
+function release(db: IDBDatabase | null | undefined): void {
+  if (!db) return
+  if (db === connected) {
+    connected = null
+    connection = null
+  }
+  try {
+    db.close()
+  } catch {
+    /* already closed */
+  }
+}
+
 function open(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
+  if (connection) return connection
+  const opening = new Promise<IDBDatabase>((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION)
     req.onupgradeneeded = () => {
       for (const s of STORES) {
         if (!req.result.objectStoreNames.contains(s)) req.result.createObjectStore(s)
       }
     }
-    req.onsuccess = () => resolve(req.result)
+    req.onsuccess = () => {
+      const db = req.result
+      db.onversionchange = () => release(db)
+      db.onclose = () => release(db)
+      // a release that came while this was opening leaves it unkept
+      if (connection === opening) connected = db
+      else db.close()
+      resolve(db)
+    }
     req.onerror = () => reject(req.error)
   })
+  connection = opening
+  // an open that failed is not kept: the next call tries again
+  opening.catch(() => {
+    if (connection === opening) connection = null
+  })
+  return opening
+}
+
+/**
+ * A transaction on the page's connection. One the browser closed without a
+ * word refuses a transaction (InvalidStateError): it is let go, and the
+ * transaction is asked of a fresh connection, once.
+ */
+async function begin(stores: string | string[], mode: IDBTransactionMode): Promise<IDBTransaction> {
+  for (let attempt = 0; ; attempt++) {
+    const db = await open()
+    try {
+      return db.transaction(stores, mode)
+    } catch (e) {
+      release(db)
+      if (attempt > 0 || (e as DOMException | null)?.name !== 'InvalidStateError') throw e
+    }
+  }
 }
 
 async function withStore<T>(store: string, mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRequest): Promise<T> {
-  const db = await open()
+  const tx = await begin(store, mode)
   return new Promise<T>((resolve, reject) => {
-    const tx = db.transaction(store, mode)
     const req = fn(tx.objectStore(store))
     req.onsuccess = () => resolve(req.result as T)
-    req.onerror = () => reject(req.error)
-    tx.oncomplete = () => db.close()
+    req.onerror = () => {
+      reject(req.error)
+      release(tx.db)
+    }
   })
 }
 
@@ -65,27 +128,25 @@ async function withStore<T>(store: string, mode: IDBTransactionMode, fn: (s: IDB
  * rather than letting the requests queued before it commit on their own.
  */
 async function transact(stores: string[], mode: IDBTransactionMode, fn: (tx: IDBTransaction) => void): Promise<void> {
-  const db = await open()
-  try {
-    await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction(stores, mode)
-      tx.oncomplete = () => resolve()
-      tx.onerror = () => reject(tx.error)
-      tx.onabort = () => reject(tx.error ?? new Error('IndexedDB transaction aborted'))
+  const tx = await begin(stores, mode)
+  await new Promise<void>((resolve, reject) => {
+    tx.oncomplete = () => resolve()
+    tx.onerror = () => {
+      reject(tx.error)
+      release(tx.db)
+    }
+    tx.onabort = () => reject(tx.error ?? new Error('IndexedDB transaction aborted'))
+    try {
+      fn(tx)
+    } catch (e) {
       try {
-        fn(tx)
-      } catch (e) {
-        try {
-          tx.abort()
-        } catch {
-          /* already finished */
-        }
-        reject(e)
+        tx.abort()
+      } catch {
+        /* already finished */
       }
-    })
-  } finally {
-    db.close()
-  }
+      reject(e)
+    }
+  })
 }
 
 export function idbGet<T>(store: string, key: string): Promise<T | undefined> {
@@ -100,7 +161,7 @@ export function idbDel(store: string, key: string): Promise<unknown> {
   return withStore(store, 'readwrite', s => s.delete(key))
 }
 
-/** Every value in a store: the media upload queue reads its pending photos from here. */
+/** Every value in a store: the photo trim, sign-out's count of unsent photos, and the first upload flush on a device read the photos so (src/media.ts). */
 export function idbAll<T>(store: string): Promise<T[]> {
   return withStore<T[]>(store, 'readonly', s => s.getAll())
 }
@@ -294,6 +355,11 @@ export async function clearLocalData(): Promise<void> {
     /* no database to empty; the delete below is the wipe */
   })
   await Promise.race([emptied, new Promise(resolve => setTimeout(resolve, 2_000))])
+  // This page's own connection goes first, as a delete waits on every open
+  // one (another tab's lets go when the delete asks, open()); one still
+  // opening is closed as it lands.
+  release(connected)
+  connection = null
   await new Promise<void>(resolve => {
     try {
       const req = indexedDB.deleteDatabase(DB_NAME)

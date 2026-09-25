@@ -6,6 +6,43 @@
    themselves; the partial each came from is named above it. */
 
 /* ---------- from 18-stats-lens.css ---------- */
+.ink-tasks {
+  --area-ink: var(--tone-blue);
+}
+.ink-money {
+  --area-ink: var(--tone-green);
+}
+.ink-habits {
+  --area-ink: var(--tone-mint);
+}
+.area-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
+  gap: 10px;
+}
+.lens-rows {
+  display: flex;
+  flex-direction: column;
+}
+/* the mood columns, one per step, so the shape of a month reads without a key */
+.mood-spread {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 6px 0 0;
+  min-height: 92px;
+}
+.mood-spread > div {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  min-width: 0;
+}
+
+/* ---------- from 18-stats-lens.css ---------- */
 /* A run of cards under one heading, rather than a page of equal white boxes:
    the heading sits OUTSIDE the cards, on the page ground, so a section reads
    as a group before you read any figure in it. */
