@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { cashLine, cashRunway, comingUp, countsList, moneyForecast, safeLine, safeToSpend, seriesDays, undatedLine, withBalance, type SafeToSpend } from '../finance'
+import { cashLine, cashRunway, comingUp, countsList, moneyForecast, safeLine, safeToSpend, seriesDays, staleSpendable, undatedLine, withBalance, type SafeToSpend } from '../finance'
 import { dayLabel, moneyName, shortDay } from '../components/finance/labels'
 import { RECURRENCE_FREQS, nextOccurrence, stepDue } from '../../shared/domain.mts'
 import { dateKey } from '../utils'
@@ -175,6 +175,70 @@ describe('the balance you checked in is the truth on its day', () => {
   })
 })
 
+describe('checking and cash checked in on different days', () => {
+  // the day it counts from is the NEWEST check-in on checking and cash: an
+  // account left out of it counts as it stands, and one left out by more than
+  // a week is stale, and said to be
+
+  it('counts from this morning’s checking, not from a wallet last touched in June', () => {
+    // $3,000 in checking typed in today; $80 in the wallet, last typed in on
+    // June 1; and every rent and paycheck of the months between, ticked off
+    const chk = account('chk', 'checking', [[TODAY, 3000]])
+    const wallet = account('wallet', 'cash', [['2026-06-01', 80]])
+    const paid = (id: string, kind: BillKind, amount: number, dueAt: string) => once(id, kind, amount, dueAt, { status: 'done', actualCost: amount, completedAt: dueAt })
+    const rows = [
+      paid('rent', 'bill', 1850, day(6, 1)),
+      ...[7, 8, 9].map(m => paid(`rent~monthly~2026-${String(m).padStart(2, '0')}-01`, 'bill', 1850, day(m, 1))),
+      money('rent~monthly~2026-10-01', 'bill', 1850, day(10, 1)),
+      paid('pay', 'income', 2450, day(6, 12)),
+      ...[
+        [6, 26],
+        [7, 10],
+        [7, 24],
+        [8, 7],
+        [8, 21],
+        [9, 4],
+        [9, 18],
+      ].map(([m, d]) => paid(`pay~biweekly~2026-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`, 'income', 2450, day(m, d))),
+      money('pay~biweekly~2026-10-02', 'income', 2450, day(10, 2)),
+    ]
+    const f = moneyForecast([chk, wallet], rows, 30, NOW)
+    // $3,080 at the end of today, and only what is dated after today on top of it
+    expect(f).toMatchObject({ asOf: TODAY, checkedIn: 3080, now: 3080 })
+    expect(f.days.map(d => [d.day, d.change, d.balance])).toEqual([
+      ['2026-10-01', -1850, 1230],
+      ['2026-10-02', 2450, 3680],
+      ['2026-10-16', 2450, 6130],
+    ])
+    // the wallet counts as it stands, and is said to be stale
+    expect(f.stale).toEqual([{ account: wallet, on: '2026-06-01' }])
+    expect(safeToSpend([chk, wallet], rows, NOW)).toMatchObject({ amount: 1230, asOf: TODAY, low: '2026-10-01', bills: 1, paydays: 2, stale: [{ account: wallet, on: '2026-06-01' }] })
+  })
+
+  it('takes a check-in typed mid-week for all of it: Thursday’s checking already has Tuesday’s rent in it', () => {
+    // the wallet typed in on Monday, checking on Thursday after the rent went
+    const accounts = [account('wallet', 'cash', [['2026-09-21', 60]]), account('chk', 'checking', [[TODAY, 1000]])]
+    const rows = [once('rent', 'bill', 500, day(9, 22)), once('phone', 'bill', 40, day(9, 26))]
+    const f = moneyForecast(accounts, rows, 30, NOW)
+    expect(f).toMatchObject({ asOf: TODAY, checkedIn: 1060, stale: [] })
+    expect(f.days.map(d => [d.day, d.balance])).toEqual([['2026-09-26', 1020]])
+    expect(comingUp(accounts, rows, NOW).rows.find(r => r.task.id === 'rent')).toMatchObject({ inBalance: true })
+    expect(safeToSpend(accounts, rows, NOW)).toMatchObject({ amount: 1020, stale: [] })
+  })
+
+  it('calls an account stale once it is more than a week behind the newest, and only checking or cash', () => {
+    const chk = checkedIn(TODAY, 100)
+    expect(staleSpendable([chk, account('w', 'cash', [['2026-09-17', 5]])])).toEqual([])
+    const late = account('w', 'cash', [['2026-09-16', 5]])
+    expect(staleSpendable([chk, late])).toEqual([{ account: late, on: '2026-09-16' }])
+    // savings is kept rather than spent, and a card or an archived account is not in the figure at all
+    const kept = [account('sav', 'savings', [['2026-01-01', 9000]]), account('card', 'credit', [['2026-01-01', 50]]), { ...account('old', 'cash', [['2026-01-01', 5]]), archivedAt: STAMP }]
+    expect(staleSpendable([chk, ...kept])).toEqual([])
+    // nothing checked in, nothing to be behind
+    expect(staleSpendable([account('empty', 'cash')])).toEqual([])
+  })
+})
+
 describe('money in and money out alike', () => {
   it('nets a paycheck and a bill of the same size on the same day to nothing', () => {
     const chk = checkedIn(TODAY, 1000)
@@ -287,6 +351,21 @@ describe('a series counts once', () => {
     ])
   })
 
+  it('counts a payday ticked off early and then reopened on its own day, beside the next one, which repeats', () => {
+    // received early: the next one is spawned and takes the repeat with it;
+    // reopened after, the first is an occurrence of its own again
+    const first = money('pay', 'income', 2000, day(9, 26))
+    const next = nextOccurrence({ ...first, status: 'done', completedAt: day(9, 24) }, () => '')!
+    const reopened = { ...first, recurrence: undefined }
+    const rows = comingUp([chk], [reopened, next], NOW).rows
+    expect(rows.map(r => [r.task.id, r.due, r.projected])).toEqual([
+      ['pay', '2026-09-26', false],
+      [next.id, '2026-10-10', false],
+      [next.id, '2026-10-24', true],
+    ])
+    expect(safeToSpend([chk], [reopened, next], NOW)).toMatchObject({ amount: 5000, paydays: 3 })
+  })
+
   it('never projects over a day the series already has written down', () => {
     // next month's ticked off already: the open one is still this month's
     const open = money('phone', 'bill', 60, day(10, 5))
@@ -384,6 +463,7 @@ describe('what it says under the figure', () => {
     unpriced: 0,
     undated: { bills: 0, paydays: 0, setAsides: 0 },
     unchecked: 0,
+    stale: [],
     ...over,
   })
 

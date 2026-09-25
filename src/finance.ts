@@ -138,7 +138,11 @@ export interface MoneyTotals {
   unknown: number
   /** The oldest of the check-ins the totals are built from — how stale the picture is. */
   asOf: string | null
-  /** The same, over the spendable accounts alone: how stale `spendable` is. */
+  /**
+   * The NEWEST check-in on checking and cash: the day safe to spend counts
+   * from (the one rule, below). An account left further behind than a week is
+   * stale (staleSpendable), and counts as it stands.
+   */
   spendableAsOf: string | null
 }
 
@@ -149,6 +153,11 @@ export interface MoneyTotals {
  * built from one balance typed this morning and one from March is only as
  * good as March. The view says so rather than implying the whole picture is
  * fresh.
+ *
+ * `spendableAsOf` is the newest on checking and cash, and as deliberately: it
+ * is the day the forecast counts bills and paydays from, and counting from a
+ * wallet last touched in June would put every rent and paycheck since June on
+ * top of a checking balance that already has them.
  */
 export function moneyTotals(accounts: readonly Account[]): MoneyTotals {
   let net = 0
@@ -173,12 +182,37 @@ export function moneyTotals(accounts: readonly Account[]): MoneyTotals {
     }
     if (isSpendable(a)) {
       spendable += b.amount
-      if (!spendableAsOf || b.on < spendableAsOf) spendableAsOf = b.on
+      if (!spendableAsOf || b.on > spendableAsOf) spendableAsOf = b.on
     }
     if (!asOf || b.on < asOf) asOf = b.on
   }
   const round = (n: number) => Math.round(n * 100) / 100
   return { net: round(net), liquid: round(liquid), spendable: round(spendable), owed: round(owed), unknown, asOf, spendableAsOf }
+}
+
+/** Checking or cash left out of the newest check-in: its balance, as it stands, and the day it was typed in. */
+export interface StaleBalance {
+  account: Account
+  /** Its newest check-in, YYYY-MM-DD: more than STALE_DAYS before the newest on checking and cash. */
+  on: string
+}
+
+/**
+ * The checking and cash accounts checked in more than STALE_DAYS before the
+ * newest check-in on any of them (`asOf`, moneyTotals' spendableAsOf): left
+ * out of the check-ins since. What each holds still counts, as it stands —
+ * the money is still there — and Finance names each one beside safe to spend
+ * and on its chip, with the way to Check in. Oldest first.
+ */
+export function staleSpendable(accounts: readonly Account[], asOf: string | null = moneyTotals(accounts).spendableAsOf): StaleBalance[] {
+  if (!asOf) return []
+  return countable(accounts)
+    .filter(isSpendable)
+    .flatMap(account => {
+      const b = latestBalance(account)
+      return b && daysBetween(b.on, asOf) > STALE_DAYS ? [{ account, on: b.on }] : []
+    })
+    .sort((a, b) => a.on.localeCompare(b.on) || a.account.name.localeCompare(b.account.name))
 }
 
 export type AccountGroupKey = 'spending' | 'savings' | 'investments' | 'owed'
@@ -221,6 +255,16 @@ export function accountGroups(accounts: readonly Account[]): AccountGroup[] {
 // set-aside dated AFTER that day counts: money in and money out alike, done or
 // not. Anything dated on or before it is already in the balance.
 //
+// With checking and cash checked in on different days, that day is the NEWEST
+// of their check-ins. Check in types every account at once, so the newest is
+// the one the bills and paydays since have gone through; an account left out
+// of it counts as it stands, since its money is still there. One left behind
+// by more than STALE_DAYS is stale (staleSpendable), and Finance says so
+// beside safe to spend and on its chip rather than guessing at it. Counting
+// from the OLDEST, as this once did, put everything since a wallet was last
+// touched on top of a checking balance typed this morning: an $80 wallet from
+// June counted every rent and paycheck since June a second time.
+//
 // The timeline used to take the bills off and never put a payday on. A payday
 // due today or already gone by was left out while an overdue bill came off,
 // and a series counted its one open occurrence alone, so a fortnightly wage
@@ -237,13 +281,21 @@ export function accountGroups(accounts: readonly Account[]): AccountGroup[] {
 // amount due when nothing was typed, as withPaidDefault records it) and the
 // rest the amount due; one with no amount is listed and never counted.
 //
-// A repeat counts every time it lands. Each series is stepped on from its open
-// occurrence (its last one, when none is open and it still repeats) with
-// stepDue, the step nextOccurrence takes when one is ticked off, so these are
-// the days the real occurrences will have. That goes for an open one whose
-// day has gone as well: a rent paid by autopay, or a wage paid in, that nobody
-// ticks off still comes round next time. The ones a repeat brings are
-// expected, not tasks: Coming up draws them lighter, with nothing to tick.
+// A repeat counts every time it lands. Each series is stepped on from the
+// latest occurrence that carries the repeat — the open one, or the last done
+// one when none open does — with stepDue, the step nextOccurrence takes when
+// one is ticked off, so these are the days the real occurrences will have.
+// That goes for an open one whose day has gone as well: a rent paid by
+// autopay, or a wage paid in, that nobody ticks off still comes round next
+// time. The ones a repeat brings are expected, not tasks: Coming up draws them
+// lighter, with nothing to tick.
+//
+// Every open occurrence counts on its own day. One ticked off hands its repeat
+// on to the next and keeps none, so a payday marked received early and then
+// reopened is an occurrence of its own beside the next, which carries the
+// repeat now: both count, and the series steps on from the second. Only two
+// open copies that BOTH carry the repeat are one occurrence, ticked off on two
+// devices before they met, and the first of them is kept.
 
 const round = (n: number) => Math.round(n * 100) / 100
 
@@ -340,10 +392,12 @@ export interface MoneyForecast {
   /** Today, and the last day it looks at: YYYY-MM-DD. */
   today: string
   through: string
-  /** What checking and cash held when checked in (never savings). */
+  /** What checking and cash held when checked in (never savings): each as it stands, a stale one's included. */
   checkedIn: number
-  /** The day that was true: the oldest of their check-ins (moneyTotals). Null with none, and then nothing counts. */
+  /** The day that was true: the newest of their check-ins (moneyTotals). Null with none, and then nothing counts. */
   asOf: string | null
+  /** Checking and cash left out of the check-ins since, by more than STALE_DAYS: counted as they stand, and said. */
+  stale: StaleBalance[]
   /** Every occurrence up to `through`, open, done and projected, in Coming up's order: overdue first, then by day, money in before money out. */
   rows: MoneyRow[]
   /** Open bills, paydays and set-asides with no date: never counted, and never dropped. */
@@ -375,8 +429,9 @@ const paydaysFirst = (a: Task, b: Task) => Number(isPayday(b)) - Number(isPayday
  * Open is to do, doing or blocked: one still on the Wishlist, or cancelled, is
  * not money anybody owes or is owed (the rule the Stats lens and the month of
  * bills keep). A series is its occurrences' shared id (seriesRoot, as
- * savedSoFar reads it), so two open copies of one, ticked off on two devices,
- * count once, and a day it already has written down is never projected over.
+ * savedSoFar reads it), so two open copies of one that both carry the repeat,
+ * ticked off on two devices, count once, and a day it already has written
+ * down is never projected over.
  */
 export function moneyForecast(accounts: readonly Account[], tasks: readonly Task[], days: number, now: Date): MoneyForecast {
   const today = dateKey(now)
@@ -400,7 +455,8 @@ export function moneyForecast(accounts: readonly Account[], tasks: readonly Task
 
   const rows: MoneyRow[] = []
   const undated: (Task & { bill: Bill })[] = []
-  const series = new Map<string, { open?: Task & { bill: Bill }; openDue: string; last?: Task & { bill: Bill }; lastDue: string; days: Set<string> }>()
+  type Dated = { task: Task & { bill: Bill }; due: string }
+  const series = new Map<string, { open: Dated[]; last?: Dated; days: Set<string> }>()
   for (const t of tasks) {
     if (!isMoney(t)) continue
     const done = t.status === 'done'
@@ -412,23 +468,27 @@ export function moneyForecast(accounts: readonly Account[], tasks: readonly Task
     }
     const root = seriesRoot(t.id)
     let s = series.get(root)
-    if (!s) series.set(root, (s = { openDue: '', lastDue: '', days: new Set() }))
+    if (!s) series.set(root, (s = { open: [], days: new Set() }))
     s.days.add(due)
     if (done) {
       // what a series that has run out of open ones still repeats from
-      if (t.recurrence && due > s.lastDue) {
-        s.last = t
-        s.lastDue = due
-      }
+      if (t.recurrence && (!s.last || due > s.last.due)) s.last = { task: t, due }
       if (due <= through && !inBalance(due)) rows.push(row(t, due, 'done'))
-    } else if (!s.open || due < s.openDue) {
-      s.open = t
-      s.openDue = due
-    }
+    } else s.open.push({ task: t, due })
   }
   for (const s of series.values()) {
-    if (s.open && s.openDue <= through) rows.push(row(s.open, s.openDue, 'open'))
-    const from = s.open ?? s.last
+    // every open occurrence on its own day; of the ones carrying the repeat,
+    // the first alone — the others are it again, ticked off on another device
+    let repeats: Dated | undefined
+    for (const o of s.open.sort((a, b) => a.due.localeCompare(b.due) || a.task.id.localeCompare(b.task.id))) {
+      if (o.task.recurrence) {
+        if (repeats) continue
+        repeats = o
+      }
+      if (o.due <= through) rows.push(row(o.task, o.due, 'open'))
+    }
+    // stepped on from the latest occurrence that still repeats
+    const from = repeats && (!s.last || repeats.due >= s.last.due) ? repeats.task : s.last?.task
     if (!from?.recurrence) continue
     for (const due of seriesDays(from, through).slice(1)) {
       if (s.days.has(due) || inBalance(due)) continue
@@ -486,6 +546,7 @@ export function moneyForecast(accounts: readonly Account[], tasks: readonly Task
     through,
     checkedIn: totals.spendable,
     asOf,
+    stale: staleSpendable(accounts, asOf),
     rows,
     undated: undated.sort(paydaysFirst),
     days: out,
@@ -552,8 +613,10 @@ export interface SafeToSpend {
   amount: number | null
   /** What checking and cash held when checked in (never savings). */
   spendable: number
-  /** The oldest check-in on those accounts (moneyTotals): the day it counts from, and how stale the figure is. */
+  /** The newest check-in on those accounts (moneyTotals): the day it counts from, and how old the figure is. */
   asOf: string | null
+  /** Checking and cash left out of the check-ins since by more than STALE_DAYS: in the figure as they stand, and named under it. */
+  stale: StaleBalance[]
   /** The day the line is lowest, YYYY-MM-DD: the first day it gets there, and today when nothing takes it lower. */
   low: string
   /** The first payday after that day in the window: the one the low point comes before. */
@@ -595,6 +658,7 @@ export function safeToSpend(accounts: readonly Account[], tasks: readonly Task[]
     amount: f.asOf === null ? null : f.low.balance,
     spendable: f.checkedIn,
     asOf: f.asOf,
+    stale: f.stale,
     low: f.low.day,
     before: f.rows.find(r => r.income && !r.inBalance && r.amount !== undefined && r.day > f.low.day) ?? null,
     after: out.reduce<MoneyRow | null>((big, r) => (!big || r.amount! > big.amount! ? r : big), null),

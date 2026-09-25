@@ -247,6 +247,30 @@ describe('the pay periods, filled in', () => {
     expect(within(dialog()).getByRole('heading', { name: 'Check in' })).toBeTruthy()
   })
 
+  it('names checking or cash left out of the check-ins since, on the card and its chip, and checks it in from there', () => {
+    // checking typed in this morning; the wallet last in June: it counts as it stands, and says so
+    const wallet = account('wallet', 'Wallet', 'cash', ['2026-06-01', 80])
+    render(<Finance {...props({ accounts: [account('chk', 'Joint checking', 'checking', ['2026-09-23', 3000]), wallet] })} />)
+    const hero = card('Safe to spend')
+    expect(hero.textContent).toContain('Balances from today')
+    expect(hero.querySelector('.fin-hero-behind')?.textContent).toBe('Wallet · last checked in Jun 1')
+    const chip = screen.getByRole('button', { name: /^Wallet: \$80\.00, last checked in Jun 1/ })
+    expect(chip.querySelector('small')?.className).toBe('stale')
+    expect(chip.querySelector('small')?.textContent).toBe('last checked in Jun 1')
+    // checking is fresh, and says only how old it is
+    expect(screen.getByRole('button', { name: /^Joint checking: \$3,000\.00, today/ })).toBeTruthy()
+    // the card's Check in opens on the wallet
+    fireEvent.click(within(hero).getByRole('button', { name: 'Check in' }))
+    const row = within(dialog()).getByLabelText('Wallet: balance today').closest('li')
+    expect(row?.className).toBe('checkin-row focus')
+  })
+
+  it('says nothing of the kind when every account was checked in within the week', () => {
+    render(<Finance {...props({ accounts: [account('chk', 'Joint checking', 'checking', ['2026-09-23', 3000]), account('wallet', 'Wallet', 'cash', ['2026-09-18', 80])] })} />)
+    expect(card('Safe to spend').querySelector('.fin-hero-behind')).toBeNull()
+    expect(screen.getByRole('button', { name: /^Wallet: \$80\.00, 5d/ })).toBeTruthy()
+  })
+
   it('shows a goal as a row with its bar, what it has saved and whether it is on track', () => {
     const p = props()
     render(<Finance {...p} />)
