@@ -68,7 +68,7 @@ import type { CaptureMode } from './kitchen/RecipeCapture'
 import { RecipeFillFlow } from './kitchen/RecipeFillFlow'
 import { Icon } from './Icon'
 import { MealDayCard } from './kitchen/MealCards'
-import { Modal, ModalCancel, ModalHead, useChanged } from './Modal'
+import { Modal, ModalHead, useChanged } from './Modal'
 import { MealPlanSheet, mealsForPicks, type MealPick } from './MealPlanSheet'
 import { RecipeSuggestions } from './RecipeSuggestions'
 import { KitchenStats } from './planner/lazy'
@@ -1775,7 +1775,11 @@ export function RecipeForm({
 
   return (
     <Modal onClose={onClose} dirty={dirty}>
-      <ModalHead title={recipe ? `Edit ${recipe.name}` : 'New recipe'} />
+      <ModalHead title={recipe ? `Edit ${recipe.name}` : 'New recipe'} variant="compose">
+        <button type="button" className="btn primary" onClick={save} disabled={!name.trim()}>
+          Save
+        </button>
+      </ModalHead>
       <div className="modal-body">
         <RecipeCapture
           name={name}
@@ -1855,18 +1859,13 @@ export function RecipeForm({
           </div>
         )}
       </div>
-      <footer className="modal-foot">
-        {recipe && onDelete && (
+      {recipe && onDelete && (
+        <footer className="modal-foot">
           <ConfirmButton className="btn subtle danger" confirmLabel="Click again to remove" onConfirm={() => onDelete(recipe.id)}>
             Delete
           </ConfirmButton>
-        )}
-        <span className="spacer" />
-        <ModalCancel />
-        <button className="btn primary" onClick={save} disabled={!name.trim()}>
-          Save
-        </button>
-      </footer>
+        </footer>
+      )}
     </Modal>
   )
 }

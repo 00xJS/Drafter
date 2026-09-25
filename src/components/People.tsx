@@ -7,7 +7,7 @@ import { localDayKey, mentions } from '../journal'
 import { fmtDate, fromLocalInput, uid } from '../utils'
 import { Bars } from './bits'
 import { ConfirmButton } from './ConfirmButton'
-import { Modal, ModalCancel, ModalHead, useChanged } from './Modal'
+import { Modal, ModalHead, useChanged } from './Modal'
 import { PlacePicker } from './PlacePicker'
 import { CatchUpIdea, suggestCatchUp } from '../ai'
 import { useDayKey } from '../useDayKey'
@@ -101,7 +101,11 @@ export function PersonForm({ person, onSave, onDelete, onClose }: { person?: Per
   }
   return (
     <Modal onClose={onClose} dirty={dirty} className="modal narrow">
-      <ModalHead title={person ? `Edit ${person.name}` : 'Add a person'} />
+      <ModalHead title={person ? `Edit ${person.name}` : 'Add a person'} variant="compose">
+        <button type="button" className="btn primary" disabled={!name.trim()} onClick={save}>
+          Save
+        </button>
+      </ModalHead>
       <div className="modal-body">
         <div className="field-row">
           <label className="field emoji-field">
@@ -160,8 +164,8 @@ export function PersonForm({ person, onSave, onDelete, onClose }: { person?: Per
           <textarea rows={2} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Favourite restaurant, gift ideas, what to ask about next time…" />
         </label>
       </div>
-      <footer className="modal-foot">
-        {person && onDelete && (
+      {person && onDelete && (
+        <footer className="modal-foot">
           <ConfirmButton
             className="btn subtle danger"
             confirmLabel="Click again to remove"
@@ -172,13 +176,8 @@ export function PersonForm({ person, onSave, onDelete, onClose }: { person?: Per
           >
             Remove
           </ConfirmButton>
-        )}
-        <span className="spacer" />
-        <ModalCancel />
-        <button className="btn primary" disabled={!name.trim()} onClick={save}>
-          Save
-        </button>
-      </footer>
+        </footer>
+      )}
     </Modal>
   )
 }
@@ -202,9 +201,17 @@ export function LogVisit({
   const [note, setNote] = useState('')
   const [placeId, setPlaceId] = useState<string | undefined>()
   const dirty = useChanged({ date, note, placeId })
+  const log = () => {
+    onLog(fromLocalInput(`${date}T12:00`)!, note.trim(), placeId)
+    onClose()
+  }
   return (
     <Modal onClose={onClose} dirty={dirty} className="modal narrow">
-      <ModalHead title={`Saw ${person.name}`} />
+      <ModalHead title={`Saw ${person.name}`} variant="compose">
+        <button type="button" className="btn primary" disabled={!date} onClick={log}>
+          Log it
+        </button>
+      </ModalHead>
       <div className="modal-body">
         <label className="field">
           <span>When</span>
@@ -216,20 +223,6 @@ export function LogVisit({
         </label>
         {(places.length > 0 || onSavePlace) && <PlacePicker placeId={placeId} onChange={setPlaceId} places={places} onSavePlace={onSavePlace} label="Where?" />}
       </div>
-      <footer className="modal-foot">
-        <span className="spacer" />
-        <ModalCancel />
-        <button
-          className="btn primary"
-          disabled={!date}
-          onClick={() => {
-            onLog(fromLocalInput(`${date}T12:00`)!, note.trim(), placeId)
-            onClose()
-          }}
-        >
-          Log it
-        </button>
-      </footer>
     </Modal>
   )
 }

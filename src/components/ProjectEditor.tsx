@@ -8,7 +8,7 @@ import { GithubProjectFields, fetchProjectFields, parseGithubUrl } from '../gith
 import { defaultColumnMap } from '../githubsync'
 import { GithubCard } from './GithubCard'
 import { ConfirmButton } from './ConfirmButton'
-import { Modal, ModalCancel, ModalHead } from './Modal'
+import { Modal, ModalHead } from './Modal'
 
 interface Props {
   /** The project being edited. Nothing opens the editor on a blank one: there is one ongoing project. */
@@ -324,8 +324,8 @@ export function ProjectEditor({ project, tasks, getLatest, onSave, onDelete, onC
 
   return (
     <Modal onClose={onClose} dirty={isDirty()}>
-      <ModalHead title="Edit project">
-        <button className="btn primary modal-head-save" onClick={save}>
+      <ModalHead title="Edit project" variant="compose">
+        <button type="button" className="btn primary" onClick={save}>
           Save
         </button>
       </ModalHead>
@@ -572,16 +572,13 @@ export function ProjectEditor({ project, tasks, getLatest, onSave, onDelete, onC
             {savedTemplate ? 'Saved as template ✓' : 'Save as template'}
           </button>
         )}
-        <span className="spacer" />
-        <ModalCancel />
-        {chosen && onCreateMany ? (
-          <button className="btn primary" onClick={() => createWith(chosen, templateFrom)}>
-            Add {chosen.tasks.length} task{chosen.tasks.length === 1 ? '' : 's'}
-          </button>
-        ) : (
-          <button className="btn primary" onClick={save}>
-            Save
-          </button>
+        {chosen && onCreateMany && (
+          <>
+            <span className="spacer" />
+            <button className="btn primary" onClick={() => createWith(chosen, templateFrom)}>
+              Add {chosen.tasks.length} task{chosen.tasks.length === 1 ? '' : 's'}
+            </button>
+          </>
         )}
       </footer>
     </Modal>

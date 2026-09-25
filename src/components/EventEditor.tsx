@@ -3,7 +3,7 @@ import { CalendarEntry, Person, WORK_MODES, WORK_MODE_META, WorkMode, isWorkingM
 import { newerStamp } from '../itemops'
 import { uid } from '../utils'
 import { expandWorkDays } from '../calendars'
-import { Modal, ModalCancel, ModalHead, useChanged } from './Modal'
+import { Modal, ModalHead, useChanged } from './Modal'
 import { PeoplePicker } from './PeoplePicker'
 
 // The one thing a task cannot express: a block of time with a start AND an end.
@@ -258,7 +258,11 @@ export function EventEditor({
 
   return (
     <Modal onClose={onClose} dirty={dirty} className="modal event-modal">
-      <ModalHead title={heading} />
+      <ModalHead title={heading} variant="compose">
+        <button type="button" className="btn primary" onClick={save}>
+          Save
+        </button>
+      </ModalHead>
 
       <div className="modal-body">
         {!entry && (
@@ -401,9 +405,10 @@ export function EventEditor({
         {error && <p className="form-error">{error}</p>}
       </div>
 
-      <footer className="modal-foot">
-        {entry && onDelete && (
+      {entry && onDelete && (
+        <footer className="modal-foot">
           <button
+            type="button"
             className="btn danger"
             onClick={() => {
               onDelete(entry.id)
@@ -412,13 +417,8 @@ export function EventEditor({
           >
             Delete
           </button>
-        )}
-        <span className="spacer" />
-        <ModalCancel className="btn subtle" />
-        <button className="btn primary" onClick={save}>
-          Save
-        </button>
-      </footer>
+        </footer>
+      )}
     </Modal>
   )
 }

@@ -14,11 +14,12 @@ import { MealPlanSheet } from '../components/MealPlanSheet'
 import { LogVisit, PersonForm } from '../components/People'
 import { LogOuting, PlaceForm } from '../components/Places'
 import { PlanDaySheet } from '../components/PlanDaySheet'
+import { ProjectEditor } from '../components/ProjectEditor'
 import { ShutdownSheet } from '../components/ShutdownSheet'
 import { WeekPlanSheet } from '../components/WeekPlanSheet'
 import { weekDayKeys } from '../../shared/weeks.mts'
 import type { WeekPlan } from '../../shared/weekplan.mts'
-import type { Person, Place, Task } from '../types'
+import type { Person, Place, Project, Recipe, Task } from '../types'
 
 const STAMP = '2026-09-01T00:00:00.000Z'
 const noop = () => {}
@@ -183,5 +184,31 @@ describe('an untouched sheet', () => {
     cancel()
     expect(question()).toBeNull()
     expect(onClose).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('one header layout', () => {
+  const home: Project = { kind: 'project', id: 'home', name: 'Home', color: '#f97316', status: 'active', createdAt: STAMP, updatedAt: STAMP }
+  const tacos: Recipe = { kind: 'recipe', id: 'tacos', name: 'Tacos', ingredients: [], tags: [], createdAt: STAMP, updatedAt: STAMP }
+  const sheets: [string, () => React.ReactElement, string][] = [
+    ['New event', () => <EventEditor defaultStartIso={new Date(2026, 8, 25, 10).toISOString()} people={[]} onSave={noop} onClose={noop} />, 'Save'],
+    ['Add a person', () => <PersonForm onSave={noop} onClose={noop} />, 'Save'],
+    ['Edit Mum', () => <PersonForm person={mum} onSave={noop} onDelete={noop} onClose={noop} />, 'Save'],
+    ['Saw Mum', () => <LogVisit person={mum} places={[]} onLog={noop} onClose={noop} />, 'Log it'],
+    ['Add a place', () => <PlaceForm onSave={noop} onClose={noop} />, 'Save'],
+    ['Went to Nopi', () => <LogOuting place={nopi} people={[]} onLog={noop} onClose={noop} />, 'Log it'],
+    ['Edit Tacos', () => <RecipeForm recipe={tacos} onSave={noop} onDelete={noop} onClose={noop} />, 'Save'],
+    ['New note', () => <NoteSheet action={{ type: 'create_note', title: 'Gifts', text: '' }} id="n1" onSave={noop} onClose={noop} />, 'Save'],
+    ['Edit project', () => <ProjectEditor project={home} tasks={[]} getLatest={() => home} onSave={noop} onDelete={noop} onClose={noop} />, 'Save'],
+  ]
+
+  it.each(sheets)('%s: Cancel, the title, then its Save, in the title bar and nowhere else', (title, sheet, save) => {
+    render(sheet())
+    const head = document.querySelector('.modal-head') as HTMLElement
+    expect(head.classList.contains('modal-head-compose')).toBe(true)
+    const parts = Array.from(head.children).map(el => (el.tagName === 'H2' ? `h2:${el.textContent}` : el.textContent))
+    expect(parts).toEqual(['Cancel', `h2:${title}`, save])
+    expect(within(screen.getByRole('dialog', { name: title })).getAllByRole('button', { name: save })).toHaveLength(1)
+    expect(within(screen.getByRole('dialog', { name: title })).getAllByRole('button', { name: 'Cancel' })).toHaveLength(1)
   })
 })

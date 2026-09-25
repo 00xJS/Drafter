@@ -41,7 +41,7 @@ import { FindAddress } from './AddressFinder'
 import type { AddressCandidate } from '../geocode'
 import { fmtDate, fromLocalInput, uid } from '../utils'
 import { ConfirmButton } from './ConfirmButton'
-import { Modal, ModalCancel, ModalHead, useChanged } from './Modal'
+import { Modal, ModalHead, useChanged } from './Modal'
 
 interface Props {
   places: Place[]
@@ -169,7 +169,11 @@ export function PlaceForm({
   }
   return (
     <Modal onClose={onClose} dirty={dirty} className="modal narrow">
-      <ModalHead title={place ? `Edit ${place.name}` : 'Add a place'} />
+      <ModalHead title={place ? `Edit ${place.name}` : 'Add a place'} variant="compose">
+        <button type="button" className="btn primary" disabled={!name.trim() || !category} onClick={save}>
+          Save
+        </button>
+      </ModalHead>
       <div className="modal-body">
         <div className="field-row">
           <label className="field emoji-field">
@@ -254,8 +258,8 @@ export function PlaceForm({
           <textarea rows={2} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Best table, booking tip, what to order…" />
         </label>
       </div>
-      <footer className="modal-foot">
-        {place && onDelete && (
+      {place && onDelete && (
+        <footer className="modal-foot">
           <ConfirmButton
             className="btn subtle danger"
             confirmLabel="Click again to remove"
@@ -266,13 +270,8 @@ export function PlaceForm({
           >
             Remove
           </ConfirmButton>
-        )}
-        <span className="spacer" />
-        <ModalCancel />
-        <button className="btn primary" disabled={!name.trim() || !category} onClick={save}>
-          Save
-        </button>
-      </footer>
+        </footer>
+      )}
     </Modal>
   )
 }
@@ -293,9 +292,17 @@ export function LogOuting({
   const [note, setNote] = useState('')
   const [ids, setIds] = useState<string[]>([])
   const dirty = useChanged({ date, note, ids })
+  const log = () => {
+    onLog(fromLocalInput(`${date}T12:00`)!, note.trim(), ids)
+    onClose()
+  }
   return (
     <Modal onClose={onClose} dirty={dirty} className="modal narrow">
-      <ModalHead title={`Went to ${place.name}`} />
+      <ModalHead title={`Went to ${place.name}`} variant="compose">
+        <button type="button" className="btn primary" disabled={!date} onClick={log}>
+          Log it
+        </button>
+      </ModalHead>
       <div className="modal-body">
         <label className="field">
           <span>When</span>
@@ -325,20 +332,6 @@ export function LogOuting({
           </div>
         )}
       </div>
-      <footer className="modal-foot">
-        <span className="spacer" />
-        <ModalCancel />
-        <button
-          className="btn primary"
-          disabled={!date}
-          onClick={() => {
-            onLog(fromLocalInput(`${date}T12:00`)!, note.trim(), ids)
-            onClose()
-          }}
-        >
-          Log it
-        </button>
-      </footer>
     </Modal>
   )
 }

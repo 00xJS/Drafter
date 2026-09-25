@@ -403,10 +403,6 @@
     flex-wrap: wrap;
   }
 
-  .modal-head-save {
-    display: inline-block;
-  }
-
   /* 10px + 10px + the 1px border = 21px of padding and border, plus the
      tallest control. Two controls compete for that: the 40px .new-post-btn, a
      fixed square that does not grow with the text, and the 🔍 / ⚙ .btn.subtle
