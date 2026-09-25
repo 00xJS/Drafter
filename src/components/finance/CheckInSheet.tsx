@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { formatMoney } from '../../bills'
-import { accountFromForm, isLiability, latestBalance, parseBalance, withBalance, type AccountKind } from '../../finance'
+import { accountFromForm, canBeOverdrawn, isLiability, latestBalance, parseBalance, signedBalance, withBalance, type AccountKind } from '../../finance'
 import { newerStamp } from '../../itemops'
 import type { Account } from '../../types'
 import { uid } from '../../utils'
@@ -8,6 +8,7 @@ import { Modal, ModalHead } from '../Modal'
 import { AccountMark } from './KindMark'
 import { KindPicker, NAME_EXAMPLES, PickedKind } from './KindPicker'
 import { ageOf } from './labels'
+import { OverdrawnToggle } from './Overdrawn'
 
 // Check in: every account at once, what each holds today. It is the whole of
 // Finance's contact with the money itself — Drafter never connects to a bank —
@@ -37,6 +38,8 @@ interface Props {
 
 export function CheckInSheet({ accounts, focus, today, onSave, onClose }: Props) {
   const [typed, setTyped] = useState<Record<string, string>>({})
+  /** The accounts marked Overdrawn: the phone's amount keypad has no minus (OverdrawnToggle). */
+  const [overdrawn, setOverdrawn] = useState<Record<string, boolean>>({})
   const [added, setAdded] = useState<Account[]>([])
   const [adding, setAdding] = useState(() => focus === 'add' || accounts.length === 0)
   const [kind, setKind] = useState<AccountKind | null>(null)
@@ -51,7 +54,7 @@ export function CheckInSheet({ accounts, focus, today, onSave, onClose }: Props)
 
   const rows = [...accounts, ...added]
   const entered = rows.flatMap(a => {
-    const n = parseBalance(typed[a.id] ?? '')
+    const n = signedBalance(typed[a.id] ?? '', canBeOverdrawn(a.type) && !!overdrawn[a.id])
     return n === null ? [] : [{ account: a, amount: isLiability(a) ? Math.abs(n) : n }]
   })
   const unread = rows.filter(a => (typed[a.id] ?? '').trim() && parseBalance(typed[a.id]) === null)
@@ -103,18 +106,21 @@ export function CheckInSheet({ accounts, focus, today, onSave, onClose }: Props)
                       </span> {a.name}
                     </span>
                     <small className="muted">{latest ? `${formatMoney(latest.amount)}${owed ? ' owed' : ''} · ${ageOf(latest.on, today)}` : 'Nothing typed in yet'}</small>
-                    <input
-                      className="fin-amount-input"
-                      inputMode="decimal"
-                      autoComplete="off"
-                      placeholder={owed ? 'Owed today' : 'Balance today'}
-                      aria-label={`${a.name}: ${owed ? 'owed' : 'balance'} today`}
-                      aria-invalid={bad || undefined}
-                      autoFocus={fine && a.id === focus}
-                      value={typed[a.id] ?? ''}
-                      onChange={e => setTyped(t => ({ ...t, [a.id]: e.target.value }))}
-                      onKeyDown={e => e.key === 'Enter' && changed && !unread.length && save()}
-                    />
+                    <span className="checkin-amount">
+                      <input
+                        className="fin-amount-input"
+                        inputMode="decimal"
+                        autoComplete="off"
+                        placeholder={owed ? 'Owed today' : 'Balance today'}
+                        aria-label={`${a.name}: ${owed ? 'owed' : 'balance'} today`}
+                        aria-invalid={bad || undefined}
+                        autoFocus={fine && a.id === focus}
+                        value={typed[a.id] ?? ''}
+                        onChange={e => setTyped(t => ({ ...t, [a.id]: e.target.value }))}
+                        onKeyDown={e => e.key === 'Enter' && changed && !unread.length && save()}
+                      />
+                      {canBeOverdrawn(a.type) && <OverdrawnToggle account={a.name} on={!!overdrawn[a.id]} onChange={on => setOverdrawn(o => ({ ...o, [a.id]: on }))} />}
+                    </span>
                   </label>
                   {bad && <small className="warn">That is not an amount.</small>}
                 </li>

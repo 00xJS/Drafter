@@ -84,3 +84,10 @@ describe('another member’s work badge', () => {
     expect(words).toMatch(/overflow:\s*hidden/)
   })
 })
+
+describe('Check in on a phone', () => {
+  it('gives each account’s name the row, and its amount the line under it', () => {
+    expect(phone('.checkin-field')).toMatch(/grid-template-areas:\s*'name' 'last' 'input'/)
+    expect(phone('.checkin-name')).toMatch(/white-space:\s*normal/)
+  })
+})

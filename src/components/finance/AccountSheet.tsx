@@ -1,6 +1,6 @@
 import { useId, useState } from 'react'
 import { formatMoney } from '../../bills'
-import { accountFromForm, accountKindLabel, isLiability, kindLabel, kindOf, kindParts, latestBalance, parseBalance, withBalance, withKind, type AccountKind } from '../../finance'
+import { accountFromForm, accountKindLabel, canBeOverdrawn, isLiability, kindLabel, kindOf, kindParts, latestBalance, parseBalance, signedBalance, withBalance, withKind, type AccountKind } from '../../finance'
 import { newerStamp } from '../../itemops'
 import type { Account } from '../../types'
 import { uid } from '../../utils'
@@ -10,6 +10,7 @@ import { Segmented } from '../stats/Segmented'
 import { KindMark } from './KindMark'
 import { KindPicker, NAME_EXAMPLES, PickedKind } from './KindPicker'
 import { shortDay } from './labels'
+import { OverdrawnToggle } from './Overdrawn'
 
 // An account's sheet: what it is called, what kind it is, whose it is, what
 // it holds today, and the last few balances typed in. It replaces the old
@@ -40,10 +41,15 @@ export function AccountSheet({ account, members, today, onSave, onRemove, onClos
   const [name, setName] = useState(account?.name ?? '')
   const [whose, setWhose] = useState(account?.memberId ?? '')
   const [typed, setTyped] = useState('')
+  /** Overdrawn: the minus the phone's amount keypad does not have (OverdrawnToggle). */
+  const [overdrawn, setOverdrawn] = useState(false)
 
-  const balance = parseBalance(typed)
-  const unread = !!typed.trim() && balance === null
   const owes = kind ? kindParts(kind).type === 'credit' : !!account && isLiability(account)
+  // what it is now, as picked here: an investment written before holdings is what it was saved as
+  const type = kind ? kindParts(kind).type : account?.type
+  const negative = !!type && canBeOverdrawn(type)
+  const balance = signedBalance(typed, negative && overdrawn)
+  const unread = !!typed.trim() && parseBalance(typed) === null
   const changed = account ? name.trim() !== account.name || kind !== kindOf(account) || whose !== (account.memberId ?? '') || balance !== null : !!name.trim() || !!typed.trim()
   // a kind to add one as; an investment written before holdings can be saved without one
   const ready = !!name.trim() && !unread && (!!account || !!kind)
@@ -92,16 +98,20 @@ export function AccountSheet({ account, members, today, onSave, onRemove, onClos
 
   const balanceField = (
     <label className="field">
-      <span>{owes ? 'Owed today' : 'Balance today'}</span>
-      <input
-        className="fin-amount-input"
-        inputMode="decimal"
-        autoComplete="off"
-        value={typed}
-        placeholder={account ? 'Leave blank to keep it' : 'Optional'}
-        aria-invalid={unread || undefined}
-        onChange={e => setTyped(e.target.value)}
-      />
+      <span id={`${ids}-balance`}>{owes ? 'Owed today' : 'Balance today'}</span>
+      <span className="fin-amount-row">
+        <input
+          className="fin-amount-input"
+          aria-labelledby={`${ids}-balance`}
+          inputMode="decimal"
+          autoComplete="off"
+          value={typed}
+          placeholder={account ? 'Leave blank to keep it' : 'Optional'}
+          aria-invalid={unread || undefined}
+          onChange={e => setTyped(e.target.value)}
+        />
+        {negative && <OverdrawnToggle account={name.trim()} on={overdrawn} onChange={setOverdrawn} />}
+      </span>
       {unread && <small className="warn">That is not an amount.</small>}
     </label>
   )
