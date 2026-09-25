@@ -38,7 +38,7 @@ import { looksLikeThinking } from '../shared/ai.mts'
 import { makeClock } from '../shared/clock.mts'
 import { localMidnightIso, newerStamp } from '../shared/domain.mts'
 import { shiftDayKey } from '../shared/journal.mts'
-import { addGroceryItem, buildGroceryList, groceryId, mealAt, mealLabel, mealRecipeIds, mealWithMain, mealsInWeekOf, type GroceryAddOutcome, type MealMain } from '../shared/kitchen.mts'
+import { addGroceryItem, buildGroceryList, groceryId, mealAt, mealLabel, mealPicked, mealRecipeIds, mealsInWeekOf, newMealShared, type GroceryAddOutcome, type MealMain } from '../shared/kitchen.mts'
 import { isDayKey, weekKeyOf, weekStartKey } from '../shared/weeks.mts'
 
 // The assistant chat can suggest changes, and the person decides each one.
@@ -1175,7 +1175,8 @@ export function describeAction(a: ChatAction, d: ChatData, todayKey: string): Ac
       const details = [
         ...(there ? [`Replaces ${mealLabel(there)}`] : []),
         ...(a.newDish ? ['Saved as a new recipe, with its ingredients to fill in'] : []),
-        ...(d.inHousehold && !there ? ['Just you until you share it with the household'] : []),
+        // for whom a new meal is (newMealShared): a dinner for both of you, the rest yours
+        ...(d.inHousehold && !there ? [newMealShared(a.slot, true) ? 'For both of you' : 'Just you until you share it with the household'] : []),
       ]
       return {
         kind: slot,
@@ -1313,10 +1314,11 @@ export function groceryAdd(
 }
 
 /**
- * A suggested meal as the Kitchen's slot picker writes one: built on what is
- * in your slot (mealWithMain keeps its notes, and its sides while it is still
- * cooked), in a row that carries your id, and — in a household, when the slot
- * was empty — Just me until you pick Household (MealSlotRow).
+ * A suggested meal as the Kitchen's slot picker writes one (mealPicked): built
+ * on what is in your slot (its notes stay, and its sides while it is still
+ * cooked), in a row that carries your id. A meal already there keeps who it is
+ * for; a new one is for whom every new meal is (newMealShared) — in a
+ * household, a dinner for both of you and a breakfast or lunch just yours.
  */
 export function mealPlan(a: ActionOf<'plan_meal'>, d: Pick<ChatData, 'mealRows' | 'places' | 'myId' | 'inHousehold'>, o: { now: Date; recipe?: Recipe }): { meal: Meal; before: Meal | null } | null {
   let main: MealMain
@@ -1330,8 +1332,7 @@ export function mealPlan(a: ActionOf<'plan_meal'>, d: Pick<ChatData, 'mealRows' 
   }
   const prev = mealAt(d.mealRows, a.date, a.slot, d.myId)
   const before = prev && !prev.deletedAt ? prev : null
-  const meal = mealWithMain(prev, { date: a.date, slot: a.slot }, main, o.now.toISOString(), d.myId)
-  if (d.inHousehold && meal.shared === undefined && !before) meal.shared = false
+  const meal = mealPicked(prev, { date: a.date, slot: a.slot }, main, { userId: d.myId, now: o.now.toISOString(), inHousehold: d.inHousehold })
   return { meal, before }
 }
 

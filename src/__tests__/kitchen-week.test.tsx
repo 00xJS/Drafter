@@ -1,7 +1,7 @@
 import { renderToString } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 import { isMineTask, newerStamp } from '../../shared/domain.mts'
-import { QUICK_PICKS, buildGroceryList, cookedRecipeIds, mealRecipeIds, mealSides, mealWithMain } from '../../shared/kitchen.mts'
+import { QUICK_PICKS, buildGroceryList, cookedRecipeIds, mealRecipeIds, mealSides, mealWithMain, newMealShared } from '../../shared/kitchen.mts'
 import { mealWays, savedPlaces } from '../../shared/mealways.mts'
 import { outingsAt } from '../../shared/places.mts'
 import { FAVOURITE_REST_DAYS, favouritesRotation, proposeWeek, rotationIdeas } from '../../shared/weekplan.mts'
@@ -446,5 +446,55 @@ describe('every meal writer uses the member’s own id for a new meal', () => {
     const chat = mealPlan({ type: 'plan_meal', date: TODAY, slot: 'lunch', dish: { name: 'Soup', id: 'soup' } }, { mealRows: [hers], places: [], myId: JOE, inHousehold: true }, { now: new Date(2026, 8, 24, 9), recipe: soup })
     expect(chat?.meal.id).toBe(`meal~${TODAY}~lunch~${JOE}`)
     expect(chat?.before).toBeNull()
+  })
+})
+
+// ---- who a new meal is for ----------------------------------------------------------
+
+describe('who a new meal is for: one default, wherever it is planned', () => {
+  const now = new Date(2026, 8, 24, 11)
+  const soup = recipe('soup', 'Soup')
+  const idea = { key: 'k', kind: 'recipe' as const, id: 'soup', title: 'Soup', why: '' }
+  const plan = { week: { startKey: '2026-09-27', dayKeys: weekDayKeys('2026-09-27'), weekKey: '2026-W40', prevWeekKey: '2026-W39' }, dinners: [], people: [], overdue: [], bills: [], top3: [] }
+  const accepted = { dinners: [{ date: '2026-09-28', recipeId: 'soup', title: 'Soup' }], people: [], resched: [], wishlist: [], top3: [], dismissed: [] }
+
+  it('is both of you for a dinner in a household, just you for a breakfast or a lunch, and nothing said with nobody to share it with', () => {
+    expect(newMealShared('dinner', true)).toBe(true)
+    expect(newMealShared('lunch', true)).toBe(false)
+    expect(newMealShared('breakfast', true)).toBe(false)
+    for (const slot of ['breakfast', 'lunch', 'dinner'] as const) expect(newMealShared(slot, false)).toBeUndefined()
+  })
+
+  it('is what Home’s meal ideas and Plan my day write (mealFromIdea), and a meal already there keeps its own', () => {
+    expect(mealFromIdea(TODAY, 'dinner', idea, undefined, now, JOE, true).shared).toBe(true)
+    expect(mealFromIdea(TODAY, 'lunch', idea, undefined, now, JOE, true).shared).toBe(false)
+    expect(mealFromIdea(TODAY, 'dinner', idea, undefined, now, null, false)).not.toHaveProperty('shared')
+    const kept = meal(TODAY, 'dinner', { shared: false, ownerId: JOE })
+    expect(mealFromIdea(TODAY, 'dinner', idea, kept, now, JOE, true).shared).toBe(false)
+    const legacy = meal(TODAY, 'dinner', { ownerId: JOE })
+    expect(mealFromIdea(TODAY, 'dinner', idea, legacy, now, JOE, true)).not.toHaveProperty('shared')
+    // a cleared slot is built on for its stamps alone: the meal is new
+    expect(mealFromIdea(TODAY, 'dinner', idea, { ...kept, deletedAt: STAMP }, now, JOE, true).shared).toBe(true)
+  })
+
+  it('is what Plan next week writes for its dinners', () => {
+    const w = (inHousehold: boolean) => weekPlanWrites({ tasks: [], items: [], reviews: [] }, plan, accepted, { myId: JOE, now, newId: () => 'x', inHousehold }).meals
+    expect(w(true)).toEqual([expect.objectContaining({ id: `meal~2026-09-28~dinner~${JOE}`, shared: true })])
+    expect(w(false)[0]).not.toHaveProperty('shared')
+  })
+
+  it('is what the assistant plans, as its card says', () => {
+    const data = { mealRows: [], places: [], myId: JOE, inHousehold: true }
+    expect(mealPlan({ type: 'plan_meal', date: TODAY, slot: 'dinner', dish: { name: 'Soup', id: 'soup' } }, data, { now, recipe: soup })?.meal.shared).toBe(true)
+    expect(mealPlan({ type: 'plan_meal', date: TODAY, slot: 'breakfast', dish: { name: 'Soup', id: 'soup' } }, data, { now, recipe: soup })?.meal.shared).toBe(false)
+  })
+
+  it('is where Kitchen’s picker and its chips start (mealPicked, with nothing said of who it is for)', () => {
+    const pick = (slot: Meal['slot'], inHousehold: boolean) => mealPicked(undefined, { date: TODAY, slot }, { recipeId: 'soup', title: 'Soup' }, { userId: JOE, now: STAMP, inHousehold })
+    expect(pick('dinner', true).shared).toBe(true)
+    expect(pick('lunch', true).shared).toBe(false)
+    expect(pick('dinner', false)).not.toHaveProperty('shared')
+    // what the picker's For says is what is written, whatever the default
+    expect(mealPicked(undefined, { date: TODAY, slot: 'dinner' }, { recipeId: 'soup', title: 'Soup' }, { userId: JOE, now: STAMP, inHousehold: true, shared: false }).shared).toBe(false)
   })
 })

@@ -36,6 +36,7 @@ import {
   mealSides,
   mealsForWeek,
   newIngredient,
+  newMealShared,
   notLately,
   recipeHasInclude,
   recipeIncludeChips,
@@ -408,8 +409,11 @@ export function Kitchen({ myId = null, nameOf, inHousehold, members = NO_MEMBERS
    */
   const applyMealPlan = (picks: MealPick[]): { count: number; undo(): void } | null => {
     const { meals: picked, created } = mealsForPicks(picks, { recipes, places, meals, createRecipe: onCreateRecipe, now: new Date(), myId })
-    // for whom the picker starts a new meal: in a household, a dinner for both of you, and a lunch for you
-    const planned = inHousehold ? picked.map(m => (m.shared === undefined ? { ...m, shared: m.slot === 'dinner' } : m)) : picked
+    // each a new meal, for whom every new meal is (newMealShared): in a household, a dinner for both of you, and a lunch for you
+    const planned = picked.map(m => {
+      const shared = m.shared ?? newMealShared(m.slot, !!inHousehold)
+      return shared === undefined ? m : { ...m, shared }
+    })
     if (planned.length === 0) return null
     for (const m of planned) onSaveMeal(m)
     const dates = planned.map(m => m.date)

@@ -12,6 +12,7 @@ import {
   lastWentShort,
   mealIsShared,
   mealRecipeIds,
+  newMealShared,
   quickMain,
   recipeByName,
   recipeMatchesQuery,
@@ -206,8 +207,8 @@ export function MealPicker({
 }: Props) {
   const today = useDayKey()
   const [tab, setTab] = useState<Tab>(() => tabOf(meal))
-  // a meal keeps its own For; a new one starts where the slot usually is
-  const [forBoth, setForBoth] = useState(() => (meal ? mealIsShared(meal) : (startShared ?? slot === 'dinner')))
+  // a meal keeps its own For; a new one starts where every new meal does (newMealShared)
+  const [forBoth, setForBoth] = useState(() => (meal ? mealIsShared(meal) : (startShared ?? !!newMealShared(slot, inHousehold))))
   const [cook, setCook] = useState(() => meal?.cookId ?? '')
   const [q, setQ] = useState('')
   // Something new… or Somewhere new…, open in place of the list's first row

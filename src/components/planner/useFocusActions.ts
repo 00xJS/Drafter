@@ -4,7 +4,7 @@ import type { Store } from '../../store'
 import { planDayWrites, restoreSnapshots, shutdownWrites, type DayWrites, type ShutdownResult, type ShutdownWrites, type StatusMove } from '../../focus'
 import { closeDay, reopenDay } from '../../dayclose'
 import { localDayKey, shiftDayKey } from '../../journal'
-import { mealAt, mealId } from '../../kitchen'
+import { mealAt, mealId, newMealShared } from '../../kitchen'
 import { uid } from '../../utils'
 import { newerStamp } from '../../itemops'
 import { rememberWeekPlanDismissed } from '../../weekplanstore'
@@ -118,18 +118,21 @@ export interface WeekWrites {
 
 /**
  * Plan next week, accepted, as writes: the dinners on nights still empty (a
- * night planned meanwhile — another device, the calendar — is left alone), the
- * catch-ups as visit tasks, overdue work moved to its day keeping its time of
- * day (or back to the wishlist), and the Top 3 into last week's review, which
- * Today reads as this week's 3. Pure: the ids and the clock come in.
+ * night planned meanwhile — another device, the calendar — is left alone),
+ * each a new meal for whom every new dinner is (newMealShared: both of you, in
+ * a household), the catch-ups as visit tasks, overdue work moved to its day
+ * keeping its time of day (or back to the wishlist), and the Top 3 into last
+ * week's review, which Today reads as this week's 3. Pure: the ids and the
+ * clock come in.
  */
 export function weekPlanWrites(
   s: { tasks: Task[]; items: readonly Item[]; reviews: Review[] },
   plan: WeekPlan,
   a: AcceptedPlan,
-  o: { myId: string | null; now: Date; newId(): string },
+  o: { myId: string | null; now: Date; newId(): string; inHousehold?: boolean },
 ): WeekWrites {
   const stamp = o.now.toISOString()
+  const shared = newMealShared('dinner', !!o.inHousehold)
   const meals: Meal[] = []
   for (const d of a.dinners) {
     // by day and slot, not by a computed id: the id carries the member now, so
@@ -145,6 +148,7 @@ export function weekPlanWrites(
       ...(d.recipeId ? { recipeId: d.recipeId } : {}),
       ...(d.out ? { out: true } : {}),
       ...(d.placeId ? { placeId: d.placeId } : {}),
+      ...(shared !== undefined ? { shared } : {}),
       createdAt: stamp,
       // a tombstone in the slot must lose to the new plan
       updatedAt: slot ? newerStamp(slot.updatedAt) : stamp,
@@ -245,6 +249,8 @@ export const mealIdeaToast = (m: Pick<Meal, 'slot' | 'title'>): string => `Plann
 interface Deps {
   store: Store
   household: { myId: string | null }
+  /** More than one member: a new meal planned here is for whom newMealShared says. */
+  inHousehold?: boolean
   showToast: ReturnType<typeof useToast>['showToast']
   applyStatus: PlanPorts['applyStatus']
   pushToProjectBoard: PlanPorts['pushToProjectBoard']
@@ -283,6 +289,7 @@ export function useFocusActions(deps: Deps) {
     }
   }
   const { store, household, showToast } = deps
+  const inHousehold = !!deps.inHousehold
 
   /** The slot's record as stored, a tombstone included, so a new plan for it is stamped newer and wins the merge. */
   const slotRecord = (dayKey: string, slot: MealSlot) => mealAt(store.allItems, dayKey, slot, household.myId) ?? undefined
@@ -290,7 +297,7 @@ export function useFocusActions(deps: Deps) {
   const applyDayPlan = (r: PlanDayApply) => {
     const now = new Date()
     const w = planDayWrites(store.tasks, r, { today: localDayKey(now), myId: household.myId, now, newId: uid })
-    const meals = r.meals.map(c => mealFromIdea(c.dayKey, c.slot, c.idea, slotRecord(c.dayKey, c.slot), now, household.myId))
+    const meals = r.meals.map(c => mealFromIdea(c.dayKey, c.slot, c.idea, slotRecord(c.dayKey, c.slot), now, household.myId, inHousehold))
     const undo = applyDayPlanWrites(ports, w, meals)
     showToast(dayPlanToast(w, meals), undo)
   }
@@ -306,7 +313,7 @@ export function useFocusActions(deps: Deps) {
   /** Plan next week, accepted: one toast and one Undo for all of it, and the rows said no to remembered for that week. */
   const applyWeekPlan = (plan: WeekPlan, a: AcceptedPlan) => {
     rememberWeekPlanDismissed(plan.week.weekKey, a.dismissed)
-    const w = weekPlanWrites({ tasks: store.tasks, items: store.allItems, reviews: store.reviews }, plan, a, { myId: household.myId, now: new Date(), newId: uid })
+    const w = weekPlanWrites({ tasks: store.tasks, items: store.allItems, reviews: store.reviews }, plan, a, { myId: household.myId, now: new Date(), newId: uid, inHousehold })
     if (weekWritesEmpty(w)) {
       showToast('Nothing new to add to next week')
       return
@@ -320,7 +327,7 @@ export function useFocusActions(deps: Deps) {
 
   /** One of Today's lunch and dinner ideas, planned as the Kitchen plans a meal; Undo clears the slot again. */
   const planMealIdea = (dayKey: string, slot: MealSlot, idea: MealIdea) => {
-    const m = mealFromIdea(dayKey, slot, idea, slotRecord(dayKey, slot), new Date(), household.myId)
+    const m = mealFromIdea(dayKey, slot, idea, slotRecord(dayKey, slot), new Date(), household.myId, inHousehold)
     deps.saveMeals([m])
     showToast(mealIdeaToast(m), () => latest.current.clearMeals([m.id]))
   }

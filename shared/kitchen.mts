@@ -161,6 +161,19 @@ export function mealWithMain(prev: Meal | null | undefined, { date, slot }: { da
 }
 
 /**
+ * Who a new meal is for, when nobody has said: the one default every way of
+ * planning one starts from — Kitchen's picker and its idea chips, Plan this
+ * week's meals, Home's meal ideas, Plan my day, Plan next week and the
+ * assistant. In a household a dinner is for both of you, and a breakfast or a
+ * lunch is just yours; with nobody to share it with, the row says nothing, as
+ * every meal did before households. A meal already planned keeps its own:
+ * this is never applied to one.
+ */
+export function newMealShared(slot: MealSlot, inHousehold: boolean): boolean | undefined {
+  return inHousehold ? slot === 'dinner' : undefined
+}
+
+/**
  * Who cooks a meal for the household, or nobody: `cookId` counts only on a
  * shared meal that is cooked — not one eaten out or bought, not a quick pick,
  * and not one kept to yourself, where you cook for yourself.
@@ -190,9 +203,10 @@ export function mealAdjusted(meal: Meal, o: { shared?: boolean; cookId?: string 
 
 /**
  * The meal a pick writes for `userId`: the main chosen (mealWithMain), who it
- * is for (`shared`, left as the row has it when undefined) and who cooks it
- * (`cookId`: a member, '' for nobody, undefined to leave it) — on the
- * member's own row.
+ * is for (`shared`: left as the row has it when undefined, and on a new meal
+ * newMealShared's default, `inHousehold` saying whether there is anyone to
+ * share it with) and who cooks it (`cookId`: a member, '' for nobody,
+ * undefined to leave it) — on the member's own row.
  *
  * `prev` is built on only when it is theirs, by mealAt's rule — a legacy row
  * of theirs included, a tombstone too so the pick is stamped past it — and
@@ -206,11 +220,13 @@ export function mealPicked(
   prev: Meal | null | undefined,
   at: { date: string; slot: MealSlot },
   main: MealMain,
-  o: { userId?: string | null; now: string; shared?: boolean; cookId?: string },
+  o: { userId?: string | null; now: string; shared?: boolean; cookId?: string; inHousehold?: boolean },
 ): Meal {
   const userId = o.userId ?? null
   const own = prev && (!userId || !prev.ownerId || prev.ownerId === userId) ? prev : null
-  return withAudience(mealWithMain(own, at, main, o.now, userId), o.shared, o.cookId)
+  // a meal already planned keeps its own; a new one (a tombstone is built on for its stamps alone) takes the default
+  const shared = o.shared ?? (own && !own.deletedAt ? undefined : newMealShared(at.slot, !!o.inHousehold))
+  return withAudience(mealWithMain(own, at, main, o.now, userId), shared, o.cookId)
 }
 
 export function ingredientKey(name: unknown, unit?: unknown): string {
