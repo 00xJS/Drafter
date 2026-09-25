@@ -163,3 +163,19 @@ describe('press and hold in the app', () => {
     expect(written).toMatch(/-webkit-touch-callout:\s*default/)
   })
 })
+
+describe('the small ones', () => {
+  it('breaks a month pill’s long word where a hyphen goes, and fits “+8 more”', () => {
+    const title = phone('.cal-cell .cal-pill-title')
+    expect(title).toMatch(/-webkit-hyphens:\s*auto/)
+    expect(title).toMatch(/(?<!-)hyphens:\s*auto/)
+    // at the pills' own size: at 12px it was cut to "+8 m…"
+    expect(phone('.cal-cell .cal-more')).toMatch(/font-size:\s*10px/)
+  })
+
+  it('keeps a coming bill’s Autopay whole beside words that give way', () => {
+    expect(rule(css, '.bill-copy small.fin-coming-meta')).toMatch(/display:\s*flex/)
+    expect(rule(css, '.fin-coming-text')).toMatch(/text-overflow:\s*ellipsis/)
+    expect(rule(css, '.fin-coming-meta > .fin-tag')).toMatch(/flex:\s*none/)
+  })
+})

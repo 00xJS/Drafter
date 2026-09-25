@@ -298,6 +298,14 @@
      its own. */
   .cal-cell .cal-pill-title {
     overflow-wrap: break-word;
+    /* …and a word longer than the pill's line breaks where a hyphen can go,
+       "Pan-cakes" rather than "Panca / kes" */
+    -webkit-hyphens: auto;
+    hyphens: auto;
+  }
+  /* "+8 more" at the pills' own size: at 12px it was cut to "+8 m…" */
+  .cal-cell .cal-more {
+    font-size: 10px;
   }
   /* the glyph alone says home, office, off or holiday; the words do not fit
      and were being clipped mid-letter */

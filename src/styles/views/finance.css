@@ -536,6 +536,21 @@
 .fin-row.income .fin-date {
   background: var(--tone-green-bg);
 }
+/* a coming bill's second line: its words give way, and Autopay keeps its
+   place at their end — inside them it went under their ellipsis at 375pt */
+.bill-copy small.fin-coming-meta {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.fin-coming-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.fin-coming-meta > .fin-tag {
+  flex: none;
+}
 .fin-tag.alone {
   margin-left: 0;
 }

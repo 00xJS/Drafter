@@ -44,8 +44,10 @@ export function ComingRow({ row, today, whose, onOpen, onMarkPaid }: { row: Mone
             <span aria-hidden="true">{billEmoji(t.bill)}</span> {name}
           </strong>{' '}
           {(meta || t.bill.autopay) && (
-            <small>
-              {meta}
+            // the words give way and Autopay stays whole at their end: inside
+            // them, it went under their ellipsis on a phone
+            <small className="fin-coming-meta">
+              {meta && <span className="fin-coming-text">{meta}</span>}
               {t.bill.autopay && <span className={meta ? 'fin-tag' : 'fin-tag alone'}>Autopay</span>}
             </small>
           )}
