@@ -178,6 +178,15 @@ const DAY_MS = 86_400_000
  */
 const middayOf = (dateKey: string): string => `${dateKey}T12:00:00.000Z`
 
+/**
+ * Whether a meal is part of YOUR log (v3.24). The week's meals are the
+ * household's, so a meal SHARED with the household is the evening you both
+ * had — eaten out, it is an outing for both — while a meal kept to yourself is
+ * yours alone. `shared` absent reads as shared, which is every meal written
+ * before v3.22; `myId` absent counts every meal, as ownVisit does.
+ */
+export const mealCountsFor = (meal: Pick<Meal, 'shared' | 'ownerId'>, myId: string | null = null): boolean => meal.shared !== false || ownVisit(meal, myId)
+
 /** A done task at the place, or a past meal you marked as eaten out there. */
 export type Outing = { kind: 'task'; task: Task; at: string } | { kind: 'meal'; meal: Meal; at: string }
 
@@ -214,7 +223,7 @@ export function outingsAt(placeId: string, tasks: readonly Task[], meals: readon
   const eaten = out ? (out.get(placeId) ?? []) : (meals ?? []).filter(m => mealOut(m) && m.placeId === placeId)
   const fromTasks = done.filter(t => ownVisit(t, myId)).map((t): Outing => ({ kind: 'task', task: t, at: t.completedAt }))
   const fromMeals = eaten
-    .filter(m => m.shared !== false || ownVisit(m, myId))
+    .filter(m => mealCountsFor(m, myId))
     .map((m): Outing => ({ kind: 'meal', meal: m, at: middayOf(m.date) }))
     .filter(v => Date.parse(v.at) <= nowMs)
   return [...fromTasks, ...fromMeals].sort((a, b) => b.at.localeCompare(a.at))

@@ -98,6 +98,14 @@ describe('Settings offers the email switch only where email can go', () => {
     expect(html).toContain('<select')
   })
 
+  it('says, in one line under the digest, that the 1st brings last month’s recap too', () => {
+    for (const configured of [true, false]) {
+      const html = draw(configured)
+      expect(html.match(/last month’s highlights/g), String(configured)).toHaveLength(1)
+      expect(html).toContain('<p class="field-hint">On the 1st it also brings last month’s highlights, from your own log.</p>')
+    }
+  })
+
   it('without email, no switch: a line that says so, and the hour push still keeps', () => {
     const html = draw(false)
     expect(html).not.toContain('type="checkbox"')

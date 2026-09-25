@@ -33,6 +33,7 @@ interface Deps {
   openPerson: Nav['openPerson']
   openStats: Nav['openStats']
   openLens: Nav['openLens']
+  openInsights: Nav['openInsights']
   openKitchen: Nav['openKitchen']
   openWardrobe: Nav['openWardrobe']
   openFinanceCheckIn: Nav['openFinanceCheckIn']
@@ -74,6 +75,7 @@ export function useDeepLinks({
   openPerson,
   openStats,
   openLens,
+  openInsights,
   openKitchen,
   openWardrobe,
   openFinanceCheckIn,
@@ -138,12 +140,13 @@ export function useDeepLinks({
     // people-stats and places-stats open that segment of People on its Stats,
     // kitchen-stats opens Kitchen on Stats, and wardrobe-stats opens Home →
     // Wardrobe on Stats, for this visit only — those four shipped pointing at
-    // the Stats each area keeps inside itself, and still land there. The Stats
-    // lens has its own names the other way round, `stats-<segment>`:
-    // stats-tasks, stats-money, stats-people, stats-places, stats-kitchen,
-    // stats-wardrobe, stats-habits and stats-journal. A bare ?view=stats names
-    // no segment, so it opens the lens on the one last chosen. Each name is
-    // read from its own table's keys, so ?view=constructor lands nowhere.
+    // the Stats each area keeps inside itself, and still land there. Insights'
+    // Stats has its own names the other way round, `stats-<area>`: stats-tasks,
+    // stats-money, stats-people, stats-places, stats-kitchen, stats-wardrobe,
+    // stats-habits and stats-journal each open that area's figures, pushed
+    // over the Highlights, and stats-year the year. A bare ?view=stats names no
+    // page, so it opens the Highlights. Each name is read from its own table's
+    // keys, so ?view=constructor lands nowhere.
     const tasksTab = viewIn(LEGACY_VIEW_TO_TASKS, parsed.view)
     const homeTab = viewIn(LEGACY_VIEW_TO_HOME, parsed.view)
     const statsTab = peopleTabOfStatsView(parsed.view)
@@ -186,6 +189,10 @@ export function useDeepLinks({
       openJournal()
     } else if (insightsTab) {
       openReview()
+    } else if (movedView === 'insights') {
+      // ?view=stats named the lens, a tab of its own until v3.29: Insights →
+      // Stats, on the Highlights, whatever page or segment was up before
+      openLens()
     } else if (movedView) {
       setView(movedView)
     } else if (parsed.view && (VIEWS as string[]).includes(parsed.view)) {
@@ -204,6 +211,13 @@ export function useDeepLinks({
       // nothing; the thread on screen is what marks the messages seen.
       setChatSide('household')
       setPushed('chat')
+      return
+    }
+    if (parsed.insights) {
+      // The monthly recap's push, or its row: Insights' Highlights on its
+      // month, on Mine as the recap counts only yours. It writes nothing, and
+      // whatever else it carries is ignored.
+      openInsights(parsed.insights.period, parsed.insights.at ?? null)
       return
     }
     if (parsed.plan) {

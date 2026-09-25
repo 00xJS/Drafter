@@ -17,6 +17,7 @@ import {
   peopleNamesOf,
   shiftDayKey,
   streak,
+  writtenDays,
   type PeopleById,
 } from '../shared/journal.mts'
 
@@ -125,10 +126,8 @@ export function recentEntries(entries: JournalEntry[], days: number, today = loc
   return sharedBetween(entries, shiftDayKey(today, -(days - 1)), shiftDayKey(today, 1))
 }
 
-/** Unique days with an entry, newest first. */
-export function journalDays(entries: JournalEntry[]): string[] {
-  return [...new Set(entries.filter(e => !e.deletedAt).map(e => e.date))].sort((a, b) => b.localeCompare(a))
-}
+/** Unique days with an entry, newest first: shared/journal.mts's writtenDays, which every journal count and streak goes by. */
+export const journalDays = (entries: readonly JournalEntry[]): string[] => writtenDays(entries)
 
 /** One day of the week strip: written or not, its face if it has one, and whether it has come yet. */
 export interface WeekDay {

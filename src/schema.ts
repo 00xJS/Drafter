@@ -1327,8 +1327,9 @@ export function sanitizeSnooze(raw: unknown): Snooze | null {
 }
 
 const NOTICE_TYPE_SET = new Set<string>(NOTICE_TYPES)
-// a message's target opens the household's thread (src/components/planner/hubRouting.ts)
-const NOTICE_TARGET_KINDS = new Set<string>(['task', 'event', 'review', 'message'])
+// a message's target opens the household's thread, and the monthly recap's
+// Insights on its month (src/components/planner/hubRouting.ts)
+const NOTICE_TARGET_KINDS = new Set<string>(['task', 'event', 'review', 'message', 'insights'])
 
 function noticeTarget(v: unknown): Notice['target'] {
   if (!v || typeof v !== 'object') return undefined

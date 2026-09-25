@@ -48,13 +48,16 @@ describe('formatMoney: every amount in dollars', () => {
     expect(formatMoney(0.5)).toBe('$0.50')
     expect(formatMoney(undefined)).toBe('')
     expect(formatMoney(Number.NaN)).toBe('')
-    // the locale is named, never the device's
-    expect(readFileSync(join(ROOT, 'src/bills.ts'), 'utf8')).toContain("new Intl.NumberFormat('en-US', { style: 'currency', currency: CURRENCY })")
+    // the locale is named, never the device's. The formatter is shared/money.mts's,
+    // so the monthly recap writes an amount on the server exactly as a phone does,
+    // and src/bills.ts hands the same one on
+    expect(readFileSync(join(ROOT, 'shared/money.mts'), 'utf8')).toContain("new Intl.NumberFormat('en-US', { style: 'currency', currency: CURRENCY })")
+    expect(readFileSync(join(ROOT, 'src/bills.ts'), 'utf8')).toContain("export { CURRENCY, formatMoney, isSpending, withPaidDefault } from '../shared/money.mts'")
   })
 
   it('is the one formatter, and nothing else shows a pound sign', () => {
     const files = sources()
-    expect(files.filter(f => /style:\s*['"`]currency['"`]/.test(f.text)).map(f => f.path)).toEqual(['src/bills.ts'])
+    expect(files.filter(f => /style:\s*['"`]currency['"`]/.test(f.text)).map(f => f.path)).toEqual(['shared/money.mts'])
     // the typed-price parsers still take £ beside $ and € (a character class); nothing else says it
     expect(files.filter(f => f.text.replace(/\[[^\]\n]*£[^\]\n]*\]/g, '').includes('£')).map(f => f.path)).toEqual([])
   })

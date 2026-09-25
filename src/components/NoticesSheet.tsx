@@ -73,8 +73,8 @@ export function NoticesSheet({ notices, onRead, onReadAll, onOpen, onClose, ...s
             <Icon name="bell" size={28} />
             <p>You’re all caught up.</p>
             <p className="field-hint">
-              When someone messages the household, or finishes, comments on or changes a task you share, it shows here — with the morning digest, and each reminder this
-              device rings, for a week.
+              When someone messages the household, or finishes, comments on or changes a task you share, it shows here — with the morning digest, the monthly recap,
+              and each reminder this device rings, for a week.
             </p>
           </div>
         ) : (
@@ -86,7 +86,8 @@ export function NoticesSheet({ notices, onRead, onReadAll, onOpen, onClose, ...s
                   <li key={row.key}>
                     <button type="button" className={row.unread ? 'notice-row unread' : 'notice-row'} onClick={() => open(row)}>
                       <span className={`notice-icon is-${row.type}`} aria-hidden>
-                        <Icon name={ICONS[row.type]} size={18} />
+                        {/* the monthly recap rides on the digest, and wears the Insights tab's glyph */}
+                        <Icon name={row.target?.kind === 'insights' ? 'stats' : ICONS[row.type]} size={18} />
                       </span>
                       <span className="notice-text">
                         <span className="notice-title">{row.title}</span>

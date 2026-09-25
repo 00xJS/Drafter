@@ -1,16 +1,20 @@
 import { newerStamp } from '../../itemops'
 import type { PlannerCtx } from './ctx'
 import { JournalView, Review } from './lazy'
-import { INSIGHTS_TABS } from './routes'
+import { INSIGHTS_TABS, STATS_PAGE_TITLES } from './routes'
+import { PushedScreen } from './PushedScreen'
 import { StatsScreen } from './StatsScreen'
 import { Segmented } from '../stats/Segmented'
 
 /**
  * Insights: the one tab you never add anything to.
  *
- * Three segments. **Stats** is the lens — every figure the app keeps, nine
- * scrolling segments of it. **Journal** is the archive of what you wrote.
- * **Review** is the week you just had.
+ * Three segments. **Stats** is the lens — every figure the app keeps: the
+ * Highlights first, and each area's figures a page pushed over them, with
+ * ‹ Back, as Settings and the chat are pushed over a tab (PushedScreen). The
+ * tab stays the one you are on: an area's page is Insights', not a screen of
+ * its own. **Journal** is the archive of what you wrote. **Review** is the
+ * week you just had.
  *
  * The archive sits BESIDE the lens rather than inside it, and that is not
  * tidiness: the lens's own Journal segment says "Counts and moods only —
@@ -23,8 +27,16 @@ import { Segmented } from '../stats/Segmented'
  * on the day; reading back what you wrote is this tab's.
  */
 export function InsightsScreen({ p }: { p: PlannerCtx }) {
-  const { store, upsert, remove, restore, household, showToast, insightsTab, setInsightsTab } = p
+  const { store, upsert, remove, restore, household, showToast, insightsTab, setInsightsTab, statsTab, closeStatsPage } = p
   const { journalOpenDate, setJournalOpenDate, openTask, newTask, changeStatus, openSheet, openWardrobe } = p
+  // an area's figures, or the year, pushed over the Highlights: the page and ‹ Back, and no segments
+  if (insightsTab === 'stats' && statsTab !== 'highlights') {
+    return (
+      <PushedScreen title={STATS_PAGE_TITLES[statsTab]} onBack={closeStatsPage}>
+        <StatsScreen p={p} />
+      </PushedScreen>
+    )
+  }
   return (
     <>
       <div className="people-tab-seg insights-seg">

@@ -819,8 +819,10 @@ describe('the wardrobe’s new styles', () => {
   })
 
   it('keeps the phone rules behind their guards', () => {
-    expect(css).toMatch(/@media \(max-width: 640px\) \{\s*\.wardrobe-tiles > :first-child \{\s*grid-column: 1 \/ -1;/)
     expect(css).toMatch(/@media \(pointer: coarse\) \{\s*\.cal-look,\s*\.review-most-worn \{\s*min-height: 44px;/)
+    // the tiles pair up as every Stats view's do: no first tile spanning the
+    // row, which left the fourth alone beside a gap
+    expect(css).not.toMatch(/\.wardrobe-tiles > :first-child/)
   })
 
   it('draws a date on the photo calendar on a chip of its own, never on a photo', () => {

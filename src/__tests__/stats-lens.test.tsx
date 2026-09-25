@@ -6,7 +6,8 @@ import { describe, expect, it } from 'vitest'
 import { StatsLens } from '../components/StatsLens'
 import { StatsScreen } from '../components/planner/StatsScreen'
 import { StatsLens as LensChunk } from '../components/planner/lazy'
-import { STATS_TABS, VIEWS, VIEW_LABELS, VIEW_TO_STATS, statsTabOfView, type StatsTab } from '../components/planner/routes'
+import { STATS_AREAS, VIEWS, VIEW_LABELS, VIEW_TO_STATS, statsTabOfView, type StatsTab } from '../components/planner/routes'
+import { Highlights } from '../components/insights/Highlights'
 import { AreaCard, HeatGrid, RankedBars, Ring, Segmented, StatTile, WindowSwitch, heatDays } from '../components/stats'
 import type { DayWindow } from '../stats'
 import { KitchenStats, PeopleStats, PlacesStats, WardrobeStats } from '../components/planner/lazy'
@@ -351,8 +352,8 @@ const AREAS = {
 }
 
 const LENS_PROPS = {
-  tab: 'overview' as const,
-  onTab: () => {},
+  tab: 'highlights' as StatsTab,
+  onOpen: () => {},
   tasks: [done('a', '2026-09-15', { tags: ['home'] }), task('open', { dueAt: '2026-09-01T12:00:00' })],
   people: [],
   places: [],
@@ -370,46 +371,67 @@ const LENS_PROPS = {
   now: NOW,
 }
 
+/** Every page Insights → Stats can show: the Highlights, each area's figures, and the year. */
+const PAGES: StatsTab[] = ['highlights', ...STATS_AREAS.map(a => a.key), 'year']
+
 describe('the lens drawn', () => {
-  it('draws every segment on the server, with nothing to count and with something', () => {
+  it('draws every page on the server, with nothing to count and with something', () => {
     const empty = { ...LENS_PROPS, tasks: [], journal: [], habits: [], garments: [], wears: [] }
-    for (const t of STATS_TABS) {
-      expect(() => html(<StatsLens {...LENS_PROPS} tab={t.key} />), t.key).not.toThrow()
-      expect(() => html(<StatsLens {...empty} tab={t.key} />), t.key).not.toThrow()
+    for (const tab of PAGES) {
+      expect(() => html(<StatsLens {...LENS_PROPS} tab={tab} />), tab).not.toThrow()
+      expect(() => html(<StatsLens {...empty} tab={tab} />), tab).not.toThrow()
     }
   })
 
-  it('opens on the Overview and offers every area as one scrolling track', () => {
-    const tree = settled(StatsLens, LENS_PROPS)
-    const track = elements(tree).find(e => e.type === Segmented)
-    expect(track).toBeTruthy()
-    expect((track!.props.items as { key: string }[]).map(i => i.key)).toEqual(['overview', 'tasks', 'money', 'people', 'places', 'kitchen', 'wardrobe', 'habits', 'journal'])
-    // nine will not sit on a 375pt line, so the track scrolls and keeps the chosen one in view
-    expect(track!.props.scroll).toBe(true)
+  it('opens on the Highlights, with a chip for every area and the year one tap away', () => {
+    const went: string[] = []
+    const tree = into(settled(StatsLens, { ...LENS_PROPS, onOpen: (t: string) => went.push(t) }), 'Highlights')
+    // no nine-segment track any more: the period and a chip per area
+    const chips = elements(tree).filter(e => e.type === 'button' && String(e.props.className).includes('area-chip'))
+    expect(chips.map(c => textOf(c.props.children))).toEqual(['Tasks', 'Money', 'People', 'Places', 'Kitchen', 'Wardrobe', 'Habits', 'Journal'])
+    for (const chip of chips) (chip.props.onClick as () => void)()
+    // one chip per area, in the order shared/insights.mts ranks a tie by, and not one of them is a jump to another tab
+    expect(went).toEqual(STATS_AREAS.map(a => a.key))
+    const year = elements(tree).find(e => e.type === AreaCard && e.props.name === 'This year')!
+    ;(year.props.onOpen as () => void)()
+    expect(went.at(-1)).toBe('year')
+    // the period is a track of three, and a household of one is offered no Mine · Both of us
+    const tracks = elements(tree).filter(e => e.type === Segmented)
+    expect(tracks.map(t => t.props.label)).toEqual(['Period'])
+    expect((tracks[0].props.items as { key: string }[]).map(i => i.key)).toEqual(['week', 'month', 'year'])
   })
 
-  it('never leaves the tab: every Overview card opens a segment of this one', () => {
+  it('offers Mine · Both of us only to a household, and hands the Highlights whose log to count', () => {
+    const highlights = (over: Record<string, unknown>) => elements(settled(StatsLens, { ...LENS_PROPS, myId: 'me', ...over })).find(e => e.type === Highlights)!.props as { household: boolean; input: { whose: string; myId: string } }
+    expect(highlights({ household: true, whose: 'both' })).toMatchObject({ household: true, input: { whose: 'both', myId: 'me' } })
+    // alone, whatever the device once chose, there is only your own log
+    expect(highlights({ household: false, whose: 'both' })).toMatchObject({ household: false, input: { whose: 'mine' } })
+    const tracks = (over: Record<string, unknown>) => elements(into(settled(StatsLens, { ...LENS_PROPS, myId: 'me', ...over }), 'Highlights')).filter(e => e.type === Segmented).map(t => t.props.label)
+    expect(tracks({ household: true })).toEqual(['Period', 'Whose log'])
+    expect(tracks({ household: false })).toEqual(['Period'])
+  })
+
+  it('never leaves the tab: every card on the year opens a page of this one', () => {
     const went: string[] = []
-    const tree = into(settled(StatsLens, { ...LENS_PROPS, onTab: (t: string) => went.push(t) }), 'Overview')
+    const tree = into(settled(StatsLens, { ...LENS_PROPS, tab: 'year' as const, onOpen: (t: string) => went.push(t) }), 'YearLens')
     const cards = elements(tree).filter(e => e.type === AreaCard)
     expect(cards.map(c => c.props.name)).toEqual(['Tasks', 'Money', 'People', 'Places', 'Kitchen', 'Wardrobe', 'Habits', 'Journal'])
     for (const card of cards) (card.props.onOpen as () => void)()
-    // one card per segment, in the track's own order, and not one of them is a jump to another tab
-    expect(went).toEqual(['tasks', 'money', 'people', 'places', 'kitchen', 'wardrobe', 'habits', 'journal'])
-    expect(went).toEqual(STATS_TABS.filter(t => t.key !== 'overview').map(t => t.key))
+    // one card per area, in the chips' own order, and not one of them is a jump to another tab
+    expect(went).toEqual(STATS_AREAS.map(a => a.key))
   })
 
   it('draws each area\u2019s own Stats component in the tab, rather than a second version of it', () => {
-    const drawn: [StatsTab, unknown][] = [
-      ['people', PeopleStats],
-      ['places', PlacesStats],
-      ['kitchen', KitchenStats],
-      ['wardrobe', WardrobeStats],
+    const drawn: [StatsTab, unknown, string | null][] = [
+      ['people', PeopleStats, 'AreaPeople'],
+      ['places', PlacesStats, 'AreaPlaces'],
+      ['kitchen', KitchenStats, null],
+      ['wardrobe', WardrobeStats, null],
     ]
-    for (const [tab, Component] of drawn) {
+    for (const [tab, Component, wrapper] of drawn) {
       const tree = settled(StatsLens, { ...LENS_PROPS, tab })
       expect(
-        elements(tree).some(e => e.type === Component),
+        elements(wrapper ? into(tree, wrapper) : tree).some(e => e.type === Component),
         tab,
       ).toBe(true)
     }
@@ -417,12 +439,24 @@ describe('the lens drawn', () => {
 
   it('hands People and Places the lists\u2019 own find box and chips, so one figure cannot read two ways', () => {
     const filter = { group: 'family' as const, q: 'mu' }
-    const tree = settled(StatsLens, { ...LENS_PROPS, tab: 'people' as const, areas: { ...AREAS, peopleFilter: filter } })
+    const tree = into(settled(StatsLens, { ...LENS_PROPS, tab: 'people' as const, areas: { ...AREAS, peopleFilter: filter } }), 'AreaPeople')
     const view = elements(tree).find(e => e.type === PeopleStats)!
     expect(view.props.filter).toBe(filter)
     expect(view.props.onFilter).toBe(AREAS.onPeopleFilter)
     // …and the unnarrowed task list, as the People tab's own Stats are given
     expect(view.props.tasks).toBe(LENS_PROPS.tasks)
+  })
+
+  it('hands People and Places whose log it is, so a housemate’s visits are never counted as yours', () => {
+    for (const [tab, Component, wrapper] of [['people', PeopleStats, 'AreaPeople'], ['places', PlacesStats, 'AreaPlaces']] as const) {
+      const view = (over: Record<string, unknown>) => elements(into(settled(StatsLens, { ...LENS_PROPS, tab, myId: 'me', ...over }), wrapper)).find(e => e.type === Component)!
+      expect(view({}).props.myId, tab).toBe('me')
+      // a household of one that once chose Both of us: still only yours
+      expect(view({ household: false, whose: 'both' }).props.myId, tab).toBe('me')
+      // …and under Both of us, every member's, which the page says above it
+      expect(view({ household: true, whose: 'both' }).props.myId, tab).toBeNull()
+      expect(html(<StatsLens {...LENS_PROPS} tab={tab} myId="me" household whose="both" />), tab).toContain('Both of us')
+    }
   })
 
   it('counts a day you saw someone, not a day you finished a chore', () => {
@@ -435,7 +469,7 @@ describe('the lens drawn', () => {
       // (the screen hands over store.tasks, which already drops tombstones)
       tasks: [done('bins', '2026-09-15', { title: 'Take the bins out' }), done('lunch', '2026-09-13', { title: 'Lunch with Mum', peopleIds: ['mum'] })],
     }
-    const tree = into(settled(StatsLens, props), 'Overview')
+    const tree = into(settled(StatsLens, { ...props, tab: 'year' as const }), 'YearLens')
     const tile = elements(tree).find(e => e.type === StatTile && e.props.label === 'Days seen')!
     // one day: the lunch. Not the bins, and not the one in Trash.
     expect(tile.props.value).toBe('1')
@@ -457,7 +491,7 @@ describe('the lens drawn', () => {
       tasks: [done('coffee', '2026-09-15', { placeId: 'cafe' }), done('old', '2026-09-10', { placeId: 'gone' })],
       meals: [{ kind: 'meal', id: 'm1', date: '2026-09-12', slot: 'dinner', title: 'Bar', out: true, placeId: 'bar', createdAt: STAMP } as Meal],
     }
-    const tree = into(settled(StatsLens, props), 'Overview')
+    const tree = into(settled(StatsLens, { ...props, tab: 'year' as const }), 'YearLens')
     const card = elements(tree).filter(e => e.type === AreaCard).find(c => c.props.name === 'Places')!
     // the caf\u00e9 and the bar. The meal counts (outingsAt says so); the deleted
     // place does not, or the ring would read more than its own total.
@@ -470,20 +504,23 @@ describe('the lens drawn', () => {
   it('counts the places YOU have been to, as Places \u2192 Stats does: the other member going is not you going', () => {
     const cafe = { kind: 'place' as const, id: 'cafe', name: 'Caf\u00e9', color: '#a3e635', category: 'cafe' as const, createdAt: STAMP, updatedAt: STAMP }
     const props = { ...LENS_PROPS, places: [cafe], tasks: [done('hers', '2026-09-15', { placeId: 'cafe', ownerId: 'maria' })] }
-    const visited = (myId: string) => elements(into(settled(StatsLens, { ...props, myId }), 'Overview')).filter(e => e.type === AreaCard).find(c => c.props.name === 'Places')!.props.value
+    const visited = (myId: string, over: Record<string, unknown> = {}) =>
+      elements(into(settled(StatsLens, { ...props, tab: 'year' as const, myId, ...over }), 'YearLens')).filter(e => e.type === AreaCard).find(c => c.props.name === 'Places')!.props.value
     expect(visited('maria')).toBe('1 place')
     expect(visited('joe')).toBe('0 places')
+    // under Both of us, her outing counts, and the page says whose it is
+    expect(visited('joe', { household: true, whose: 'both' })).toBe('1 place')
   })
 
   it('finishes the heading\u2019s sentence on every window, including All', () => {
     // the headings read "The last {spanWords}", and 'All' lowercased gave the
     // non-phrase "The last all"
     const heads = (w: DayWindow) => {
-      const tree = settled(StatsLens, LENS_PROPS, t => {
+      const tree = settled(StatsLens, { ...LENS_PROPS, tab: 'year' as const }, t => {
         const sw = elements(t).find(e => e.type === WindowSwitch)!
         ;(sw.props.onChange as (x: DayWindow) => void)(w)
       })
-      return elements(into(tree, 'Overview'))
+      return elements(into(tree, 'YearLens'))
         .filter(e => e.type === 'h2')
         .map(h => textOf(h.props.children))
     }
@@ -504,11 +541,11 @@ describe('the lens drawn', () => {
   it('shows the window switch only where it governs something', () => {
     const windowed = (tab: StatsTab) => elements(settled(StatsLens, { ...LENS_PROPS, tab })).some(e => e.type === WindowSwitch)
     // the lens's own counting reads it…
-    for (const tab of ['overview', 'tasks', 'habits', 'journal'] as StatsTab[]) expect(windowed(tab), tab).toBe(true)
-    // …Money is counted by a year on its own stepper, and the four area views
-    // bring their own switches inside their cards, so a page-level one there
-    // would sit doing nothing
-    for (const tab of ['money', 'people', 'places', 'kitchen', 'wardrobe'] as StatsTab[]) expect(windowed(tab), tab).toBe(false)
+    for (const tab of ['year', 'tasks', 'habits', 'journal'] as StatsTab[]) expect(windowed(tab), tab).toBe(true)
+    // …Money is counted by a year on its own stepper, the four area views
+    // bring their own switches inside their cards, and the Highlights have
+    // their Week · Month · Year, so a page-level one there would sit doing nothing
+    for (const tab of ['highlights', 'money', 'people', 'places', 'kitchen', 'wardrobe'] as StatsTab[]) expect(windowed(tab), tab).toBe(false)
   })
 
   it('asks the page one question at a time: a ranked card in the lens follows the window rather than keeping its own', () => {
@@ -520,12 +557,12 @@ describe('the lens drawn', () => {
     expect(readSource('components/kitchen/KitchenStats.tsx')).not.toContain('window={')
   })
 
-  it('counts by one window across the segments, so the question survives a move between them', () => {
-    // the window lives on the lens, not inside a segment, and the segment is a
-    // prop — a move between them cannot reset it
+  it('counts by one window across a page, held by the lens rather than by any one card', () => {
+    // the window lives on the lens, not inside a page's section, and every
+    // part of the page reads that one
     const src = readSource('components/StatsLens.tsx')
-    expect(src).toMatch(/const \[span, setSpan\] = useState<DayWindow>\(30\)/)
-    expect(src.indexOf('const [span')).toBeLessThan(src.indexOf('function Overview'))
+    expect(src).toMatch(/const \[span, setSpan\] = useState<DayWindow>\(tab === 'year' \? 365 : 30\)/)
+    expect(src.indexOf('const [span')).toBeLessThan(src.indexOf('function YearLens'))
   })
 })
 
@@ -574,7 +611,7 @@ describe('the Insights tab', () => {
   it('is a view of its own, with its own chunk and its own link names', () => {
     expect(VIEWS).toContain('insights')
     expect(LensChunk.preload).toBeTypeOf('function')
-    expect(Object.keys(VIEW_TO_STATS).sort()).toEqual(['stats-habits', 'stats-journal', 'stats-kitchen', 'stats-money', 'stats-people', 'stats-places', 'stats-tasks', 'stats-wardrobe'])
+    expect(Object.keys(VIEW_TO_STATS).sort()).toEqual(['stats-habits', 'stats-journal', 'stats-kitchen', 'stats-money', 'stats-people', 'stats-places', 'stats-tasks', 'stats-wardrobe', 'stats-year'])
     expect(statsTabOfView('stats-tasks')).toBe('tasks')
   })
 
@@ -716,7 +753,7 @@ describe('the segmented control is the same control everywhere', () => {
     expect(phone).toMatch(/\.segmented\.seg-track \{\s*max-width: none;/)
   })
 
-  it('scrolls the nine-segment track instead of wrapping it into three rows', () => {
+  it('scrolls a track of more choices than fit, instead of wrapping it into three rows', () => {
     // `.segmented` wraps by default, which the filter rows want and a track
     // never does: wrapped, the lens's nine became three rows on a 375pt phone
     const scroll = css.match(/\.segmented\.seg-scroll \{([^}]*)\}/)

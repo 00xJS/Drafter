@@ -105,3 +105,34 @@ export function shiftMonth(month: string, delta: number): string {
   const d = new Date(Date.UTC(y, m - 1 + delta, 1))
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`
 }
+
+// ---- so far, against the same stretch before ----------------------------------------
+
+/** A stretch of days, first and last included, as day keys. */
+export interface DayRange {
+  start: string
+  end: string
+}
+
+/**
+ * The same stretch of the period before: last month from its 1st to today's
+ * date in it (its last day, when it is shorter), or last year from 1 January
+ * to today's month and day. What a "so far" figure — this month's days with
+ * someone, this year's outings — is set against, so the 24th is never "down"
+ * on a whole month.
+ */
+export function soFarBefore(todayKey: string, period: 'month' | 'year'): DayRange {
+  const [y, m, d] = todayKey.split('-').map(Number)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  if (period === 'year') {
+    const last = new Date(Date.UTC(y - 1, m, 0)).getUTCDate()
+    return { start: `${y - 1}-01-01`, end: `${y - 1}-${pad(m)}-${pad(Math.min(d, last))}` }
+  }
+  const prev = new Date(Date.UTC(y, m - 2, 1))
+  const last = new Date(Date.UTC(y, m - 1, 0)).getUTCDate()
+  const month = `${prev.getUTCFullYear()}-${pad(prev.getUTCMonth() + 1)}`
+  return { start: `${month}-01`, end: `${month}-${pad(Math.min(d, last))}` }
+}
+
+/** How many of these days fall in the range, first and last included. */
+export const daysInRange = (days: readonly string[], range: DayRange): number => days.filter(d => d >= range.start && d <= range.end).length

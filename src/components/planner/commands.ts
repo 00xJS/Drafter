@@ -19,7 +19,7 @@ export interface PaletteNav {
   openWardrobe(o?: WardrobeOpen): void
   /** Keep's Kitchen, on the segment it remembers. */
   openKitchen(tab?: KitchenTab): void
-  /** The Stats lens, on the segment named for this visit only, or the one last chosen. Every "… stats" row lands here. */
+  /** Insights → Stats, on the page named for this visit only, or on its Highlights. Every "… stats" row lands here. */
   openLens(tab?: StatsTab): void
   /** Tasks → Finance with its Check in sheet up. */
   openFinanceCheckIn(): void
@@ -83,8 +83,8 @@ export function buildPaletteCommands(nav: PaletteNav, overlays: PaletteOverlays,
     { id: 'go-calendar', label: 'Calendar', icon: 'calendar', keywords: 'month week day', run: () => goView('calendar') },
     { id: 'go-people', label: 'People', icon: 'people', keywords: 'contacts', run: () => goPeople('people') },
     { id: 'go-places', label: 'Places', icon: 'people', keywords: 'restaurants venues', run: () => goPeople('places') },
-    // Every figure in the app lives in the Stats lens, so every "… stats" row
-    // lands there, on that area's segment, for this visit only. The areas keep
+    // Every figure in the app lives in Insights → Stats, so every "… stats" row
+    // lands there, on that area's page, for this visit only. The areas keep
     // their own Stats beside their lists — that is where you reach them while
     // you are narrowing one — and `?view=people-stats` and the other three
     // still go THERE, because a link already in a Shortcut or a reminder must
@@ -95,9 +95,11 @@ export function buildPaletteCommands(nav: PaletteNav, overlays: PaletteOverlays,
     { id: 'go-kitchen', label: 'Kitchen', icon: 'kitchen', keywords: 'meals recipes groceries', run: () => openKitchen() },
     { id: 'go-kitchen-stats', label: 'Kitchen stats', icon: 'stats', keywords: 'most cooked eaten out bought streak dinners insights figures', run: () => openLens('kitchen') },
     { id: 'go-wardrobe-stats', label: 'Wardrobe stats', icon: 'stats', keywords: 'most worn never worn cost per wear streak uniform photo calendar repeated outfits insights figures', run: () => openLens('wardrobe') },
-    // the lens, on the segment last chosen, as a tab tap opens it…
-    { id: 'go-stats', label: 'Stats', icon: 'stats', keywords: 'figures insights numbers charts overview trends how am i doing', run: () => goView('insights') },
-    // …and the four segments whose figures live nowhere else
+    // the Highlights, as a tab tap opens them…
+    { id: 'go-stats', label: 'Stats', icon: 'stats', keywords: 'figures insights highlights numbers charts overview trends how am i doing', run: () => goView('insights') },
+    // …the year, which the Overview became…
+    { id: 'go-year-stats', label: 'This year', icon: 'stats', keywords: 'year overview streaks heat grid days figures insights', run: () => openLens('year') },
+    // …and the four areas whose figures live nowhere else
     { id: 'go-task-stats', label: 'Task stats', icon: 'stats', keywords: 'finished done throughput overdue by tag priority weekday streak figures', run: () => openLens('tasks') },
     { id: 'go-money-stats', label: 'Money stats', icon: 'stats', keywords: 'spending paid payee subscriptions budget outgoings figures', run: () => openLens('money') },
     { id: 'go-habit-stats', label: 'Habit stats', icon: 'stats', keywords: 'streaks kept consistency clean days figures', run: () => openLens('habits') },

@@ -175,6 +175,8 @@ export default defineConfig(
       'src/components/People.tsx',
       'src/components/Places.tsx',
       'src/components/StatsLens.tsx',
+      'src/components/insights/Highlights.tsx',
+      'src/components/stats/DeltaBadge.tsx',
       'src/components/PlacesStats.tsx',
       'src/components/kitchen/KitchenStats.tsx',
       'src/components/RichNotes.tsx',

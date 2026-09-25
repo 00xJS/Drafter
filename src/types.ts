@@ -61,15 +61,12 @@ export const BILL_KIND_META: Record<BillKind, { label: string; emoji: string }> 
   income: { label: 'Payday', emoji: '💵' },
   saving: { label: 'Savings', emoji: '🐷' },
 }
-/** Money coming IN. Every figure that adds money up has to ask, or a payday reads as a cost. */
-export const isIncomeKind = (k: BillKind | undefined): boolean => k === 'income'
 /**
- * Money set aside into savings on a schedule. It leaves what you could spend
- * this month, so the runway and "safe to spend" count it going out, but it is
- * not spending: it is never a cost, a bill or money spent. Every figure that
- * adds money up has to ask this too, or a set-aside reads as a bill paid.
+ * Money coming IN (isIncomeKind), and money set aside into savings
+ * (isSavingKind): neither is ever a cost. Kept in shared/money.mts with the
+ * rest of what adds money up, as the server adds it up too.
  */
-export const isSavingKind = (k: BillKind | undefined): boolean => k === 'saving'
+export { isIncomeKind, isSavingKind } from '../shared/money.mts'
 
 /**
  * What a set-aside series is saving towards. It rides on the series rather
@@ -1070,8 +1067,13 @@ export interface Notice extends Owned {
   type: NoticeType
   /** The member who did it; none for the digest or an alarm. */
   actorId?: string
-  /** What a tap opens: a message's is the household's thread, whichever message it names. */
-  target?: { kind: 'task' | 'event' | 'review' | 'message'; id: string }
+  /**
+   * What a tap opens: a message's is the household's thread, whichever
+   * message it names; the monthly recap's (`insights`) is Insights'
+   * Highlights on the period its id names (`2026-09`). A build from before
+   * a kind drops the target and keeps the notice, which then opens nothing.
+   */
+  target?: { kind: 'task' | 'event' | 'review' | 'message' | 'insights'; id: string }
   /** The headline, as the lock screen said it: "Maria finished “Take bins out”". */
   title: string
   /** What happened, a line each, oldest first; at most eight. */

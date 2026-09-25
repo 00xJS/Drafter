@@ -136,11 +136,12 @@ describe('RankedBars', () => {
     expect(out).not.toContain('hbars')
   })
 
-  it('draws each bar against the first, in its own colour moved to stand out, and the chart’s own without one', () => {
+  it('draws each bar against the first, in its own colour moved to stand out, and its area’s without one', () => {
     const out = html(<RankedBars {...props()} />)
     expect(out).toContain('<div class="hbars stats-hbars">')
     expect(out).toContain(`<span class="hbar-fill" style="width:85%;background:${graphicInk('#f2f2f2', 'light')}"></span><span class="hbar-value">4</span>`)
-    expect(out).toContain('<span class="hbar-fill" style="width:42.5%;background:var(--viz-series-1)"></span><span class="hbar-value">2</span>')
+    // no colour of its own: its area's (an .ink-* ancestor), or the chart series outside one
+    expect(out).toContain('<span class="hbar-fill" style="width:42.5%;background:var(--area-ink, var(--viz-series-1))"></span><span class="hbar-value">2</span>')
     // a label, not a button, with nothing to open
     expect(out).toContain('<span class="stats-hbar-label"><span class="stats-hbar-name">Mum</span></span>')
   })
@@ -348,11 +349,11 @@ describe('YearTable', () => {
 })
 
 describe('markInk', () => {
-  it('moves a pale colour to stand out on the card, and gives the chart’s own to none', () => {
+  it('moves a pale colour to stand out on the card, and gives its area’s to none', () => {
     expect(markInk('#f2f2f2', 'light')).toBe(graphicInk('#f2f2f2', 'light'))
     expect(markInk('#f2f2f2', 'light')).not.toBe('#f2f2f2')
     expect(markInk('#f2f2f2', 'dark')).toBe('#f2f2f2')
-    expect(markInk(undefined, 'dark')).toBe('var(--viz-series-1)')
+    expect(markInk(undefined, 'dark')).toBe('var(--area-ink, var(--viz-series-1))')
     expect(markInk('var(--tone-sky)', 'light')).toBe('var(--tone-sky)')
   })
 })

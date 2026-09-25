@@ -1,19 +1,20 @@
 import { BILL_KIND_META, Bill, OPEN_STATUSES, RecurrenceFreq, Task, isIncomeKind, isSavingKind } from './types'
 import { isOverdue } from '../shared/due.mts'
 import { seriesRoot } from '../shared/domain.mts'
+import { withPaidDefault } from '../shared/money.mts'
 
 // Household payments: the rules behind the Bills view and the calendar's money
 // glyphs. A bill is a task with a `bill` facet — its amount due is estimateCost
 // and what was paid is actualCost — so everything here is a view over tasks.
 
 /**
- * Every figure in the app is stored as a plain number; this is the one place
- * it gets a currency: US dollars, written the en-US way ("$1,234.56") on
- * every device, whatever its language.
+ * US dollars, written the en-US way ("$1,234.56") on every device, whatever
+ * its language; which kinds of cost are money spent (isSpending); and what a
+ * bill ticked with nothing under Paid paid (withPaidDefault). Kept in
+ * shared/money.mts, because the monthly recap adds money up on the server by
+ * the same rules, and re-exported here under the names they always had.
  */
-export const CURRENCY = 'USD'
-const fmt = new Intl.NumberFormat('en-US', { style: 'currency', currency: CURRENCY })
-export const formatMoney = (n: number | undefined): string => (n === undefined || !Number.isFinite(n) ? '' : fmt.format(n))
+export { CURRENCY, formatMoney, isSpending, withPaidDefault } from '../shared/money.mts'
 
 /** A payment out: a bill, a card, a subscription, a loan. Never a payday, and never a set-aside, which is money kept. */
 export const isBill = (t: Task): t is Task & { bill: Bill } => !!t.bill && !t.deletedAt && !isIncomeKind(t.bill.kind) && !isSavingKind(t.bill.kind)
@@ -37,25 +38,9 @@ export const isSaving = (t: Task): t is Task & { bill: Bill } => !!t.bill && !t.
 /** A bill, a payday OR a set-aside: the rows the Finance view is built from. */
 export const isMoney = (t: Task): t is Task & { bill: Bill } => !!t.bill && !t.deletedAt
 
-/**
- * Whether what a task cost is money SPENT. Any task's cost is, and a bill's
- * is; a payday's is money in, and a set-aside's is money kept. Review's Spend
- * and the Stats lens's Paid both ask this before they add anything up.
- */
-export const isSpending = (t: Task): boolean => !t.bill || (!isIncomeKind(t.bill.kind) && !isSavingKind(t.bill.kind))
-
 /** The emoji a money row shows: its own (a template's, a goal's), or its kind's. */
 export const billEmoji = (bill: Pick<Bill, 'kind' | 'emoji'> | undefined): string =>
   bill?.emoji || (bill && BILL_KIND_META[bill.kind]?.emoji) || BILL_KIND_META.bill.emoji
-
-/**
- * Marking a bill done with nothing typed under Paid records the amount due as
- * paid. That is what a swipe on Today or a drag on the board means, and it is
- * what makes the month's "paid so far" add up without a second step.
- */
-export function withPaidDefault(t: Task): Task {
-  return t.bill && t.status === 'done' && t.actualCost === undefined && t.estimateCost !== undefined ? { ...t, actualCost: t.estimateCost } : t
-}
 
 /** How many times each frequency falls in an average month, to put every bill on one figure. */
 const PER_MONTH: Record<RecurrenceFreq, number> = {

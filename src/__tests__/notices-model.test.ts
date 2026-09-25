@@ -84,6 +84,19 @@ describe('sanitizeNotice', () => {
     expect(sanitizeNotice({ ...notice(), target: { kind: 'task' } })?.target).toBeUndefined()
   })
 
+  it('keeps the monthly recap whole: the digest’s kind, and Insights on its month to open', () => {
+    const recap = notice({
+      id: noticeId(JOE, 'recap', '2026-09'),
+      type: 'digest',
+      target: { kind: 'insights', id: '2026-09' },
+      title: 'Your September in Drafter',
+      lines: ['Journal 9 days in a row · your longest yet'],
+      ownerId: JOE,
+    })
+    expect(sanitizeItem(recap)).toEqual(recap)
+    expect(sanitizeItem(JSON.parse(JSON.stringify(recap)))).toEqual(recap)
+  })
+
   it('keeps a household message’s notice whole: its kind, the thread it opens, and the messages it tells of', () => {
     const said = notice({
       id: noticeId(JOE, messagesAbout(MARIA), 1),

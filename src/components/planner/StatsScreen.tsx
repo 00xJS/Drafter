@@ -8,10 +8,10 @@ import { StatsLens } from './lazy'
 import type { AreaProps } from '../StatsLens'
 
 /**
- * Stats: the sixth tab, and the only one that adds nothing. Every figure the
- * app keeps is in here — Overview across all of it, then a segment each for
- * tasks, money, people, places, the kitchen, the wardrobe, habits and the
- * journal. Nothing sends you to another tab to read the rest.
+ * Insights → Stats: the one place that adds nothing. Every figure the app
+ * keeps is in here — the Highlights first, then a page each for tasks, money,
+ * people, places, the kitchen, the wardrobe, habits and the journal, and the
+ * year. Nothing sends you to another tab to read the rest.
  *
  * The four areas that keep Stats inside themselves are drawn by the lens from
  * THEIR OWN components, so there is one view and one chunk of each wherever it
@@ -28,7 +28,8 @@ import type { AreaProps } from '../StatsLens'
  * neither place.
  */
 export function StatsScreen({ p }: { p: PlannerCtx }) {
-  const { store, upsert, remove, household, statsTab, setStatsTab, setView, goTasksTab, showToast } = p
+  const { store, upsert, remove, household, inHousehold, statsTab, goStatsTab, setView, goTasksTab, showToast } = p
+  const { insightsPeriod, setInsightsPeriod, insightsAt, setInsightsAt, whose, setWhose } = p
   const { peopleFilter, setPeopleFilter, placeFilter, setPlaceFilter } = p
   const { openPerson, openPlace, openCalendarDay, openKitchen, openKitchenDay, openWardrobe, setKitchenRecipe, sawThem, planAt } = p
 
@@ -94,7 +95,7 @@ export function StatsScreen({ p }: { p: PlannerCtx }) {
   return (
     <StatsLens
       tab={statsTab}
-      onTab={setStatsTab}
+      onOpen={goStatsTab}
       tasks={store.tasks}
       people={store.people}
       places={store.places}
@@ -116,9 +117,17 @@ export function StatsScreen({ p }: { p: PlannerCtx }) {
         setView('tasks')
       }}
       areas={areas}
-      // whose log the people figures count: the address book is the
-      // household's, who saw whom is this account's own (v3.24)
+      // whose log the figures count: the address book is the household's,
+      // who saw whom is this account's own (v3.24), and Both of us — offered
+      // only where there is someone to share with — counts every member's
       myId={household.myId}
+      household={inHousehold}
+      whose={whose}
+      onWhose={setWhose}
+      period={insightsPeriod}
+      onPeriod={setInsightsPeriod}
+      at={insightsAt}
+      onAt={setInsightsAt}
     />
   )
 }

@@ -53,10 +53,11 @@ export const Wardrobe = preloadable(() => withSheet(import('../wardrobe/Wardrobe
 // in behind them. Wardrobe.tsx still imports the view directly, so the two
 // share one chunk rather than shipping it twice.
 export const WardrobeStats = preloadable(() => import('../wardrobe/WardrobeStats').then(m => m.WardrobeStats), 'WardrobeStats')
-// The Stats lens: the tab's own segments (Overview, Tasks, Money, Habits,
-// Journal) and the counting only it reads (lensstats.ts). The four areas that
-// keep Stats of their own are drawn from THEIR chunks, above — one view, one
-// chunk, wherever it is shown.
+// The Stats lens: Insights' Highlights (components/insights, and the rules
+// they pick by, shared/insights.mts), the pages the lens counts itself —
+// Tasks, Money, Habits, Journal and the year — and the counting only it reads
+// (lensstats.ts). The four areas that keep Stats of their own are drawn from
+// THEIR chunks, above — one view, one chunk, wherever it is shown.
 export const StatsLens = preloadable(() => withSheet(import('../StatsLens'), import('../../styles/views/stats-lens.css')).then(m => m.StatsLens), 'StatsLens')
 
 export const TaskEditor = preloadable(() => withSheet(import('../TaskEditor'), import('../../styles/views/task-editor.css')).then(m => m.TaskEditor), 'TaskEditor')

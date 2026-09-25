@@ -5,17 +5,19 @@ import { readChatSeen, writeChatSeen } from '../../chat'
 import {
   CAL_MODE_KEY,
   INNER_VIEW_KEYS,
+  INSIGHTS_PERIOD_KEY,
   INSIGHTS_TAB_KEY,
+  INSIGHTS_WHOSE_KEY,
   KEEP_TAB_KEY,
-  STATS_TAB_KEY,
   TASKS_TAB_KEY,
   storedCalMode,
   storedInnerViews,
+  storedInsightsPeriod,
   storedKitchenTab,
   storedInsightsTab,
   storedKeepTab,
-  storedStatsTab,
   storedTasksTab,
+  storedWhose,
   type CalendarMode,
   type HomeTab,
   type InnerView,
@@ -29,6 +31,7 @@ import {
   type View,
   type WardrobeTab,
 } from './routes'
+import type { InsightPeriod, Whose } from '../../../shared/insights.mts'
 
 /**
  * A way into Home → Wardrobe — the Today card's Pick… and Change, the palette
@@ -93,9 +96,45 @@ export function useNavigation() {
       /* ignore */
     }
   }
-  /** The Stats lens's segment, as last chosen on its own buttons; a link or the palette moves it for that visit alone. */
-  const [statsTab, showStatsTab] = useState<StatsTab>(storedStatsTab)
+  /**
+   * What Insights → Stats shows: the Highlights, or a page pushed over them —
+   * an area's figures, or the year. Never remembered: a tap on the tab lands
+   * on the Highlights, and ‹ Back goes back to them.
+   */
+  const [statsTab, showStatsTab] = useState<StatsTab>('highlights')
   const goStatsTab = (tab: StatsTab) => startTransition(() => showStatsTab(tab))
+  /** ‹ Back from an area's page, or the year's, to the Highlights. */
+  const closeStatsPage = () => goStatsTab('highlights')
+  /** The Highlights' Week · Month · Year, as last chosen on its own track; a link moves it for its visit alone. */
+  const [insightsPeriod, showInsightsPeriod] = useState<InsightPeriod>(storedInsightsPeriod)
+  /**
+   * Which week, month or year the Highlights are about: its key (`2026-09`),
+   * or null for the one we are in. Moved by the page's ‹ › and by a link,
+   * never remembered: Insights always opens on now.
+   */
+  const [insightsAt, setInsightsAt] = useState<string | null>(null)
+  /** The period chosen on its own track: remembered, and back to the one we are in. */
+  const setInsightsPeriod = (period: InsightPeriod) => {
+    startTransition(() => {
+      showInsightsPeriod(period)
+      setInsightsAt(null)
+    })
+    try {
+      localStorage.setItem(INSIGHTS_PERIOD_KEY, period)
+    } catch {
+      /* ignore */
+    }
+  }
+  /** Mine · Both of us: whose log the shared areas count, remembered on this device. */
+  const [whose, showWhose] = useState<Whose>(storedWhose)
+  const setWhose = (w: Whose) => {
+    startTransition(() => showWhose(w))
+    try {
+      localStorage.setItem(INSIGHTS_WHOSE_KEY, w)
+    } catch {
+      /* ignore */
+    }
+  }
   /** Home's segment. It is not persisted: tapping Home always returns to the
    *  day, the app's base surface; Week, Journal and Wardrobe are opt-in from there. */
   const [homeTab, showHomeTab] = useState<HomeTab>('today')
@@ -113,15 +152,6 @@ export function useNavigation() {
     goKeepTab(tab)
     try {
       localStorage.setItem(KEEP_TAB_KEY, tab)
-    } catch {
-      /* ignore */
-    }
-  }
-  /** …and the lens's nine — Overview · Tasks · Money · People · Places · Kitchen · Wardrobe · Habits · Journal: its own track, and nothing else. */
-  const setStatsTab = (tab: StatsTab) => {
-    goStatsTab(tab)
-    try {
-      localStorage.setItem(STATS_TAB_KEY, tab)
     } catch {
       /* ignore */
     }
@@ -165,13 +195,34 @@ export function useNavigation() {
     }
     if (v === 'insights') {
       goInsightsTab(storedInsightsTab())
-      goStatsTab(storedStatsTab())
+      // the Highlights, on now, counting whose log this device was told to
+      startTransition(() => {
+        showStatsTab('highlights')
+        showInsightsPeriod(storedInsightsPeriod())
+        setInsightsAt(null)
+        showWhose(storedWhose())
+      })
     }
     setView(v)
   }
-  /** The lens, on one of its segments (a link, the palette), for this visit only. */
+  /** Insights → Stats on one page — an area's figures, the year — or on the Highlights (a link, the palette), for this visit only. */
   const openLens = (tab?: StatsTab) => {
-    if (tab) goStatsTab(tab)
+    goStatsTab(tab ?? 'highlights')
+    goInsightsTab('stats')
+    setView('insights')
+  }
+  /**
+   * The Highlights on one period, `at` its key (`2026-09`), for this visit
+   * only: the monthly recap's link and its row in the hub. On Mine, as the
+   * recap counts only your own log; the choice the device keeps is untouched.
+   */
+  const openInsights = (period: InsightPeriod, at: string | null) => {
+    startTransition(() => {
+      showStatsTab('highlights')
+      showInsightsPeriod(period)
+      setInsightsAt(at)
+      showWhose('mine')
+    })
     goInsightsTab('stats')
     setView('insights')
   }
@@ -332,8 +383,15 @@ export function useNavigation() {
     openStats,
     statsTab,
     goStatsTab,
-    setStatsTab,
+    closeStatsPage,
+    insightsPeriod,
+    setInsightsPeriod,
+    insightsAt,
+    setInsightsAt,
+    whose,
+    setWhose,
     openLens,
+    openInsights,
     openReview,
     insightsTab,
     goInsightsTab,

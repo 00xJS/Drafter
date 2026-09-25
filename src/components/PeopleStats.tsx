@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { daysAgo, shortDay } from '../kitchen'
-import { countOf, NO_PERSON_FILTER, personMatcher, type PersonFilter, type PersonStats } from '../people'
+import { countOf, NO_PERSON_FILTER, personMatcher, visitDays, type PersonFilter, type PersonStats } from '../people'
 import {
   COMING_UP_DAYS,
   comingUp,
@@ -21,12 +21,12 @@ import {
   yearWithPeople,
   type GroupFilter,
 } from '../peoplestats'
-import { daysBetween, type DayWindow } from '../stats'
+import { daysBetween, daysInRange, soFarBefore, type DayWindow } from '../stats'
 import { useTheme, type Theme } from '../theme'
 import { PERSON_GROUPS, PERSON_GROUP_META, type CalendarEntry, type Person, type Task } from '../types'
 import { dateKey } from '../utils'
 import { PersonFace } from './PersonFace'
-import { ChartCard, ListCard, ListRow, MonthBars, MonthCalendar, Narrowed, Podium, RankedBars, StatTile, Stepper, StreakTiles, WindowSwitch, YearTable, markInk } from './stats'
+import { ChartCard, DeltaBadge, ListCard, ListRow, MonthBars, MonthCalendar, Narrowed, Podium, RankedBars, StatTile, Stepper, WindowSwitch, YearTable, markInk } from './stats'
 
 interface Props {
   people: Person[]
@@ -189,6 +189,8 @@ export function PeopleStats({ people, tasks, entries = NO_ENTRIES, filter, onFil
   }, [all, filter])
   const together = useMemo(() => getTogethers(shown, seen), [shown, seen])
   const byDay = useMemo(() => whoByDay(shown), [shown])
+  // this month so far, set against last month's same days
+  const lastMonth = useMemo(() => daysInRange(visitDays([...together]), soFarBefore(todayKey, 'month')), [together, todayKey])
 
   if (people.length === 0)
     return (
@@ -222,15 +224,17 @@ export function PeopleStats({ people, tasks, entries = NO_ENTRIES, filter, onFil
         <>
           {/* under the chips, heading the figures where the empty state sits, so a chip pressed never moves */}
           {narrowedBy && <Narrowed words={narrowedBy} onShowAll={showAll} />}
+          {/* the figure the page is about, first: the people, and the days with them this month */}
           <div className="kpi-row people-tiles">
-            {/* on a phone's two columns this one spans its row, so the six below pair up */}
-            <StatTile className="kpi-wide" label="People" value={String(tiles.people)} sub={[chip ? `in ${chip}` : 'on your list', matching].filter(Boolean).join(', ')} />
-            <StatTile label="This month" value={`${tiles.thisMonth.days} of ${tiles.thisMonth.of}`} sub="days with someone so far" />
-            <StatTile label="Seen lately" value={`${tiles.seenLately} of ${tiles.people}`} sub="seen in the last 90 days" />
-            <StatTile label="Overdue" value={String(counts.attention.overdue)} sub="past your target rhythm" warn={counts.attention.overdue > 0} />
-            {/* the list's "due" badge: Not seen lately below lists these and the overdue together */}
-            <StatTile label="Due a catch-up" value={String(counts.attention.due)} sub="past your target rhythm, not yet overdue" />
-            <StreakTiles current={tiles.streak.current} best={tiles.streak.best} today={tiles.streak.today} words={STREAK_WORDS} />
+            <StatTile label="People" value={String(tiles.people)} sub={[chip ? `in ${chip}` : 'on your list', matching].filter(Boolean).join(', ')} />
+            {tiles.thisMonth.days > 0 && (
+              <StatTile
+                label="This month"
+                value={`${tiles.thisMonth.days} of ${tiles.thisMonth.of}`}
+                sub="days with someone so far"
+                trend={<DeltaBadge by={tiles.thisMonth.days - lastMonth} than="on last month so far" />}
+              />
+            )}
           </div>
 
           {podium.length > 0 && (
@@ -244,8 +248,9 @@ export function PeopleStats({ people, tasks, entries = NO_ENTRIES, filter, onFil
             sub="Days seen: two get-togethers on one day count once"
             empty="Log a visit, or finish a task with someone on it, and your most seen show here."
             rank={span => mostSeen(shown, span, now)}
-            // a pale colour is moved just far enough to show as a bar on the theme's card
-            color={r => r.person.color}
+            // one colour for the area (.people-stats, 18-stats-lens.css): a bar
+            // is a count, and a rainbow of them said nothing the face beside it
+            // does not. Each person's own colour is their face.
             picture={r => <PersonFace person={r.person} theme={theme} className="face-28" />}
             onOpen={r => onOpenPerson(r.person)}
           />
@@ -329,6 +334,18 @@ export function PeopleStats({ people, tasks, entries = NO_ENTRIES, filter, onFil
               extra={{ head: 'Events', className: 'year-events', cell: r => r.events }}
             />
           </ChartCard>
+
+          {/* the rest of the counters, after the charts, and only those with something in them */}
+          {(tiles.seenLately > 0 || counts.attention.overdue > 0 || counts.attention.due > 0 || tiles.streak.best > 0) && (
+            <div className="kpi-row people-tiles">
+              {tiles.seenLately > 0 && <StatTile label="Seen lately" value={`${tiles.seenLately} of ${tiles.people}`} sub="seen in the last 90 days" />}
+              {counts.attention.overdue > 0 && <StatTile label="Overdue" value={String(counts.attention.overdue)} sub="past your target rhythm" warn />}
+              {/* the list's "due" badge: Not seen lately above lists these and the overdue together */}
+              {counts.attention.due > 0 && <StatTile label="Due a catch-up" value={String(counts.attention.due)} sub="past your target rhythm, not yet overdue" />}
+              {tiles.streak.current > 0 && <StatTile label="Streak" value={countOf(tiles.streak.current, 'day')} sub={tiles.streak.today ? STREAK_WORDS.today : STREAK_WORDS.waiting} />}
+              {tiles.streak.best > 0 && <StatTile label="Best streak" value={countOf(tiles.streak.best, 'day')} sub={STREAK_WORDS.best} />}
+            </div>
+          )}
 
           <ChartCard
             className="people-all-time"

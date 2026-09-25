@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { MONTHS } from '../../stats'
 import { dateKey } from '../../utils'
+import { AREA_INK } from './ink'
 
 /**
  * A year of days as one small grid — a column per week, a row per weekday,
@@ -67,7 +68,7 @@ export function HeatGrid({ counts, end, weeks = 53, label, noun = 'day', tone }:
                 key={day}
                 className={after ? 'heat-cell ahead' : day === today ? 'heat-cell today' : 'heat-cell'}
                 title={after ? day : `${day}: ${n} ${noun}${n === 1 ? '' : 's'}`}
-                style={n > 0 && !after ? { background: tone ?? 'var(--viz-series-1)', opacity: 0.25 + 0.75 * (n / most) } : undefined}
+                style={n > 0 && !after ? { background: tone ?? AREA_INK, opacity: 0.25 + 0.75 * (n / most) } : undefined}
               />
             )
           })}

@@ -1,3 +1,5 @@
+import { AREA_INK } from './ink'
+
 /**
  * A shape, not a chart: a series small enough to sit inside a tile or a summary
  * row, saying which way a number has been going without asking for an axis. No
@@ -8,7 +10,7 @@
  * a five-pixel-tall line legible; `aria-label` carries the series in words, so
  * a screen reader gets the trend rather than a decorative image.
  */
-export function Sparkline({ series, label, height = 30, tone = 'var(--viz-series-1)' }: { series: readonly number[]; label: string; height?: number; tone?: string }) {
+export function Sparkline({ series, label, height = 30, tone = AREA_INK }: { series: readonly number[]; label: string; height?: number; tone?: string }) {
   const w = 120
   const pad = 2
   if (series.length < 2) return null

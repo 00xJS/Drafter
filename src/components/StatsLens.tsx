@@ -1,6 +1,6 @@
-import { Suspense, useMemo, useState } from 'react'
+import { Suspense, useLayoutEffect, useMemo, useState, type ReactNode } from 'react'
 import { formatMoney } from '../bills'
-import { doneByPriority, doneByTag, doneMonths, habitReport, journalReport, moneyReport, taskReport, workDone } from '../lensstats'
+import { doneBefore, doneByPriority, doneByTag, doneMonths, habitReport, inWindowBefore, journalReport, moneyReport, paidToDate, taskReport, workDone } from '../lensstats'
 import { wardrobeCosts } from '../wardrobe'
 import { kitchenIndex, kitchenTiles } from '../kitchenstats'
 import { countOf } from '../people'
@@ -8,7 +8,8 @@ import { getTogethers, peopleSeen } from '../peoplestats'
 import { outingsAt } from '../places'
 import { DAY_WINDOWS, countDays, distinctDays, monthBuckets, type DayWindow } from '../stats'
 import { inWindow } from '../../shared/stats.mts'
-import { useTheme } from '../theme'
+import { localDayKey } from '../../shared/journal.mts'
+import { PERSONAL_AREAS, describeDelta, scopeRecords, type InsightInput, type InsightPeriod, type Scoped, type Whose } from '../../shared/insights.mts'
 import { useDayClock } from '../useDayClock'
 import { MOOD_META, MOODS, type CalendarEntry, type Garment, type GroceryList, type Habit, type JournalEntry, type Meal, type Outfit, type Person, type Place, type Recipe, type Task, type Wear } from '../types'
 import type { PersonFilter } from '../people'
@@ -16,42 +17,56 @@ import type { PlaceFilter } from '../places'
 import type { WearIndex } from '../wardrobe'
 import { dateKey } from '../utils'
 import { wearIndex } from '../../shared/wardrobe.mts'
-import { AreaCard, ChartCard, HeatGrid, MonthBars, RankedBars, Ring, Segmented, StatTile, Stepper, StreakTiles, WindowSwitch, markInk } from './stats'
+import { AreaCard, ChartCard, DeltaBadge, HeatGrid, MonthBars, RankedBars, Ring, StatTile, Stepper, WindowSwitch } from './stats'
+import { Highlights } from './insights/Highlights'
 import { KitchenStats, PeopleStats, PlacesStats, WardrobeStats } from './planner/lazy'
-import { STATS_TABS, type StatsTab } from './planner/routes'
+import type { StatsArea, StatsTab } from './planner/routes'
 
 /*
- * The Stats lens: the sixth tab, and the only one you never add anything to.
- * Every figure the app keeps is in here — nothing sends you to another tab to
- * read half of them.
+ * Insights → Stats, the lens: the one place you never add anything to, and
+ * where every figure the app keeps can be read. It opens on the Highlights
+ * (components/insights), and each area's figures are a page pushed over them:
+ * what you finish, pay, keep up and write, counted here from src/lensstats.ts,
+ * and People, Places, Kitchen and the Wardrobe drawn from THEIR OWN components
+ * — the ones their areas draw, reading the same find boxes and chips
+ * (useListFilters), so one view, one chunk, one set of numbers wherever you
+ * look. The Overview it used to open on is the This year page.
  *
- * Overview reads across all of it and its cards move the segment below.
- * Four segments hold the areas with nowhere else to be counted (what you
- * finish, what you pay, what you keep up, what you write), and those are
- * counted in src/lensstats.ts, pure. The other four — People, Places, Kitchen
- * and the Wardrobe — keep Stats of their own inside their areas, and the lens
- * draws THE SAME COMPONENT rather than a second version of it, reading the
- * same find boxes and chips (useListFilters). One view, one chunk, one set of
- * numbers, wherever you look at it.
+ * Whose log each page counts is decided once, by scopeRecords
+ * (shared/insights.mts) — the rule the Highlights and the monthly recap use:
+ * under Mine your own work, visits, outings and meals; under Both of us every
+ * member's the device can already read, labelled on every page. The journal,
+ * habits and clothes are yours under either.
  *
  * Nothing personal leaves the device, and nothing written in the journal is
  * quoted — the journal's figures are counts and moods only.
  */
 
-/** What the lens's own segments count by: the kit's own windows. */
+/** What a page's own window switch offers: the kit's windows. */
 const LENS_WINDOWS: readonly { key: DayWindow; label: string }[] = DAY_WINDOWS
 
 /**
- * The segments the window switch governs. Money is counted by a year, chosen on
+ * The pages the window switch governs. Money is counted by a year, chosen on
  * its own ‹ 2026 ›, and the four area views bring their own switches inside
- * their cards — so on those five the page-level switch would sit there doing
+ * their cards — so on those five a page-level switch would sit there doing
  * nothing, which is worse than not being there. It is shown only where it works.
  */
-const WINDOWED: ReadonlySet<StatsTab> = new Set<StatsTab>(['overview', 'tasks', 'habits', 'journal'])
+const WINDOWED: ReadonlySet<StatsTab> = new Set<StatsTab>(['year', 'tasks', 'habits', 'journal'])
+
+/** The day an instant falls on, on this device's calendar: the Highlights' and every page's. */
+const localDayOf = (iso: string): string => localDayKey(new Date(iso))
+
+/**
+ * Where the Highlights were scrolled to when a page was pushed over them, so
+ * ‹ Back lands where you left; a page itself opens at its top.
+ */
+const scroll = { highlights: 0 }
 
 export interface StatsLensProps {
+  /** The Highlights, or the page pushed over them. */
   tab: StatsTab
-  onTab(tab: StatsTab): void
+  /** Push a page over the Highlights: an area's figures, or the year. */
+  onOpen(page: Exclude<StatsTab, 'highlights'>): void
   tasks: Task[]
   people: Person[]
   places: Place[]
@@ -70,11 +85,21 @@ export interface StatsLensProps {
   areas: AreaProps
   now?: Date
   /**
-   * Whose log the people figures count. The address book is the household's;
-   * who saw whom is each member's own (v3.24), so a figure here reads the same
-   * visits People → Stats reads, and the two still agree.
+   * The viewer. The address book is the household's; who saw whom, where you
+   * went and what you finished are each member's own (v3.24), and the
+   * journal, habits and clothes are yours alone.
    */
   myId?: string | null
+  /** More than one member shares the planner: Mine · Both of us is offered, and Both is labelled wherever it counts. */
+  household?: boolean
+  /** Whose log the shared areas count. Mine, unless the household is more than one and this device chose Both. */
+  whose?: Whose
+  onWhose?(w: Whose): void
+  /** The Highlights' Week · Month · Year, and which one by its key (null for now). */
+  period?: InsightPeriod
+  onPeriod?(p: InsightPeriod): void
+  at?: string | null
+  onAt?(key: string | null): void
 }
 
 /**
@@ -105,216 +130,375 @@ export interface AreaProps {
   wearIx: WearIndex
 }
 
+const noop = () => {}
+
 export function StatsLens(p: StatsLensProps) {
-  const { tab, onTab, areas: a, now: handed } = p
+  const { tab, now: handed } = p
   // One clock for the day, as People's and Places' Stats keep one. A fresh
   // `new Date()` in the parameter list is a new object every render, and it is
   // a dependency of every report below — so each keystroke in a find box, each
   // sync and each toast recomputed the lot. Midnight starts the new day's
   // clock (useDayClock), even on a lens left open overnight.
   const now = useDayClock(handed)
-  const [span, setSpan] = useState<DayWindow>(30)
+  // a page opens on the last 30 days, and the year's on the last 12 months
+  const [span, setSpan] = useState<DayWindow>(tab === 'year' ? 365 : 30)
   const [year, setYear] = useState(now.getFullYear())
-  // the headings read "The last {spanWords}", so 'All' has to become words that
-  // finish that sentence — "the last all" is not a phrase
+  const myId = p.myId ?? null
+  // alone there is nobody else's log to count, whatever this device once chose
+  const whose: Whose = p.household && p.whose === 'both' ? 'both' : 'mine'
+  const today = dateKey(now)
+  const scoped = useMemo(
+    () => scopeRecords({ tasks: p.tasks, meals: p.meals, journal: p.journal, habits: p.habits, garments: p.garments, wears: p.wears, myId, whose }),
+    [p.tasks, p.meals, p.journal, p.habits, p.garments, p.wears, myId, whose],
+  )
+  const input = useMemo<InsightInput>(
+    () => ({
+      tasks: p.tasks,
+      events: p.events,
+      people: p.people,
+      places: p.places,
+      meals: p.meals,
+      recipes: p.recipes,
+      journal: p.journal,
+      habits: p.habits,
+      garments: p.garments,
+      wears: p.wears,
+      myId,
+      whose,
+      now,
+      today,
+      dayKeyOf: localDayOf,
+    }),
+    [p.tasks, p.events, p.people, p.places, p.meals, p.recipes, p.journal, p.habits, p.garments, p.wears, myId, whose, now, today],
+  )
+  const open = (page: Exclude<StatsTab, 'highlights'>) => {
+    scroll.highlights = typeof window === 'undefined' ? 0 : window.scrollY
+    p.onOpen(page)
+  }
+  if (tab === 'highlights')
+    return (
+      <HighlightsPage>
+        <Highlights
+          input={input}
+          household={!!p.household}
+          onWhose={p.onWhose ?? noop}
+          period={p.period ?? 'week'}
+          onPeriod={p.onPeriod ?? noop}
+          at={p.at ?? null}
+          onAt={p.onAt ?? noop}
+          onOpen={open}
+        />
+      </HighlightsPage>
+    )
   const spanWords = span === 'all' ? 'all time' : (LENS_WINDOWS.find(w => w.key === span)?.label.toLowerCase() ?? 'all time')
+  const lens: Lens = { ...p, scoped, whose, span, spanWords, now, year, setYear, onOpen: open }
   return (
-    <>
-      <div className="stats-bar">
-        {/* nine segments: more than a phone line holds, so the track scrolls
-            and keeps the chosen one in view */}
-        <Segmented items={STATS_TABS} value={tab} onChange={onTab} label="Stats view" scroll />
-        {/* One question at a time: the segments the window governs all read it,
-            so choosing 12 months on Tasks and moving to Habits keeps what you
-            were asking. Where it would govern nothing it is not drawn. */}
-        {WINDOWED.has(tab) && (
-          <div className="stats-window">
-            <WindowSwitch value={span} onChange={setSpan} windows={LENS_WINDOWS} />
+    <StatsPage key={tab}>
+      <div className={`stats-lens stats-page ink-${tab}`}>
+        {(whose === 'both' || WINDOWED.has(tab)) && (
+          <div className="stats-bar">
+            {whose === 'both' && <WhoseLine page={tab} />}
+            {/* One question at a time: the pages the window governs all read it,
+                so choosing 12 months on Tasks and opening the year keeps what
+                you were asking. Where it would govern nothing it is not drawn. */}
+            {WINDOWED.has(tab) && (
+              <div className="stats-window">
+                <WindowSwitch value={span} onChange={setSpan} windows={LENS_WINDOWS} />
+              </div>
+            )}
           </div>
         )}
-      </div>
-      <div className="stats-lens">
-        {tab === 'overview' && <Overview {...p} span={span} spanWords={spanWords} now={now} />}
-        {tab === 'tasks' && <TasksLens {...p} span={span} spanWords={spanWords} year={year} setYear={setYear} now={now} />}
-        {tab === 'money' && <MoneyLens {...p} span={span} spanWords={spanWords} year={year} setYear={setYear} now={now} />}
-        {tab === 'habits' && <HabitsLens {...p} span={span} spanWords={spanWords} now={now} />}
-        {tab === 'journal' && <JournalLens {...p} span={span} spanWords={spanWords} year={year} setYear={setYear} now={now} />}
+        {tab === 'year' && <YearLens {...lens} />}
+        {tab === 'tasks' && <TasksLens {...lens} />}
+        {tab === 'money' && <MoneyLens {...lens} />}
+        {tab === 'habits' && <HabitsLens {...lens} />}
+        {tab === 'journal' && <JournalLens {...lens} />}
         {/* The four areas that count themselves, drawn here as they are drawn
-            there. Each waits on its own chunk, so the lens's own segments never
+            there. Each waits on its own chunk, so the lens's own pages never
             wait on a chunk they do not use. */}
         <Suspense fallback={<div className="view-pending" aria-busy="true" />}>
-          {tab === 'people' && (
-            <PeopleStats
-              people={p.people}
-              tasks={p.tasks}
-              entries={p.events}
-              filter={a.peopleFilter}
-              onFilter={a.onPeopleFilter}
-              onSaw={a.onSaw}
-              onOpenPerson={a.onOpenPerson}
-              onOpenDay={a.onOpenDay}
-            />
+          {tab === 'people' && <AreaPeople {...lens} />}
+          {tab === 'places' && <AreaPlaces {...lens} />}
+          {tab === 'kitchen' && (
+            <KitchenStats recipes={p.recipes} meals={scoped.meals} groceries={p.groceries} places={p.places} onOpenRecipe={p.areas.onOpenRecipe} onGoDay={p.areas.onGoMealDay} />
           )}
-          {tab === 'places' && (
-            <PlacesStats
-              places={p.places}
-              people={p.people}
-              tasks={p.tasks}
-              meals={p.meals}
-              filter={a.placeFilter}
-              onFilter={a.onPlaceFilter}
-              onOpenPlace={a.onOpenPlace}
-              onPlan={a.onPlanAt}
-              onOpenPerson={a.onOpenPerson}
-              onOpenDay={a.onOpenDay}
-            />
-          )}
-          {tab === 'kitchen' && <KitchenStats recipes={p.recipes} meals={p.meals} groceries={p.groceries} places={p.places} onOpenRecipe={a.onOpenRecipe} onGoDay={a.onGoMealDay} />}
           {tab === 'wardrobe' && (
             <WardrobeStats
-              garments={p.garments}
+              garments={scoped.garments}
               outfits={p.outfits}
-              byId={a.byId}
-              ix={a.wearIx}
-              onOpenPiece={a.onOpenPiece}
-              onRetire={a.onRetirePiece}
-              onSaveOutfit={a.onSaveOutfit}
-              onGoDay={a.onGoWearDay}
+              byId={p.areas.byId}
+              ix={p.areas.wearIx}
+              onOpenPiece={p.areas.onOpenPiece}
+              onRetire={p.areas.onRetirePiece}
+              onSaveOutfit={p.areas.onSaveOutfit}
+              onGoDay={p.areas.onGoWearDay}
             />
           )}
         </Suspense>
       </div>
-    </>
+    </StatsPage>
   )
 }
 
-type Lens = StatsLensProps & { span: DayWindow; spanWords: string; now: Date }
-type YearLens = Lens & { year: number; setYear(y: number): void }
+/** The Highlights, put back where they were scrolled to when a page was pushed over them. */
+function HighlightsPage({ children }: { children: ReactNode }) {
+  useLayoutEffect(() => {
+    if (scroll.highlights > 0) window.scrollTo(0, scroll.highlights)
+    scroll.highlights = 0
+  }, [])
+  return <>{children}</>
+}
+
+/** A page pushed over the Highlights opens at its top, wherever they were scrolled to. */
+function StatsPage({ children }: { children: ReactNode }) {
+  useLayoutEffect(() => {
+    window.scrollTo(0, 0)
+  }, [])
+  return <>{children}</>
+}
+
+/** Under Both of us, whose figures a page holds, so none can be taken for yours alone. */
+function WhoseLine({ page }: { page: StatsTab }) {
+  const personal = PERSONAL_AREAS.has(page as StatsArea)
+  return (
+    <p className="whose-note">
+      {personal ? (
+        <>
+          <span className="badge whose-badge just-you">Just you</span> Your own, as under Mine: nobody else’s is ever counted here.
+        </>
+      ) : page === 'year' ? (
+        <>
+          <span className="badge whose-badge">Both of us</span> Tasks, money, people, places and meals count everyone in the household; the journal, habits and clothes are yours alone.
+        </>
+      ) : (
+        <>
+          <span className="badge whose-badge">Both of us</span> Every member’s log is counted here, not only yours.
+        </>
+      )}
+    </p>
+  )
+}
+
+type Lens = StatsLensProps & {
+  scoped: Scoped
+  whose: Whose
+  span: DayWindow
+  spanWords: string
+  now: Date
+  year: number
+  setYear(y: number): void
+  onOpen(page: Exclude<StatsTab, 'highlights'>): void
+}
 
 /** ‹ year › over a card, stopping at this year: no year still to come is offered. */
 function YearStep({ year, setYear, now }: { year: number; setYear(y: number): void; now: Date }) {
   return <Stepper label={String(year)} unit="year" canNext={year < now.getFullYear()} onStep={d => setYear(year + d)} />
 }
 
-// ---- Overview --------------------------------------------------------------------
+/** What a window is set against, in the words of a tile's change. */
+const beforeWords = (w: DayWindow) => (w === 365 ? 'on the 12 months before' : 'on the 30 days before')
 
-function Overview(p: Lens) {
-  const { tasks, people, places, events, meals, recipes, journal, habits, garments, wears, areas: a, span, spanWords, now, myId } = p
-  const theme = useTheme()
+/** A tile's change on the window before: nothing for All, which has no before. */
+function WindowChange({ now, before, window, unit }: { now: number; before: number | null; window: DayWindow; unit?: 'points' }) {
+  if (before === null || window === 'all') return null
+  const d = describeDelta(now - before, beforeWords(window), unit)
+  return <DeltaBadge by={d.by} text={d.text} than={d.than} />
+}
+
+// ---- People and Places, by whose log --------------------------------------------
+
+/** People's own Stats, counting the visits whose log is asked for: yours (v3.24), or every member's under Both of us. */
+function AreaPeople({ people, tasks, events, areas: a, scoped }: Lens) {
+  return (
+    <PeopleStats
+      people={people}
+      tasks={tasks}
+      entries={events}
+      filter={a.peopleFilter}
+      onFilter={a.onPeopleFilter}
+      onSaw={a.onSaw}
+      onOpenPerson={a.onOpenPerson}
+      onOpenDay={a.onOpenDay}
+      // whom you saw is your own log (v3.24): without it, a household
+      // member's visits counted as yours here and nowhere else. Under Both of
+      // us, null counts everyone's, and the page says so above.
+      myId={scoped.visitsOf}
+    />
+  )
+}
+
+/** Places' own Stats, counting the outings whose log is asked for; a meal shared with the household counts for both either way. */
+function AreaPlaces({ places, people, tasks, meals, areas: a, scoped }: Lens) {
+  return (
+    <PlacesStats
+      places={places}
+      people={people}
+      tasks={tasks}
+      meals={meals}
+      filter={a.placeFilter}
+      onFilter={a.onPlaceFilter}
+      onOpenPlace={a.onOpenPlace}
+      onPlan={a.onPlanAt}
+      onOpenPerson={a.onOpenPerson}
+      onOpenDay={a.onOpenDay}
+      myId={scoped.visitsOf}
+    />
+  )
+}
+
+// ---- This year: what the Overview held ---------------------------------------------
+
+function YearLens(p: Lens) {
+  const { people, places, events, recipes, areas: a, scoped, span, spanWords, now } = p
+  const tasks = scoped.work
   const year = now.getFullYear()
   const report = useMemo(() => taskReport(tasks, span, now), [tasks, span, now])
-  const ix = useMemo(() => kitchenIndex(recipes, meals, places, now), [recipes, meals, places, now])
+  const ix = useMemo(() => kitchenIndex(recipes, scoped.meals, places, now), [recipes, scoped.meals, places, now])
   const kitchen = useMemo(() => kitchenTiles(ix), [ix])
-  const wear = useMemo(() => wearIndex(wears, dateKey(now)), [wears, now])
+  const wear = useMemo(() => wearIndex(scoped.wears, dateKey(now)), [scoped.wears, now])
   // seenTasks is a HAYSTACK — every task plus the past events with people on
   // them — which People narrows per person. Mapping it raw made every day you
   // finished any chore a day you saw someone, and counted tasks in Trash too.
   // getTogethers is the narrowing People's own tiles use, so the two agree.
-  const { seen, all } = useMemo(() => peopleSeen(people, tasks, events, now, myId), [people, tasks, events, now, myId])
+  const { seen, all } = useMemo(() => peopleSeen(people, p.tasks, events, now, scoped.visitsOf), [people, p.tasks, events, now, scoped.visitsOf])
   const together = useMemo(() => getTogethers(all, seen), [all, seen])
-  const jr = useMemo(() => journalReport(journal, span, year, now), [journal, span, year, now])
-  const hr = useMemo(() => habitReport(habits, span, now), [habits, span, now])
+  const jr = useMemo(() => journalReport(scoped.journal, span, year, now), [scoped.journal, span, year, now])
+  const hr = useMemo(() => habitReport(scoped.habits, span, now), [scoped.habits, span, now])
   const money = useMemo(() => moneyReport(tasks, year, now), [tasks, year, now])
   // the Wardrobe's own rule, over the index the screen built: a piece's price
   // over the DAYS it was worn, so the lens and Home → Wardrobe agree exactly
-  const clothes = useMemo(() => wardrobeCosts(garments, a.wearIx), [garments, a.wearIx])
+  const clothes = useMemo(() => wardrobeCosts(scoped.garments, a.wearIx), [scoped.garments, a.wearIx])
   const doneSeries = useMemo(() => monthBuckets(together, year, countDays), [together, year])
   // every tile under "the last …" counts that window and nothing else, so the
-  // four of them are answering one question rather than four
+  // four of them are answering one question rather than four; each is set
+  // against the window before, counted the same way
   const today = dateKey(now)
-  const peopleDays = useMemo(() => distinctDays(together, iso => dateKey(new Date(iso))).filter(d => inWindow(d, today, span)), [together, today, span])
-  const cookedDays = useMemo(() => ix.meals.filter(m => ix.ways.get(m.id) === 'cooked' && inWindow(m.date, today, span)).map(m => m.date), [ix, today, span])
-  const dressedDays = useMemo(() => wear.logged.filter(d => inWindow(d, today, span)), [wear, today, span])
+  const seenDays = useMemo(() => distinctDays(together, iso => dateKey(new Date(iso))), [together])
+  const cookedAll = useMemo(() => [...new Set(ix.meals.filter(m => ix.ways.get(m.id) === 'cooked').map(m => m.date))], [ix])
+  const peopleDays = seenDays.filter(d => inWindow(d, today, span))
+  const cookedDays = cookedAll.filter(d => inWindow(d, today, span))
+  const dressedDays = wear.logged.filter(d => inWindow(d, today, span))
+  const before = (days: readonly string[]) => (span === 'all' ? null : days.filter(d => inWindowBefore(d, today, span)).length)
   // outingsAt is the app's one rule for having been somewhere: a done task
   // carrying the place, AND a past meal eaten out there — counting a takeaway
   // is what keeps the Kitchen and Places agreeing. Only over places that still
   // exist, or the ring could read more than its own total. Your own outings
-  // (myId), as the people figures above and Places → Stats count them.
+  // under Mine, as Places → Stats counts them.
   const livePlaces = useMemo(() => places.filter(pl => !pl.deletedAt), [places])
-  const placesVisited = useMemo(() => livePlaces.filter(pl => outingsAt(pl.id, tasks, meals, now, myId).length > 0).length, [livePlaces, tasks, meals, now, myId])
-  // doneMonths, not a recount: the Tasks segment's own "Each month" bars are
-  // these twelve numbers, and this sparkline is the way into that segment —
-  // the two disagreed, because this one counted visits as work
+  const placesVisited = useMemo(() => livePlaces.filter(pl => outingsAt(pl.id, p.tasks, p.meals, now, scoped.visitsOf).length > 0).length, [livePlaces, p.tasks, p.meals, now, scoped.visitsOf])
+  // doneMonths, not a recount: the Tasks page's own "Each month" bars are
+  // these twelve numbers, and this sparkline is the way into that page
   const done = useMemo(() => doneMonths(tasks, year, now).months, [tasks, year, now])
+  const pieces = scoped.garments.filter(g => !g.deletedAt && !g.archivedAt).length
+  const tile = (label: string, days: readonly string[], sub: string) =>
+    days.length > 0 && <StatTile label={label} value={String(days.length)} sub={sub} trend={<WindowChange now={days.length} before={before(days)} window={span} />} />
   return (
     <>
       <section className="stats-section">
-        <h2>The last {spanWords}</h2>
-        <div className="kpi-row">
-          <StatTile label="Finished" value={String(report.done)} sub={report.done === 0 ? 'nothing ticked off yet' : `${countOf(report.days.length, 'day')} with something done`} />
-          <StatTile label="Days seen" value={String(peopleDays.length)} sub="with anyone on your list" />
-          <StatTile label="Cooked at home" value={String(new Set(cookedDays).size)} sub="days with a meal you made" />
-          <StatTile label="Days dressed" value={String(dressedDays.length)} sub="looks you logged" />
-        </div>
-      </section>
-
-      <section className="stats-section">
-        <h2>Kept up</h2>
-        <p className="stats-note">A streak waits for today rather than breaking on it.</p>
-        <div className="kpi-row">
-          <StreakTiles current={report.streaks.current} best={report.streaks.best} today={report.streaks.today} words={{ today: 'with something done, today too', waiting: 'finish one to keep it going', none: 'finish something to start one', best: 'with something done' }} />
-          <StatTile label="Journal" value={countOf(jr.streaks.current, 'day')} sub={jr.streaks.today ? 'written in a row, today too' : 'write today to keep it going'} />
-          <StatTile label="Habits kept" value={`${hr.pct}%`} sub={hr.due > 0 ? `${hr.done} of ${hr.due} due in the last ${spanWords}` : 'nothing was due'} />
-        </div>
-      </section>
-
-      <section className="stats-section">
-        <h2>Each area</h2>
-        {/* Every one of these opens a segment of THIS tab. Nothing here sends
-            you to another tab to read the rest of your own figures. */}
-        <p className="stats-note">Each opens that area&rsquo;s own figures, here.</p>
-        <div className="area-list">
-          <AreaCard name="Tasks" value={`${report.open} open`} sub={report.overdue > 0 ? `${report.overdue} past their date` : 'nothing overdue'} series={done} seriesLabel="Finished each month" onOpen={() => p.onTab('tasks')} openLabel="Open Tasks" />
-          <AreaCard name="Money" value={formatMoney(money.spent)} sub={`paid in ${year}`} series={money.months} seriesLabel={`What you paid each month of ${year}`} onOpen={() => p.onTab('money')} openLabel="Open Money" />
-          <AreaCard
-            name="People"
-            value={countOf(peopleDays.length, 'day')}
-            sub={`with anyone, in the last ${spanWords}`}
-            series={doneSeries}
-            seriesLabel="Days you saw someone each month"
-            onOpen={() => p.onTab('people')}
-            openLabel="Open People"
-          />
-          <AreaCard
-            name="Places"
-            value={countOf(placesVisited, 'place')}
-            sub="you have been to at least once"
-            onOpen={() => p.onTab('places')}
-            openLabel="Open Places"
-            aside={<Ring value={placesVisited} of={Math.max(1, livePlaces.length)} size={52} label={String(placesVisited)} tone={markInk(undefined, theme)} />}
-          />
-          <AreaCard
-            name="Kitchen"
-            value={`${kitchen.cookedDays} of ${kitchen.daysThisMonth}`}
-            sub="days cooked at home this month"
-            onOpen={() => p.onTab('kitchen')}
-            openLabel="Open Kitchen"
-            aside={<Ring value={kitchen.cookedDays} of={Math.max(1, kitchen.daysThisMonth)} size={52} label={`${Math.round((kitchen.cookedDays / Math.max(1, kitchen.daysThisMonth)) * 100)}%`} />}
-          />
-          <AreaCard
-            name="Wardrobe"
-            value={countOf(garments.filter(g => !g.deletedAt && !g.archivedAt).length, 'piece')}
-            sub={clothes.perWear === undefined ? 'nothing priced yet' : `${formatMoney(clothes.perWear)} a wear`}
-            onOpen={() => p.onTab('wardrobe')}
-            openLabel="Open Wardrobe"
-          />
-          <AreaCard name="Habits" value={`${hr.pct}%`} sub={hr.due > 0 ? `of ${hr.due} days due` : 'nothing was due'} onOpen={() => p.onTab('habits')} openLabel="Open Habits" />
-          <AreaCard name="Journal" value={countOf(jr.entries, 'entry').replace('entrys', 'entries')} sub={`written in the last ${spanWords}`} onOpen={() => p.onTab('journal')} openLabel="Open Journal" />
-        </div>
-      </section>
-
-      <section className="stats-section">
         <h2>A year of days</h2>
         <p className="stats-note">Every day you finished something. A column is a week; the newest is on the right.</p>
-        <ChartCard title="Days with something done" sub={countOf(report.streaks.best, 'day').concat(' is the longest run there has been')}>
+        <ChartCard title="Days with something done" sub={report.streaks.best > 0 ? `${countOf(report.streaks.best, 'day')} is the longest run there has been` : 'Finish something and the day lights up'}>
           <HeatGrid counts={new Map(countsByDay(tasks))} end={now} label="Days with something done" noun="task" />
         </ChartCard>
       </section>
+
+      {(report.streaks.best > 0 || jr.streaks.current > 0 || hr.due > 0) && (
+        <section className="stats-section">
+          <h2>Kept up</h2>
+          <p className="stats-note">A streak waits for today rather than breaking on it.</p>
+          <div className="kpi-row">
+            {report.streaks.current > 0 && <StatTile label="Streak" value={countOf(report.streaks.current, 'day')} sub={report.streaks.today ? 'with something done, today too' : 'finish one to keep it going'} />}
+            {report.streaks.best > 0 && <StatTile label="Best streak" value={countOf(report.streaks.best, 'day')} sub="with something done" />}
+            {jr.streaks.current > 0 && <StatTile label="Journal" value={countOf(jr.streaks.current, 'day')} sub={jr.streaks.today ? 'written in a row, today too' : 'write today to keep it going'} />}
+            {hr.due > 0 && <StatTile label="Habits kept" value={`${hr.pct}%`} sub={`${hr.done} of ${hr.due} due in the last ${spanWords}`} />}
+          </div>
+        </section>
+      )}
+
+      <section className="stats-section">
+        <h2>Each area</h2>
+        {/* Every one of these opens a page of THIS tab. Nothing here sends
+            you to another tab to read the rest of your own figures. */}
+        <p className="stats-note">Each opens that area&rsquo;s own figures, here.</p>
+        {/* each card in its own area's colour, as its page is drawn */}
+        <div className="area-list">
+          <div className="ink-tasks">
+            <AreaCard name="Tasks" value={`${report.open} open`} sub={report.overdue > 0 ? `${report.overdue} past their date` : 'nothing overdue'} series={done} seriesLabel="Finished each month" onOpen={() => p.onOpen('tasks')} openLabel="Open Tasks" />
+          </div>
+          <div className="ink-money">
+            <AreaCard name="Money" value={formatMoney(money.spent)} sub={`paid in ${year}`} series={money.months} seriesLabel={`What you paid each month of ${year}`} onOpen={() => p.onOpen('money')} openLabel="Open Money" />
+          </div>
+          <div className="ink-people">
+            <AreaCard
+              name="People"
+              value={countOf(peopleDays.length, 'day')}
+              sub={`with anyone, in the last ${spanWords}`}
+              series={doneSeries}
+              seriesLabel="Days you saw someone each month"
+              onOpen={() => p.onOpen('people')}
+              openLabel="Open People"
+            />
+          </div>
+          <div className="ink-places">
+            <AreaCard
+              name="Places"
+              value={countOf(placesVisited, 'place')}
+              sub="you have been to at least once"
+              onOpen={() => p.onOpen('places')}
+              openLabel="Open Places"
+              aside={<Ring value={placesVisited} of={Math.max(1, livePlaces.length)} size={52} label={String(placesVisited)} />}
+            />
+          </div>
+          <div className="ink-kitchen">
+            <AreaCard
+              name="Kitchen"
+              value={`${kitchen.cookedDays} of ${kitchen.daysThisMonth}`}
+              sub="days cooked at home this month"
+              onOpen={() => p.onOpen('kitchen')}
+              openLabel="Open Kitchen"
+              aside={<Ring value={kitchen.cookedDays} of={Math.max(1, kitchen.daysThisMonth)} size={52} label={`${Math.round((kitchen.cookedDays / Math.max(1, kitchen.daysThisMonth)) * 100)}%`} />}
+            />
+          </div>
+          <div className="ink-wardrobe">
+            <AreaCard
+              name="Wardrobe"
+              value={countOf(pieces, 'piece')}
+              sub={clothes.perWear === undefined ? 'nothing priced yet' : `${formatMoney(clothes.perWear)} a wear`}
+              onOpen={() => p.onOpen('wardrobe')}
+              openLabel="Open Wardrobe"
+            />
+          </div>
+          <div className="ink-habits">
+            <AreaCard name="Habits" value={`${hr.pct}%`} sub={hr.due > 0 ? `of ${hr.due} days due` : 'nothing was due'} onOpen={() => p.onOpen('habits')} openLabel="Open Habits" />
+          </div>
+          <div className="ink-journal">
+            <AreaCard name="Journal" value={countOf(jr.entries, 'entry').replace('entrys', 'entries')} sub={`written in the last ${spanWords}`} onOpen={() => p.onOpen('journal')} openLabel="Open Journal" />
+          </div>
+        </div>
+      </section>
+
+      {(report.done > 0 || peopleDays.length > 0 || cookedDays.length > 0 || dressedDays.length > 0) && (
+        <section className="stats-section">
+          <h2>The last {spanWords}</h2>
+          <div className="kpi-row">
+            {report.done > 0 && (
+              <StatTile
+                label="Finished"
+                value={String(report.done)}
+                sub={`${countOf(report.days.length, 'day')} with something done`}
+                trend={<WindowChange now={report.done} before={doneBefore(tasks, span, now)} window={span} />}
+              />
+            )}
+            {tile('Days seen', peopleDays, 'with anyone on your list')}
+            {tile('Cooked at home', cookedDays, 'days with a meal you made')}
+            {tile('Days dressed', dressedDays, 'looks you logged')}
+          </div>
+        </section>
+      )}
     </>
   )
 }
 
-/** Each day paired with how many tasks were finished on it. */
 /**
  * Days with work finished, for the year grid — off `workDone`, which is the
  * app's own rule for what counts.
@@ -338,22 +522,23 @@ function countsByDay(tasks: readonly Task[]): [string, number][] {
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
-function TasksLens(p: YearLens) {
-  const { tasks, span, spanWords, year, setYear, now } = p
+function TasksLens(p: Lens) {
+  const { scoped, span, spanWords, year, setYear, now } = p
+  const tasks = scoped.work
   const report = useMemo(() => taskReport(tasks, span, now), [tasks, span, now])
   const months = useMemo(() => doneMonths(tasks, year, now), [tasks, year, now])
+  const before = useMemo(() => doneBefore(tasks, span, now), [tasks, span, now])
   const busiest = Math.max(1, ...report.weekday)
+  const streak = report.streaks
   return (
     <>
-      <section className="stats-section">
-        <h2>The last {spanWords}</h2>
-        <div className="kpi-row">
-          <StatTile label="Finished" value={String(report.done)} sub={`over ${countOf(report.days.length, 'day')}`} />
-          <StatTile label="Still open" value={String(report.open)} sub="to do, doing or blocked" />
-          <StatTile label="Overdue" value={String(report.overdue)} warn={report.overdue > 0} sub="past their date" onJump={p.onTasks} />
-          <StreakTiles current={report.streaks.current} best={report.streaks.best} today={report.streaks.today} words={{ today: 'with something done, today too', waiting: 'finish one to keep it going', none: 'finish something to start one', best: 'with something done' }} />
+      {/* the figure the page is about first, then the charts; a tile is drawn only for something there is */}
+      {(report.done > 0 || streak.current > 0) && (
+        <div className="kpi-row lens-lead">
+          {report.done > 0 && <StatTile label="Finished" value={String(report.done)} sub={`on ${countOf(report.days.length, 'day')}`} trend={<WindowChange now={report.done} before={before} window={span} />} />}
+          {streak.current > 0 && <StatTile label="Streak" value={countOf(streak.current, 'day')} sub={streak.today ? 'with something done, today too' : 'finish one to keep it going'} />}
         </div>
-      </section>
+      )}
 
       <section className="stats-section">
         <h2>When the work happens</h2>
@@ -379,7 +564,7 @@ function TasksLens(p: YearLens) {
             </div>
           )}
         </ChartCard>
-        <ChartCard title="A year of days" sub="Every day you finished something">
+        <ChartCard title="A year of days" sub={streak.best > 0 ? `Every day you finished something · ${countOf(streak.best, 'day')} is the best run` : 'Every day you finished something'}>
           <HeatGrid counts={new Map(countsByDay(tasks))} end={now} label="Days with something done" noun="task" />
         </ChartCard>
       </section>
@@ -390,10 +575,15 @@ function TasksLens(p: YearLens) {
         <RankedBars title="By the priority it carried" sub="Finished work, as it was marked when you ticked it" empty="Nothing was finished in this window." rank={w => doneByPriority(tasks, w, now)} window={span} />
       </section>
 
-      {(report.byStatus.length > 0 || report.aging.length > 0) && (
+      {(report.open > 0 || streak.best > 0) && (
         <section className="stats-section">
           <h2>What is waiting</h2>
           <p className="stats-note">Open work is what is open now — no window narrows it.</p>
+          <div className="kpi-row">
+            {report.open > 0 && <StatTile label="Still open" value={String(report.open)} sub="to do, doing or blocked" onJump={p.onTasks} />}
+            {report.overdue > 0 && <StatTile label="Overdue" value={String(report.overdue)} warn sub="past their date" onJump={p.onTasks} />}
+            {streak.best > 0 && <StatTile label="Best streak" value={countOf(streak.best, 'day')} sub="with something done" />}
+          </div>
           {report.byStatus.length > 0 && (
             <ChartCard title="By status" sub="Everything still open">
               <div className="lens-rows">
@@ -436,28 +626,27 @@ function TasksLens(p: YearLens) {
 
 // ---- Money -----------------------------------------------------------------------
 
-function MoneyLens(p: YearLens) {
-  const { tasks, garments, areas: a, year, setYear, now } = p
+function MoneyLens(p: Lens) {
+  const { scoped, areas: a, year, setYear, now, whose } = p
+  const tasks = scoped.work
   const money = useMemo(() => moneyReport(tasks, year, now), [tasks, year, now])
-  const clothes = useMemo(() => wardrobeCosts(garments, a.wearIx), [garments, a.wearIx])
+  // set against the year before at the same point in it, while this one is still going
+  const thisYear = year === now.getFullYear()
+  const before = useMemo(() => paidToDate(tasks, year - 1, thisYear ? dateKey(now).slice(5) : undefined), [tasks, year, thisYear, now])
+  const clothes = useMemo(() => wardrobeCosts(scoped.garments, a.wearIx), [scoped.garments, a.wearIx])
   const busiestPayee = Math.max(1, ...money.byPayee.map(r => r.count))
   const busiestKind = Math.max(1, ...money.byKind.map(r => r.count))
   const perMonth = money.spent > 0 ? Math.round(money.spent / Math.max(1, money.months.filter(m => m > 0).length)) : 0
+  const change = describeDelta(money.spent - before, thisYear ? `on ${year - 1} to date` : `on ${year - 1}`, 'money')
   return (
     <>
-      <section className="stats-section">
-        <h2>{year}</h2>
-        <p className="stats-note">Counted from what a finished task actually cost — a bill pays itself its own amount unless you changed it.</p>
-        <div className="kpi-row">
-          <StatTile label="Paid" value={formatMoney(money.spent)} sub={`across ${year}`} />
-          <StatTile label="A month" value={formatMoney(perMonth)} sub="on the months anything was paid" />
-          {/* These last two are not the year's: what is still owed is owed now,
-              and a wardrobe is bought over years. Both say so, because they sit
-              in a row under a year heading where three tiles are that year's. */}
-          <StatTile label="Still to pay" value={String(money.dueNow)} warn={money.dueNow > 0} sub={money.dueNowTotal > 0 ? `open now · about ${formatMoney(money.dueNowTotal)}` : 'open now · bills not yet ticked'} />
-          <StatTile label="Clothes" value={formatMoney(clothes.spent)} sub={clothes.perWear === undefined ? 'all time · nothing worn yet' : `all time · ${formatMoney(clothes.perWear)} a wear`} />
+      <p className="stats-note">Counted from what a finished task actually cost — a bill pays itself its own amount unless you changed it.</p>
+      {money.spent > 0 && (
+        <div className="kpi-row lens-lead">
+          <StatTile label="Paid" value={formatMoney(money.spent)} sub={`across ${year}`} trend={<DeltaBadge by={change.by} text={change.text} than={change.than} />} />
+          {perMonth > 0 && <StatTile label="A month" value={formatMoney(perMonth)} sub="on the months anything was paid" />}
         </div>
-      </section>
+      )}
 
       <section className="stats-section">
         <h2>Each month</h2>
@@ -505,38 +694,66 @@ function MoneyLens(p: YearLens) {
           </ChartCard>
         )}
       </section>
+
+      {/* These two are not the year's: what is still owed is owed now, and a
+          wardrobe is bought over years. Both say so, under a heading of their
+          own rather than beside the year's figures. */}
+      {(money.dueNow > 0 || clothes.spent > 0) && (
+        <section className="stats-section">
+          <h2>Now, and all time</h2>
+          <div className="kpi-row">
+            {money.dueNow > 0 && <StatTile label="Still to pay" value={String(money.dueNow)} warn sub={money.dueNowTotal > 0 ? `open now · about ${formatMoney(money.dueNowTotal)}` : 'open now · bills not yet ticked'} />}
+            {clothes.spent > 0 && (
+              <StatTile
+                label="Clothes"
+                value={formatMoney(clothes.spent)}
+                sub={`${whose === 'both' ? 'yours, ' : ''}${clothes.perWear === undefined ? 'all time · nothing worn yet' : `all time · ${formatMoney(clothes.perWear)} a wear`}`}
+              />
+            )}
+          </div>
+        </section>
+      )}
     </>
   )
 }
 
 // ---- Habits ----------------------------------------------------------------------
 
+/** The same clock a window earlier: what the window before this one is counted at. */
+const windowEarlier = (now: Date, w: DayWindow): Date => new Date(now.getFullYear(), now.getMonth(), now.getDate() - (w === 'all' ? 0 : w), now.getHours(), now.getMinutes())
+
 function HabitsLens(p: Lens) {
-  const { habits, span, spanWords, now } = p
-  const theme = useTheme()
+  const { scoped, span, spanWords, now } = p
+  const habits = scoped.habits
   const hr = useMemo(() => habitReport(habits, span, now), [habits, span, now])
+  const earlier = useMemo(() => (span === 'all' ? null : habitReport(habits, span, windowEarlier(now, span))), [habits, span, now])
   const clean = useMemo(() => new Map(hr.cleanDays.map(d => [d, 1] as [string, number])), [hr.cleanDays])
   if (hr.rows.length === 0) {
     return (
       <section className="stats-section">
-        <h2>Habits</h2>
         <ChartCard title="Nothing to count yet" sub="Habits live on Home → Today; each one you add is counted here.">
           <p className="empty">No habit was due in the last {spanWords}.</p>
         </ChartCard>
       </section>
     )
   }
+  const cleanInWindow = hr.cleanDays.filter(d => inWindow(d, dateKey(now), span)).length
   return (
     <>
-      <section className="stats-section">
-        <h2>The last {spanWords}</h2>
-        <p className="stats-note">A day you were not due is not a day you missed, and today waits rather than breaks a run.</p>
-        <div className="kpi-row">
-          <StatTile label="Kept" value={`${hr.pct}%`} sub={`${hr.done} of ${hr.due} days due`} />
-          <StatTile label="Clean days" value={String(hr.cleanDays.length)} sub="everything due, kept" />
-          <StreakTiles current={hr.streaks.current} best={hr.streaks.best} today={hr.streaks.today} words={{ today: 'clean in a row, today too', waiting: 'keep today to hold it', none: 'keep a whole day to start one', best: 'clean in a row' }} />
+      <p className="stats-note">A day you were not due is not a day you missed, and today waits rather than breaks a run.</p>
+      {(hr.done > 0 || hr.streaks.current > 0) && (
+        <div className="kpi-row lens-lead">
+          {hr.done > 0 && (
+            <StatTile
+              label="Kept"
+              value={`${hr.pct}%`}
+              sub={`${hr.done} of ${hr.due} days due`}
+              trend={earlier && earlier.due > 0 ? <WindowChange now={hr.pct} before={earlier.pct} window={span} unit="points" /> : undefined}
+            />
+          )}
+          {hr.streaks.current > 0 && <StatTile label="Streak" value={countOf(hr.streaks.current, 'day')} sub={hr.streaks.today ? 'clean in a row, today too' : 'keep today to hold it'} />}
         </div>
-      </section>
+      )}
 
       <section className="stats-section">
         <h2>Each habit</h2>
@@ -544,7 +761,8 @@ function HabitsLens(p: Lens) {
           <div className="lens-rows">
             {hr.rows.map(r => (
               <div className="lens-row" key={r.habit.id}>
-                <Ring value={r.done} of={Math.max(1, r.due)} size={44} label={`${r.pct}%`} tone={markInk(r.habit.color, theme)} />
+                {/* one colour for the area, as every chart here: the habit's own colour is its dot on Today */}
+                <Ring value={r.done} of={Math.max(1, r.due)} size={44} label={`${r.pct}%`} />
                 <span className="lens-row-name">
                   <b>
                     {r.habit.emoji ? `${r.habit.emoji} ` : ''}
@@ -561,37 +779,43 @@ function HabitsLens(p: Lens) {
             ))}
           </div>
         </ChartCard>
-      </section>
-
-      <section className="stats-section">
-        <h2>A year of days</h2>
-        <ChartCard title="Clean days" sub="A day is lit when everything due that day was kept">
+        <ChartCard title="A year of days" sub="A day is lit when everything due that day was kept">
           <HeatGrid counts={clean} end={now} label="Clean days" noun="clean day" />
         </ChartCard>
       </section>
+
+      {(cleanInWindow > 0 || hr.streaks.best > 0) && (
+        <section className="stats-section">
+          <h2>Clean days</h2>
+          <div className="kpi-row">
+            {cleanInWindow > 0 && <StatTile label="Clean days" value={String(cleanInWindow)} sub={`everything due kept, in the last ${spanWords}`} />}
+            {hr.streaks.best > 0 && <StatTile label="Best streak" value={countOf(hr.streaks.best, 'day')} sub="clean in a row" />}
+          </div>
+        </section>
+      )}
     </>
   )
 }
 
 // ---- Journal ---------------------------------------------------------------------
 
-function JournalLens(p: YearLens) {
-  const { journal, span, spanWords, year, setYear, now } = p
+function JournalLens(p: Lens) {
+  const { scoped, span, spanWords, year, setYear, now } = p
+  const journal = scoped.journal
   const jr = useMemo(() => journalReport(journal, span, year, now), [journal, span, year, now])
+  const earlier = useMemo(() => (span === 'all' ? null : journalReport(journal, span, year, windowEarlier(now, span))), [journal, span, year, now])
   const counts = useMemo(() => new Map(journal.filter(e => !e.deletedAt).map(e => [e.date, 1] as [string, number])), [journal])
   const mostMood = Math.max(1, ...jr.moodCounts)
+  const withMood = jr.moodCounts.reduce((a, b) => a + b, 0)
   return (
     <>
-      <section className="stats-section">
-        <h2>The last {spanWords}</h2>
-        <p className="stats-note">Counts and moods only — nothing you wrote is shown here.</p>
-        <div className="kpi-row">
-          <StatTile label="Entries" value={String(jr.entries)} sub={`over ${countOf(jr.days.length, 'day')}`} />
-          <StatTile label="Words" value={jr.words.toLocaleString()} sub="written in this window" />
-          <StatTile label="Mood" value={jr.mood === null ? '—' : jr.mood.toFixed(1)} sub={jr.mood === null ? 'no entry carried one' : `average of ${countOf(jr.moodCounts.reduce((a, b) => a + b, 0), 'entry').replace('entrys', 'entries')}`} />
-          <StreakTiles current={jr.streaks.current} best={jr.streaks.best} today={jr.streaks.today} words={{ today: 'written in a row, today too', waiting: 'write today to keep it going', none: 'write a day to start one', best: 'written in a row' }} />
+      <p className="stats-note">Counts and moods only — nothing you wrote is shown here.</p>
+      {(jr.entries > 0 || jr.streaks.current > 0) && (
+        <div className="kpi-row lens-lead">
+          {jr.entries > 0 && <StatTile label="Entries" value={String(jr.entries)} sub={`over ${countOf(jr.days.length, 'day')}`} trend={<WindowChange now={jr.entries} before={earlier?.entries ?? null} window={span} />} />}
+          {jr.streaks.current > 0 && <StatTile label="Streak" value={countOf(jr.streaks.current, 'day')} sub={jr.streaks.today ? 'written in a row, today too' : 'write today to keep it going'} />}
         </div>
-      </section>
+      )}
 
       <section className="stats-section">
         <h2>How the days felt</h2>
@@ -624,6 +848,17 @@ function JournalLens(p: YearLens) {
           <HeatGrid counts={counts} end={now} label="Days written" noun="entry" />
         </ChartCard>
       </section>
+
+      {(jr.words > 0 || jr.mood !== null || jr.streaks.best > 0) && (
+        <section className="stats-section">
+          <h2>The last {spanWords}</h2>
+          <div className="kpi-row">
+            {jr.words > 0 && <StatTile label="Words" value={jr.words.toLocaleString()} sub="written in this window" trend={<WindowChange now={jr.words} before={earlier?.words ?? null} window={span} />} />}
+            {jr.mood !== null && <StatTile label="Mood" value={jr.mood.toFixed(1)} sub={`average of ${countOf(withMood, 'entry').replace('entrys', 'entries')}`} />}
+            {jr.streaks.best > 0 && <StatTile label="Best streak" value={countOf(jr.streaks.best, 'day')} sub="written in a row" />}
+          </div>
+        </section>
+      )}
     </>
   )
 }

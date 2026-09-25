@@ -14,7 +14,7 @@ import { useEffect, useRef, type ReactNode } from 'react'
  * blanket rule in 01-base.css) simply puts the thumb where it belongs at once.
  *
  * `scroll` is for a track with more choices than fit a phone — the Stats lens
- * has nine. Then the segments take their own widths and the track scrolls,
+ * had nine, until its areas became chips. Then the segments take their own widths and the track scrolls,
  * keeping the chosen one in view; there is no thumb, because a thumb that has
  * to travel past the edge of its own track is a worse answer than a raised
  * button. Every other track keeps the thumb.

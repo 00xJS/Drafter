@@ -4,7 +4,7 @@
 // you type into.
 
 import type { JournalEntry, Mood, Person } from '../src/types.ts'
-import { dayStreaks } from './stats.mts'
+import { dayStreaks, type Streaks } from './stats.mts'
 
 export const DAY_MS = 86_400_000
 
@@ -139,10 +139,25 @@ export function peopleNamesOf(entry: Pick<JournalEntry, 'peopleIds'> | null | un
   return entry.peopleIds.map(id => lookup(String(id))).filter((n): n is string => typeof n === 'string' && !!n.trim())
 }
 
-/** Consecutive days with an entry, counting back from today (or yesterday if today is still blank): the Stats rules' dayStreaks. */
-export function streak(entries: readonly JournalEntry[], today: string = localDayKey()): number {
+/** The days written on: every live entry's day, once, newest first. What every count of the journal and its streak go by. */
+export function writtenDays(entries: readonly JournalEntry[]): string[] {
   const days = (entries ?? []).filter(e => e && e.kind === 'journal' && !e.deletedAt && DATE_RE.test(e.date)).map(e => e.date)
-  return dayStreaks(days, today).current
+  return [...new Set(days)].sort((a, b) => b.localeCompare(a))
+}
+
+/**
+ * Days written in a row: the run reaching `today` (or yesterday, while today
+ * is still blank) and the longest there has been — the Stats rules'
+ * dayStreaks over writtenDays. Today's card, the Stats lens, Insights'
+ * highlights and the monthly recap all read the journal's streak here.
+ */
+export function journalStreaks(entries: readonly JournalEntry[], today: string = localDayKey()): Streaks {
+  return dayStreaks(writtenDays(entries), today)
+}
+
+/** Consecutive days with an entry, counting back from today (or yesterday if today is still blank): journalStreaks' current run. */
+export function streak(entries: readonly JournalEntry[], today: string = localDayKey()): number {
+  return journalStreaks(entries, today).current
 }
 
 /** Mean mood of the entries that carry one, to one decimal; undefined when none do. */

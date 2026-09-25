@@ -1,15 +1,16 @@
 import type { HubRow } from '../../hub'
 import type { PlannerCtx } from './ctx'
+import { periodOfKey } from './routes'
 
 /**
  * A row tapped in the notification hub: the thing it is about, opened where
  * it lives, as its push or reminder would have opened it — a task in its
- * editor, an event in its own, the week's review, the household's thread, a
- * person's card, a place's row. `before` closes the sheet. A task deleted
+ * editor, an event in its own, the week's review, the household's thread,
+ * Insights on a month (the monthly recap), a person's card, a place's row. `before` closes the sheet. A task deleted
  * since, or not on this device yet, says so rather than opening nothing.
  */
 export function hubOpener(p: PlannerCtx, before?: () => void): (target: NonNullable<HubRow['target']>) => void {
-  const { store, openTask, openReview, openPerson, openPlace, setView, setEventEditor, setChatSide, setPushed, showToast } = p
+  const { store, openTask, openReview, openPerson, openPlace, openInsights, setView, setEventEditor, setChatSide, setPushed, showToast } = p
   return target => {
     before?.()
     if (target.kind === 'task') {
@@ -25,6 +26,10 @@ export function hubOpener(p: PlannerCtx, before?: () => void): (target: NonNulla
       // the chat on the household's thread, even if it was left on the assistant's
       setChatSide('household')
       setPushed('chat')
+    } else if (target.kind === 'insights') {
+      // the monthly recap: Insights' Highlights on its period, as its push opens them
+      const period = periodOfKey(target.id)
+      openInsights(period ?? 'month', period ? target.id : null)
     } else if (target.kind === 'person') openPerson(target.id)
     else if (target.kind === 'place') openPlace(target.id)
   }
