@@ -20,6 +20,8 @@ interface Props {
    */
   tip?: string
   stopPropagation?: boolean
+  /** Not to be pressed now (something it waits on is still running). */
+  disabled?: boolean
 }
 
 /**
@@ -27,7 +29,7 @@ interface Props {
  * "Tap again to …" — the one wording every confirm step uses; a second tap
  * within 4 seconds confirms. A tap elsewhere, a key or waiting disarms it.
  */
-export function ConfirmButton({ onConfirm, children, confirmLabel = 'Tap again to delete', className = 'btn danger', title, ariaLabel, tip, stopPropagation }: Props) {
+export function ConfirmButton({ onConfirm, children, confirmLabel = 'Tap again to delete', className = 'btn danger', title, ariaLabel, tip, stopPropagation, disabled }: Props) {
   const [armed, setArmed] = useState(false)
   const timer = useRef<number | undefined>(undefined)
   const name = ariaLabel ?? tip
@@ -50,6 +52,7 @@ export function ConfirmButton({ onConfirm, children, confirmLabel = 'Tap again t
       title={title ?? tip}
       aria-label={name && armed ? `${name}: ${confirmLabel}` : name}
       data-tip={tip}
+      disabled={disabled}
       onBlur={() => setArmed(false)}
       onClick={e => {
         if (stopPropagation) e.stopPropagation()

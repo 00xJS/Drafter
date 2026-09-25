@@ -536,6 +536,21 @@
 .fin-row.income .fin-date {
   background: var(--tone-green-bg);
 }
+/* a coming bill's second line: its words give way, and Autopay keeps its
+   place at their end — inside them it went under their ellipsis at 375pt */
+.bill-copy small.fin-coming-meta {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.fin-coming-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.fin-coming-meta > .fin-tag {
+  flex: none;
+}
 .fin-tag.alone {
   margin-left: 0;
 }
@@ -826,6 +841,12 @@
   align-items: center;
   gap: 8px;
   font-weight: 600;
+}
+/* Check in weekly is its label: 24pt of it under a finger was not a row to tap */
+@media (pointer: coarse) {
+  .fin-weekly-on {
+    min-height: 44px;
+  }
 }
 .fin-weekly-when {
   display: flex;
@@ -1138,7 +1159,7 @@
 }
 .checkin-field {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(7.5rem, 10rem);
+  grid-template-columns: minmax(0, 1fr) auto;
   grid-template-areas: 'name input' 'last input';
   align-items: center;
   gap: 2px 12px;
@@ -1153,9 +1174,68 @@
 .checkin-field > small {
   grid-area: last;
 }
-.checkin-field > input {
+/* the amount, and beside a checking, savings or cash account its Overdrawn */
+.checkin-amount {
   grid-area: input;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.checkin-amount > input {
+  width: 9rem;
+  min-width: 0;
   text-align: right;
+}
+/* Check in on a phone: the name has the row, and the amount the line under
+   it. Side by side at 375pt the name had ~145pt, and "Chase Sapphire
+   Preferred joint checking" and "Chase Sapphire Preferred card" both read
+   "Chase Sapphire…" — which balance was being typed was a guess. */
+@media (max-width: 640px) {
+  .checkin-field {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: 'name' 'last' 'input';
+  }
+  .checkin-name {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .checkin-amount {
+    margin-top: 6px;
+  }
+  .checkin-amount > input {
+    flex: 1 1 auto;
+    width: auto;
+  }
+}
+/* An account's sheet: the amount, then its Overdrawn. A span, for the label
+   it is in, so it undoes the field caption's small type. */
+.field > .fin-amount-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: inherit;
+  font-weight: inherit;
+  color: inherit;
+}
+.fin-amount-row > input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+/* the phone's missing minus: quiet until pressed, then in the tone the app
+   gives what is below zero */
+.btn.fin-overdrawn {
+  flex: none;
+  /* the − and the word: in the shell's flex button the space between them is dropped */
+  gap: 0.25em;
+  white-space: nowrap;
+  border-color: var(--border);
+}
+.btn.fin-overdrawn.on {
+  background: var(--tone-rose-bg);
+  border-color: var(--tone-rose-border);
+  color: var(--tone-rose);
+  font-weight: 600;
 }
 .checkin-add {
   display: grid;

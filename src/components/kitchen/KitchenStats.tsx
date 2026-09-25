@@ -27,7 +27,7 @@ import { MONTHS, daysInRange, soFarBefore, type DayWindow } from '../../stats'
 import { MEAL_SLOT_META, type GroceryList, type Meal, type MealSlot, type Place, type Recipe } from '../../types'
 import { useDayClock } from '../../useDayClock'
 import { dateKey } from '../../utils'
-import { ChartCard, DeltaBadge, ListCard, ListRow, MonthCalendar, Podium, RankedBars, StatTile, Stepper, TrendBadge, WindowSwitch, type MonthDay, type StreakWords } from '../stats'
+import { ChartCard, DeltaBadge, ListCard, ListRow, MonthCalendar, Podium, RankedBars, StatTile, Stepper, TrendBadge, WindowSwitch, useReadout, type MonthDay, type StreakWords } from '../stats'
 
 interface Props {
   recipes: Recipe[]
@@ -110,22 +110,24 @@ function WayKey({ counts }: { counts?: Record<MealWay, number> }) {
 /**
  * The year's meals by month: a column a month, stacked cooked, eaten out and
  * bought from the baseline up with a 2px gap of the card between them, this
- * month's label drawn stronger. Pointed at, a month says its three figures;
- * the chart says them all to a screen reader.
+ * month's label drawn stronger. Pointed at, a month says its three figures,
+ * and tapped, it says them under the chart (useReadout); the chart says them
+ * all to a screen reader.
  */
 function MealMonthsChart({ months, current }: { months: MealMonths; current: number }) {
+  const readout = useReadout('Tap a month to read it')
   const [w, h, base, gap] = [360, 112, 94, 2]
   const slot = w / 12
   const most = Math.max(1, ...MONTHS.map((_, i) => MEAL_WAYS.reduce((sum, way) => sum + months[way.key][i], 0)))
   const said = (i: number) => MEAL_WAYS.map(way => `${months[way.key][i]} ${way.label.toLowerCase()}`).join(', ')
   return (
     <div className="chart-plot kitchen-month-bars">
-      <svg viewBox={`0 0 ${w} ${h}`} role="img" aria-label={`Meals by month: ${MONTHS.map((m, i) => `${m} ${said(i)}`).join('; ')}`}>
+      <svg viewBox={`0 0 ${w} ${h}`} role="img" aria-label={`Meals by month: ${MONTHS.map((m, i) => `${m} ${said(i)}`).join('; ')}`} onClick={readout.onClick}>
         <line className="axis-base" x1={0} x2={w} y1={base} y2={base} />
         {MONTHS.map((m, i) => {
           let top = base
           return (
-            <g key={m}>
+            <g key={m} data-read={`${m}: ${said(i)}`}>
               <title>{`${m}: ${said(i)}`}</title>
               <rect className="hit" x={i * slot} y={0} width={slot} height={base} />
               {MEAL_WAYS.filter(way => months[way.key][i] > 0).map((way, j) => {
@@ -141,6 +143,7 @@ function MealMonthsChart({ months, current }: { months: MealMonths; current: num
           )
         })}
       </svg>
+      {readout.line}
     </div>
   )
 }

@@ -212,6 +212,32 @@
 .split-bought {
   background: var(--cal-meal-bought);
 }
+/* the bar's figures under it, each after a dot in its part's colour */
+.split-figure {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+.split-key {
+  display: flex;
+  gap: 6px;
+  color: var(--text-2);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.split-key-part {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.split-key-part > i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
 
 /* ---------- Ring ---------- */
 

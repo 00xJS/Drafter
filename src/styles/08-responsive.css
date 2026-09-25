@@ -561,6 +561,15 @@
   .modal-body {
     overflow-y: auto;
   }
+  /* The body is the one part of a sheet that gives way when it is too tall;
+     its title bar and its footer keep what they hold. The native bar's 80px
+     min-height (19-native-shell.css) is a floor, and a floor on a flex item
+     replaced its content-sized minimum: a long form squeezed the header to
+     that floor, and a title taller than it drew over the form. */
+  .modal-head,
+  .modal-foot {
+    flex-shrink: 0;
+  }
 
   /* "Discard changes?" keeps its own size on a phone, at the foot of the
      screen where the thumb already is, rather than the sheet's full height */
@@ -655,6 +664,63 @@
   .segmented {
     gap: 6px;
   }
+}
+
+/* ---- Hit areas: a finger's 44pt round the small controls ------------------
+   Each of these draws smaller than a fingertip and is placed where the eye
+   wants it: an 18pt task tick, a 26pt colour swatch, a ‹ beside its month, a
+   button in a line of prose. Each keeps the look it has and takes taps over a
+   44pt square centred on it — a transparent ::after, on an element that is
+   positioned for it — measured with hit-tests in the iOS sweep. Where two
+   neighbours' squares would overlap, the spacing between them grows instead
+   (the swatches, a Stats card's bars), so a tap never lands on the wrong one.
+   Not on a mouse: a pointer is as fine as the control it is over. */
+@media (pointer: coarse) {
+  .tcheck,
+  .swatch,
+  .hbars button.stats-hbar-label,
+  .hbars button.wardrobe-hbar-label,
+  .chart-head .segmented > .seg,
+  .period-bar > .btn,
+  .notes-tool,
+  .versions > summary,
+  p > .btn.subtle,
+  .person-journal .btn,
+  .empty .btn {
+    position: relative;
+  }
+  .tcheck::after,
+  .swatch::after,
+  .hbars button.stats-hbar-label::after,
+  .hbars button.wardrobe-hbar-label::after,
+  .chart-head .segmented > .seg::after,
+  .period-bar > .btn::after,
+  .notes-tool::after,
+  .versions > summary::after,
+  p > .btn.subtle::after,
+  .person-journal .btn::after,
+  .empty .btn::after {
+    content: '';
+    position: absolute;
+    /* 44pt wide and tall round the middle, or the control itself where it is bigger */
+    inset: min(0px, calc(50% - 22px));
+  }
+  /* a Stats card's bars: 16pt between the rows, so each name has 44 of its own */
+  .hbars.stats-hbars,
+  .hbars.wardrobe-hbars {
+    gap: 16px;
+  }
+  /* 2pt more round a ‹ or › at a card's head, and a notes tool and a ‹ › in a
+     period bar their 44 outright: their squares met their neighbours' edges */
+  .chart-head .segmented > .seg {
+    min-width: 34px;
+  }
+  .period-bar > .btn {
+    min-width: var(--touch);
+  }
+  /* The notes tools' width, the swatches' spacing (10-editor-notes.css) and
+     the photo calendar's (18-wardrobe.css) are with their own rules, which
+     come after this and would otherwise win. */
 }
 
 /* ---- One button size on a phone -----------------------------------------

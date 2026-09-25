@@ -107,6 +107,13 @@
   border-radius: 8px;
   cursor: pointer;
 }
+/* a list's row under a finger is a 44pt row, as every list on the phone is:
+   at 34pt, one on top of the next, no row could reach past its own */
+@media (pointer: coarse) {
+  .search-hit {
+    min-height: var(--touch);
+  }
+}
 /* a command row (jump / do) reads as an affordance, not a found record: its
    glyph carries the accent so the palette's "what you can do" is scannable
    apart from the "what you have" below it */

@@ -11,6 +11,7 @@
  * - Segmented: one track with a thumb that slides, for a switch that swaps the panel under it.
  * - Ring: "13 of 15" as an arc. Sparkline: a series small enough to sit in a row.
  * - HeatGrid: a year of days as a column per week — runs and gaps in one glance.
+ * - useReadout: a chart's marks read by a tap, in a line under it, where a pointer reads their titles.
  * - AreaCard: one area's line on the year's page (and the Highlights' way to it), and the way to that area's page.
  * - DeltaBadge: a figure's change on the period before, where it has one.
  * - RankedBars: ranked bars under that switch. Podium: the top three.
@@ -47,4 +48,5 @@ export { Segmented } from './Segmented'
 export { Ring } from './Ring'
 export { Sparkline } from './Sparkline'
 export { HeatGrid, heatDays, type HeatDay } from './HeatGrid'
+export { readDay, useReadout } from './Readout'
 export { AreaCard } from './AreaCard'

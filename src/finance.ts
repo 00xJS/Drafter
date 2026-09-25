@@ -903,6 +903,25 @@ export function parseBalance(text: string): number | null {
   return round(negative ? -n : n)
 }
 
+/**
+ * Whether a balance of this kind of account can be below zero: checking,
+ * savings and cash can be overdrawn. A card's balance is what is owed on it,
+ * always a positive number, and an investment is not drawn on.
+ */
+export const canBeOverdrawn = (type: AccountType): boolean => type === 'checking' || type === 'savings' || type === 'cash'
+
+/**
+ * A typed balance with its Overdrawn toggle applied. The keypad an iPhone
+ * shows for an amount has no minus key, so on the phone the toggle is the
+ * minus: on, the amount is below zero; off, it reads as typed — a `-80` or
+ * `(80)` from a keyboard that has one is still overdrawn (parseBalance).
+ */
+export function signedBalance(text: string, overdrawn: boolean): number | null {
+  const n = parseBalance(text)
+  if (n === null || !overdrawn || n === 0) return n
+  return -Math.abs(n)
+}
+
 // ---- goals --------------------------------------------------------------------
 
 export type GoalStatus = 'reached' | 'on-track' | 'behind' | 'open'

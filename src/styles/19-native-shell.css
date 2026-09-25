@@ -20,6 +20,29 @@
   -webkit-overflow-scrolling: touch;
 }
 
+/* Press and hold. A long press on a button, a row, a chip, a card or the tab
+   bar selected its words and put up Copy · Look Up, and on a photo the image
+   menu — the other giveaway of a web page. Nothing the app draws selects or
+   calls out; what is written in it still does, as in any notes or messages
+   app: a field, the notes pad, the journal's own words, a chat message, an
+   answer to a question. The two properties are said on those again, as
+   WebKit has left fields under an unselectable page unable to take a caret. */
+html.native body {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+html.native input,
+html.native textarea,
+html.native [contenteditable]:not([contenteditable='false']),
+html.native .journal-body,
+html.native .chat-bubble,
+html.native .ask-answer {
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+}
+
 /* HIG tap floor. Every control below reads this so a 36/40/29 mix cannot
    creep back in as three different guesses. */
 .native {
@@ -410,6 +433,27 @@
     min-height: 88px;
     padding: 10px 12px;
     border-radius: 10px;
+  }
+  /* A select WebKit draws as its own menu button keeps the height that button
+     wants, whatever min-height says: the Mac's WebKit drew every one at 23pt
+     under the 44pt floor above. In the app the sheet draws it instead — no
+     system button, the floor, room at its end, and a ▾ of its own in the muted
+     ink (two gradients, so a token and not an image). `html` and the two
+     attributes outrank a component's own `background` shorthand, which would
+     otherwise take the ▾ away. */
+  html.native select:not([multiple]):not([size]) {
+    -webkit-appearance: none;
+    appearance: none;
+    min-height: var(--touch);
+    padding-right: 32px;
+    background-image:
+      linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+      linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+    background-position:
+      calc(100% - 18px) 50%,
+      calc(100% - 13px) 50%;
+    background-size: 5px 5px;
+    background-repeat: no-repeat;
   }
 
   /* Tall enough for what is IN it: the 22px the grab handle takes above, a

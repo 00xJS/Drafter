@@ -100,11 +100,8 @@
   line-height: 1;
 }
 
+/* the day's rows; .cal-sheet-scroll (views/calendar.css) scrolls them with Eating */
 .cal-sheet-body {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
   padding: 6px 14px;
 }
 

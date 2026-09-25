@@ -11,6 +11,10 @@ import { viewSheets } from './source'
  * white, or white on white). This holds that for this build and for every
  * branch that merges after it.
  *
+ * The one exception in the sheet is the palettes' own fallback: the accent's
+ * color-mix() tints written out as rgba() for Safari before 16.2, beside them
+ * in 01-base.css and held equal to them by theme-tokens.test.ts.
+ *
  * What stays a literal is data, not paint: the user's own colours
  * (PROJECT_COLORS, the templates', a synced row's default), and the two modules
  * that mirror the palette for the contrast maths (theme.ts, contrast.ts), which
@@ -47,6 +51,9 @@ const report = (file: string, source: string, at: number[]) => {
 function cssLiterals(file: string, source: string): string[] {
   let css = blank(source, /\/\*[\s\S]*?\*\//g)
   if (file === '01-base.css') css = blank(css, /^:root(?:\[data-theme='dark'\])?\s*\{[^{}]*\}/gm)
+  // …and the accent's tints written out for a browser that reads no
+  // color-mix(), which theme-tokens.test.ts holds equal to the palettes' own
+  if (file === '01-base.css') css = blank(css, /^@supports not \(color: color-mix\(in srgb, red, red\)\)\s*\{(?:[^{}]*\{[^{}]*\})*[^{}]*\}/gm)
   css = blank(css, /(?:-webkit-)?mask(?:-image)?\s*:[^;{}]*/g)
   const at = [...css.matchAll(LITERAL)].map(m => m.index!)
   // a named colour, looked for in declaration values only (a selector can say .red-dot)

@@ -263,3 +263,27 @@
   color: var(--text-2);
   white-space: nowrap;
 }
+
+/* A tapped mark's words, under its chart (stats/Readout.tsx): a phone reads a
+   chart by a tap, where a pointer reads a mark's title. The hint says so until
+   the first tap, and holds the line's room, so that tap does not move the
+   chart; a mouse page shows neither until something is clicked. */
+.chart-readout {
+  margin: 6px 0 0;
+  color: var(--text-2);
+  font-size: 0.75rem;
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+}
+.chart-readout-hint {
+  display: none;
+  color: var(--muted);
+}
+@media (pointer: coarse) {
+  .chart-readout {
+    min-height: calc(1.4 * 0.75rem);
+  }
+  .chart-readout-hint {
+    display: inline;
+  }
+}

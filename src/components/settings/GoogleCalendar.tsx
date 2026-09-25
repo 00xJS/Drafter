@@ -5,8 +5,12 @@ import { newerStamp } from '../../itemops'
 import { PROJECT_COLORS } from '../../types'
 import { timeAgo, uid } from '../../utils'
 import { useNow } from '../../useNow'
+import { ConfirmButton } from '../ConfirmButton'
 import type { SettingsCtx } from './context'
 import { useAsyncAction } from './useAsyncAction'
+
+/** What Disconnect does, as the confirm() it replaced said it: its title. */
+const DISCONNECT_DOES = 'Its calendars leave the calendar here and mirroring stops. Events already mirrored stay in Google.'
 
 /** Calendars → Google Calendar: connect, tick calendars to show, and mirror tasks into a Drafter calendar there. */
 export function GoogleCalendar({
@@ -66,8 +70,10 @@ export function GoogleCalendar({
     }
   }
 
+  // Asked by its own button (ConfirmButton) — a second tap, as Outlook's
+  // Disconnect asks — not the browser's confirm(), a system alert in the
+  // iPhone app and one iOS 27 holds behind its Safe Browsing check.
   const disconnectGoogle = async () => {
-    if (!window.confirm('Disconnect Google Calendar? Its calendars disappear from the overlay and mirroring stops (already-mirrored events stay in Google).')) return
     setGoogleBusy(true)
     // no `finally`, and no loop statement in the try: the React Compiler
     // leaves a component with either as written. A catch that only sets state
@@ -124,9 +130,9 @@ export function GoogleCalendar({
               Connected{google.email ? ` as ${google.email}` : ''}. Tick the calendars to show; they are tied to your
               account only.
             </span>
-            <button className="btn subtle danger" disabled={googleBusy} onClick={disconnectGoogle}>
+            <ConfirmButton className="btn subtle danger" disabled={googleBusy} confirmLabel="Tap again to disconnect" title={DISCONNECT_DOES} onConfirm={disconnectGoogle}>
               Disconnect
-            </button>
+            </ConfirmButton>
           </p>
           {googleCals ? (
             <ul className="cal-sources">
@@ -192,9 +198,9 @@ export function GoogleCalendar({
                 Google stopped letting Drafter into {google.email ?? 'your account'} — the access was removed or ran out. Sign in again to carry on
                 mirroring; nothing reaches Google until then.
               </span>
-              <button className="btn subtle danger" disabled={googleBusy} onClick={disconnectGoogle}>
+              <ConfirmButton className="btn subtle danger" disabled={googleBusy} confirmLabel="Tap again to disconnect" title={DISCONNECT_DOES} onConfirm={disconnectGoogle}>
                 Disconnect
-              </button>
+              </ConfirmButton>
             </p>
           )}
           <p className="sync-line">

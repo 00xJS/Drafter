@@ -229,6 +229,8 @@ export function ProjectEditor({ project, tasks, getLatest, onSave, onDelete, onC
   const [savedTemplate, setSavedTemplate] = useState(false)
   const allTemplates = [...templates, ...BUILT_IN_TEMPLATES]
   const chosen = allTemplates.find(t => t.id === templateId)
+  /** What Delete leaves behind: the project's tasks stay, with no project. */
+  const kept = tasks.length === 1 ? 'its 1 task stays' : `its ${tasks.length} tasks stay`
 
   const pickTemplate = (id: string) => {
     setTemplateId(id)
@@ -554,7 +556,8 @@ export function ProjectEditor({ project, tasks, getLatest, onSave, onDelete, onC
       </div>
 
       <footer className="modal-foot">
-        <ConfirmButton onConfirm={() => onDelete(project.id)} confirmLabel="Tap again to delete the project">
+        {/* the one question before a project goes: what becomes of its tasks is in it */}
+        <ConfirmButton onConfirm={() => onDelete(project.id)} confirmLabel={tasks.length > 0 ? `Tap again to delete it: ${kept}, unassigned` : 'Tap again to delete the project'}>
           Delete
         </ConfirmButton>
         {onSaveTemplate && (

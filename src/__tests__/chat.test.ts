@@ -178,11 +178,18 @@ describe('the chat is a screen, and the page scrolls it', () => {
     expect(rule('.chat-seg')).not.toMatch(/position:\s*sticky/)
   })
 
-  it('does not clear the tab bar twice', () => {
-    // the composer carried the bar's height as padding when the chat was a
-    // page UNDER it; the screen is over it and owes only the home indicator
-    expect(css).not.toMatch(/\.chat-composer \{[^}]*--tabbar-h/)
+  it('sticks the composer above the tab bar on a phone, once, and on the keyboard while it is up', () => {
+    // A screen, with the tab bar showing under it: stuck to the bottom of the
+    // screen, the composer sat behind the bar and a tap on Send was a tap on
+    // Insights. It clears the bar as its sticky offset — the wardrobe action
+    // bar's offset, as the bar measures up to 4px over its token — and never
+    // as padding as well.
+    const phone = /@media \(max-width: 640px\) \{\s*(?:\/\*[\s\S]*?\*\/\s*)?\.chat-composer \{([^}]*)\}/.exec(css)?.[1] ?? ''
+    expect(phone).toMatch(/bottom:\s*calc\(var\(--tabbar-h\) \+ var\(--safe-b\) \+ 4px\)/)
+    expect(phone).not.toMatch(/padding[^;]*--tabbar-h/)
     expect(css).not.toMatch(/\.content:has\(\.chat\)\s*\{/)
+    // the keyboard takes the bar away, and the composer sits on the keyboard
+    expect(rule('.keyboard-open .chat-composer')).toMatch(/bottom:\s*0/)
   })
 
   it('moves its own pane before the first paint, rather than asking a marker to scroll', () => {

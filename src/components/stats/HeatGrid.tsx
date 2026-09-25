@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import { MONTHS } from '../../stats'
 import { dateKey } from '../../utils'
 import { AREA_INK } from './ink'
+import { readDay, useReadout } from './Readout'
 
 /**
  * A year of days as one small grid — a column per week, a row per weekday,
@@ -13,9 +14,11 @@ import { AREA_INK } from './ink'
  * The month calendars the areas already draw stay where they are: they carry a
  * photo or a dish per day, which this deliberately cannot.
  *
- * Nothing here is a tap target: a cell is about 12px and a finger is 44, so the
- * grid reads and the lists underneath it act. Each cell still carries its day
- * and its count as a title, and the whole grid is one labelled image.
+ * Nothing here acts: a cell is about 12px and a finger is 44, so the grid
+ * reads and the lists underneath it act. Each cell carries its day and its
+ * count — as a title for a pointer, and said under the grid for a tap
+ * (useReadout), since a phone has no pointer to rest on a title — and the
+ * whole grid is one labelled image.
  */
 export interface HeatDay {
   key: string
@@ -41,6 +44,7 @@ export function HeatGrid({ counts, end, weeks = 53, label, noun = 'day', tone }:
     if (ticks.length === 0 || ticks[ticks.length - 1].text !== MONTHS[month]) ticks.push({ at: col, text: MONTHS[month] })
   }
   const filled = days.filter(d => (counts.get(d) ?? 0) > 0).length
+  const readout = useReadout('Tap a day to read it')
   // A year is wider than a phone, and the end of it is the part you came for,
   // so the grid opens on this week rather than on last September. Set rather
   // than animated: this is where the view starts, not somewhere it moved to.
@@ -59,7 +63,7 @@ export function HeatGrid({ counts, end, weeks = 53, label, noun = 'day', tone }:
             </span>
           ))}
         </div>
-        <div className="heat-grid" style={{ gridTemplateColumns: `repeat(${weeks}, 1fr)` }} role="img" aria-label={`${label}: ${filled} of ${days.length} days`}>
+        <div className="heat-grid" style={{ gridTemplateColumns: `repeat(${weeks}, 1fr)` }} role="img" aria-label={`${label}: ${filled} of ${days.length} days`} onClick={readout.onClick}>
           {days.map(day => {
             const n = counts.get(day) ?? 0
             const after = day > today
@@ -68,12 +72,14 @@ export function HeatGrid({ counts, end, weeks = 53, label, noun = 'day', tone }:
                 key={day}
                 className={after ? 'heat-cell ahead' : day === today ? 'heat-cell today' : 'heat-cell'}
                 title={after ? day : `${day}: ${n} ${noun}${n === 1 ? '' : 's'}`}
+                data-read={after ? undefined : `${readDay(day)}: ${n} ${noun}${n === 1 ? '' : 's'}`}
                 style={n > 0 && !after ? { background: tone ?? AREA_INK, opacity: 0.25 + 0.75 * (n / most) } : undefined}
               />
             )
           })}
         </div>
       </div>
+      {readout.line}
     </div>
   )
 }

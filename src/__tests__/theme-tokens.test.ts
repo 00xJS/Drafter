@@ -18,11 +18,19 @@ import { partialSource, sheetImports, viewSheets } from './source'
 
 const read = (rel: string) => readFileSync(fileURLToPath(new URL(`../styles/${rel}`, import.meta.url)), 'utf8')
 const strip = (css: string) => css.replace(/\/\*[\s\S]*?\*\//g, '')
-const base = strip(read('01-base.css'))
+/**
+ * The accent's color-mix() tints written out as plain colours, for a browser
+ * that reads no color-mix() (Safari before 16.2): one @supports block after
+ * the palettes, held below to the colours it stands in for.
+ */
+const FALLBACK = /@supports not \(color: color-mix\(in srgb, red, red\)\)\s*\{((?:[^{}]*\{[^{}]*\})*[^{}]*)\}/
+const sheet = strip(read('01-base.css'))
+const fallback = FALLBACK.exec(sheet)?.[1] ?? ''
+const base = sheet.replace(FALLBACK, '')
 
-/** The declarations of the one rule in 01-base.css whose selector is exactly `selector`, whitespace collapsed. */
-function block(selector: string): Record<string, string> {
-  const rules = [...base.matchAll(/([^{}]+)\{([^{}]*)\}/g)].filter(m => m[1].trim() === selector)
+/** The declarations of the one rule in `css` (01-base.css, its fallback aside) whose selector is exactly `selector`, whitespace collapsed. */
+function block(selector: string, css = base): Record<string, string> {
+  const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].filter(m => m[1].trim() === selector)
   expect(rules, selector).toHaveLength(1)
   return Object.fromEntries([...rules[0][2].matchAll(/([-\w]+)\s*:\s*([^;]+);/g)].map(m => [m[1], m[2].trim().replace(/\s+/g, ' ')]))
 }
@@ -244,6 +252,43 @@ const solid = (token: string, palette: Palette = light) => {
   expect(c[3], token).toBe(1)
   return hexOf(c)
 }
+
+describe('the accent’s tints, for a browser that reads no color-mix() (Safari before 16.2)', () => {
+  // A token that holds a color-mix() such a browser cannot read is not dropped
+  // where it is declared: it fails where it is used, and the chosen segment,
+  // the picked chip and the focus ring lost their tint on iOS 16.0 and 16.1.
+  const plain = { light: block(':root', fallback), dark: block(":root[data-theme='dark']", fallback) }
+  const mixed = (palette: Palette) => props(palette).filter(p => palette[p].includes('color-mix('))
+  /** A value as its colour and whatever stands before it (a shadow's offsets). */
+  const parts = (value: string, palette: Palette) => {
+    const at = value.search(/color-mix\(|rgba\(/)
+    return { before: value.slice(0, at).trim(), colour: colour(value.slice(at), palette) }
+  }
+
+  it('is in an @supports block for exactly that browser', () => {
+    expect(fallback).not.toBe('')
+    expect(sheet.match(/@supports not \(color: color-mix\(in srgb, red, red\)\)/g)).toHaveLength(1)
+  })
+
+  it('writes out every token either palette mixes, and nothing else', () => {
+    expect(mixed(light).length).toBeGreaterThan(0)
+    expect(Object.keys(plain.light).sort()).toEqual(mixed(light).sort())
+    expect(Object.keys(plain.dark).sort()).toEqual(mixed(dark).sort())
+  })
+
+  it('as the colour the mix makes, in each theme, in plain rgba()', () => {
+    for (const [theme, palette] of [['light', light], ['dark', dark]] as const) {
+      for (const [p, value] of Object.entries(plain[theme])) {
+        expect(value, `${theme} ${p}`).not.toContain('color-mix(')
+        expect(value, `${theme} ${p}`).toMatch(/rgba\(\d+, \d+, \d+, [\d.]+\)$/)
+        const want = parts(palette[p], palette)
+        const got = parts(value, palette)
+        expect(got.before, `${theme} ${p}`).toBe(want.before)
+        got.colour.forEach((v, i) => expect(v, `${theme} ${p}`).toBeCloseTo(want.colour[i], 6))
+      }
+    }
+  })
+})
 
 describe('the light palette reads (WCAG 2.x)', () => {
   const surface = solid('--surface')

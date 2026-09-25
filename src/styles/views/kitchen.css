@@ -37,10 +37,24 @@
 }
 .recipe-includes {
   flex: 1 1 100%;
+  /* without it the row was as wide as every chip in it — 1003px in a 343px
+     column at 375pt, with eight of fifteen past the edge and out of reach */
+  min-width: 0;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+}
+/* On a phone, the label and then the chips on one line, the chips scrolling
+   sideways (.kind-chips) in what the label leaves them. */
+@media (max-width: 640px) {
+  .recipe-includes {
+    flex-wrap: nowrap;
+  }
+  .recipe-includes > .kind-chips {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
 }
 .recipe-includes-label {
   font-size: 0.75rem;
@@ -416,14 +430,15 @@
   color: var(--muted);
 }
 @media (max-width: 640px) {
-  /* reserved, not removed: dropping it out of flow until the first tick is what
-     moved the list under the thumb. `visibility` keeps the line and takes the
-     button out of the tab and VoiceOver order with it. The parent class is here
-     to win on specificity rather than on source order, so moving the desktop
-     `display: none` below this block cannot silently bring the reflow back. */
+  /* kept, not removed: dropping it out of flow until the first tick is what
+     moved the list under the thumb. Drawn dimmed, as a disabled button is,
+     rather than hidden: hidden, its line was a 60pt band of nothing between
+     the filters and the list. Disabled, it is out of the tab order still. The
+     parent class is here to win on specificity rather than on source order, so
+     moving the desktop `display: none` below this block cannot silently bring
+     the reflow back. */
   .grocery-filter-row .grocery-clear:disabled {
     display: block;
-    visibility: hidden;
   }
 }
 /* the line's name, for a screen reader ("Remove Milk", "Restore Milk"); the

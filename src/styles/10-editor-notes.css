@@ -297,6 +297,18 @@
   width: 18px;
   height: 18px;
 }
+/* A row of swatches under a finger: 18pt between them, so each 26pt one has a
+   44pt square of its own to be tapped in (08-responsive.css draws the square),
+   and the small ones in Settings → Calendars at the sheets' size. */
+@media (pointer: coarse) {
+  .swatches {
+    gap: 18px;
+  }
+  .swatches.small .swatch {
+    width: 26px;
+    height: 26px;
+  }
+}
 .settings-section h4 {
   margin: 16px 0 6px;
   font-size: 0.8125rem;
@@ -382,6 +394,40 @@
   gap: 2px;
   align-items: center;
 }
+/* The pad's own question — a link's address, a task's title — in a row under
+   its bar, where the browser's prompt() used to put up a system alert. */
+.notes-ask {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+.notes-ask-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1 1 14rem;
+  min-width: 0;
+  color: var(--text-2);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+.notes-ask-field input {
+  width: 100%;
+  min-width: 0;
+  color: var(--text);
+  font-weight: 400;
+}
+.notes-ask-actions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
 .notes-tool {
   font-weight: 700;
   min-width: 30px;
@@ -390,6 +436,12 @@
   font-size: 0.75rem;
 }
 /* an icon on the bar (the checklist, Task's +) sits on the letters' line */
+/* a tool under a finger is 44pt wide: at 42 its square met the next tool's */
+@media (pointer: coarse) {
+  .notes-tool {
+    min-width: var(--touch);
+  }
+}
 .notes-tool svg {
   vertical-align: -0.2em;
 }

@@ -382,7 +382,8 @@ describe('the Stats view', () => {
     const year = card(out, 'Meals by month')
     expect(year).toContain('Sep 9 cooked, 1 eaten out, 2 bought')
     expect(year).toContain('Aug 0 cooked, 1 eaten out, 0 bought')
-    const sep = /<g><title>Sep: 9 cooked, 1 eaten out, 2 bought<\/title>(.*?)<\/g>/.exec(year)![1]
+    // a month says its figures to a pointer (its title) and to a tap (data-read, said under the chart)
+    const sep = /<g data-read="Sep: 9 cooked, 1 eaten out, 2 bought"><title>Sep: 9 cooked, 1 eaten out, 2 bought<\/title>(.*?)<\/g>/.exec(year)![1]
     expect([...sep.matchAll(/<rect class="(kitchen-way-\w+)"/g)].map(m => m[1])).toEqual(['kitchen-way-cooked', 'kitchen-way-out', 'kitchen-way-bought'])
     expect(sep).toContain('<text class="tick-label now"')
     expect(year).toContain('Cooked<strong>10</strong>')

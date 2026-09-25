@@ -18,6 +18,13 @@
   align-items: center;
   margin-bottom: 8px;
 }
+/* the swatches' line and Add's, far enough apart that a swatch's 44pt square
+   under a finger (08-responsive.css) stops short of the button under it */
+@media (pointer: coarse) {
+  .cal-add {
+    row-gap: 10px;
+  }
+}
 .cal-add-name {
   flex: 1 1 120px;
 }

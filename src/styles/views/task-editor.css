@@ -167,6 +167,18 @@
 .bill-fields .field-inline {
   grid-column: 1 / -1;
 }
+/* A tick row — Bill, Paid automatically — is its label, and on a phone it had
+   the tick's 21pt: the label takes the 44pt floor, as the event editor's
+   all-day row and Finance's autopay row do */
+@media (pointer: coarse) {
+  .bill-field > .field-inline,
+  .bill-fields .field-inline {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 44px;
+  }
+}
 @media (max-width: 640px) {
   .bill-fields {
     grid-template-columns: 1fr;

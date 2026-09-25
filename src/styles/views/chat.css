@@ -208,18 +208,24 @@
 }
 @media (max-width: 640px) {
   /* The composer needs a ground and an edge of its own, because the thread
-     scrolls under it. It does NOT need the tab bar's clearance any more:
-     that was from the chat's page days, under the bar. A sheet is over the
-     bar and owes only the home indicator, which .chat-modal .chat-composer
-     gives it — so the bottom is left alone here rather than set twice.
-
-     Gone with it: a `.content:has(.chat)` rule and a 100dvh floor on .chat,
-     both sizing a page that no longer exists. */
+     scrolls under it. And it sticks ABOVE the tab bar: the chat is a page
+     again (PushedScreen), with the bar showing under it, and stuck to the
+     bottom of the screen it sat behind the bar — a tap on Send landed on
+     Insights. The offset is the bar's, once, as the wardrobe's action bar
+     takes it: the bar measures up to 4px over its --tabbar-h token. The
+     shadow paints those 4px, so the thread never shows between the two. */
   .chat-composer {
+    bottom: calc(var(--tabbar-h) + var(--safe-b) + 4px);
     margin: 0 -12px;
     padding-top: 8px;
     padding-inline: 12px;
     border-top: 1px solid var(--hairline);
+    box-shadow: 0 4px 0 var(--bg);
+  }
+  /* the keyboard takes the bar away (08-responsive.css), and the composer
+     sits on the keyboard, where every message box does */
+  .keyboard-open .chat-composer {
+    bottom: 0;
   }
 }
 /* The shell gives every textarea 88px so a note or a description opens with

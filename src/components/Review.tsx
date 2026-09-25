@@ -12,6 +12,7 @@ import { newerStamp } from '../itemops'
 import { dateKey, excerpt, fmtDate, uid } from '../utils'
 import { liveById, outfitLabel, wearIndex, wornBetween } from '../wardrobe'
 import { DueBadge, StatTile } from './bits'
+import { ReviewDays } from './ReviewDays'
 import { useNow } from '../useNow'
 import { noonOf } from '../useDayKey'
 import { intoFirstEmpty, unfinishedGoals } from '../weekgoals'
@@ -424,11 +425,7 @@ export function Review({
               <p className="chart-sub">Everything you finished</p>
             </div>
           </header>
-          <div className="review-days" aria-hidden>
-            {data.doneByDay.map((n, i) => (
-              <span key={i} className="review-day" style={{ height: `${n === 0 ? 6 : 20 + (n / Math.max(...data.doneByDay, 1)) * 80}%` }} title={`${n} done`} />
-            ))}
-          </div>
+          <ReviewDays counts={data.doneByDay} start={data.range.start} />
           <TaskList tasks={data.done} onOpen={onOpen} />
         </section>
 

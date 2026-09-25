@@ -397,7 +397,7 @@ export async function sweepMirror(
   const rounds = opts.rounds ?? 40
   const held = new Set(items.map(i => i.id))
   let ledger: MirrorLedger = readLedger(target.key) ?? seedLedger(items, myId, target.legacyCursor?.() ?? '')
-  const confirm = (r: MirrorRecord) => {
+  const markConfirmed = (r: MirrorRecord) => {
     ledger.seen[r.id] = `${mirrorStamp(r.updatedAt)}.${Math.floor(now() / 1000).toString(36)}`
   }
   const errors: SweepResult['errors'] = []
@@ -416,7 +416,7 @@ export async function sweepMirror(
     await Promise.allSettled(batch.map(r => locks.get(lockKey(target.lock, r.id))))
     batch = batch.filter(r => {
       if (singles.get(lockKey(target.lock, r.id)) !== mirrorStamp(r.updatedAt)) return true
-      confirm(r)
+      markConfirmed(r)
       confirmed++
       return false
     })
@@ -447,7 +447,7 @@ export async function sweepMirror(
     for (const id of reply.done ?? []) {
       const r = sent.get(id)
       if (!r) continue
-      confirm(r)
+      markConfirmed(r)
       confirmed++
     }
     for (const e of reply.errors ?? []) {

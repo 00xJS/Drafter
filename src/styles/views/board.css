@@ -33,6 +33,18 @@
   background: var(--surface);
   color: var(--text-2);
 }
+/* + Add, a column's last line: 34pt of it, and a 44pt square to tap round its
+   middle, as the other small controls have (08-responsive.css) */
+@media (pointer: coarse) {
+  .board-add {
+    position: relative;
+  }
+  .board-add::after {
+    content: '';
+    position: absolute;
+    inset: min(0px, calc(50% - 22px));
+  }
+}
 .card-title {
   font-weight: 600;
   overflow: hidden;

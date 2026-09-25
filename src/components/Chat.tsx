@@ -103,6 +103,13 @@ function scrollerOf(pane: HTMLElement): HTMLElement {
   return (document.scrollingElement as HTMLElement | null) ?? document.documentElement
 }
 
+/** Scrolled to the thread's end, give or take a line's rounding (px). */
+const AT_END = 24
+const atEnd = (box: HTMLElement) => box.scrollHeight - box.scrollTop - box.clientHeight <= AT_END
+
+/** How long the keyboard takes to come up or go down, and the web view to follow it (ms). */
+const KEYBOARD_MOVES_MS = 700
+
 /** Which speaker a line is drawn as: yours on the right, theirs on the left. */
 const mine = (ownerId: string | undefined, myId: string | null) => !ownerId || !myId || ownerId === myId
 
@@ -146,6 +153,16 @@ function Composer({
 }) {
   const [draft, setDraft] = useState('')
   const box = useRef<HTMLTextAreaElement>(null)
+  // The box grows with what is typed, a line at a time, up to its 40vh cap
+  // (chat.css), as every message box does. It stayed one line tall, and a
+  // question that wrapped showed half of its second line.
+  useLayoutEffect(() => {
+    const el = box.current
+    if (!el) return
+    el.style.height = 'auto'
+    // scrollHeight is the text and the padding; the height is set with the border too
+    el.style.height = `${el.scrollHeight + el.offsetHeight - el.clientHeight}px`
+  }, [draft])
   const send = () => {
     const text = draft.trim()
     if (!text || disabled || busy) return
@@ -706,6 +723,58 @@ export function Chat({
     },
     [],
   )
+  /*
+   * The keyboard coming up shortens the page: the app runs it at resize
+   * 'native', so iOS shrinks the web view under a thread that does not move,
+   * and the newest lines, just above the composer, slid out of sight below it
+   * as you started to type a reply. A thread read at its end stays at its end
+   * while the keyboard comes up (the `keyboard-open` class native.ts sets on
+   * <html>) and whenever the page it is on changes size; one scrolled up to
+   * read something older is left where it is.
+   */
+  useEffect(() => {
+    const el = pane.current
+    if (!el) return
+    const root = document.documentElement
+    // it opens at its end (the layout effect above)
+    let pinned = true
+    // while the keyboard moves, what scrolls is the keyboard's doing, not the reader's
+    let holding = 0
+    const toEnd = () => {
+      const box = scrollerOf(el)
+      box.scrollTo({ top: box.scrollHeight })
+    }
+    const onScroll = () => {
+      if (Date.now() < holding) return
+      pinned = atEnd(scrollerOf(el))
+    }
+    const onResize = () => {
+      if (pinned) toEnd()
+    }
+    let open = root.classList.contains('keyboard-open')
+    const classes = new MutationObserver(() => {
+      const now = root.classList.contains('keyboard-open')
+      if (now === open) return
+      open = now
+      // going down, the page grows under a thread at its end and it stays
+      // there; what scrolls from then on is the reader's
+      if (!now) holding = 0
+      if (!now || !pinned) return
+      holding = Date.now() + KEYBOARD_MOVES_MS
+      toEnd()
+    })
+    classes.observe(root, { attributes: true, attributeFilter: ['class'] })
+    // capture: the page's scroll and a scrolling box's alike, and before anything stops it
+    window.addEventListener('scroll', onScroll, true)
+    window.addEventListener('resize', onResize)
+    window.visualViewport?.addEventListener('resize', onResize)
+    return () => {
+      classes.disconnect()
+      window.removeEventListener('scroll', onScroll, true)
+      window.removeEventListener('resize', onResize)
+      window.visualViewport?.removeEventListener('resize', onResize)
+    }
+  }, [])
   // drawing the household thread IS reading it
   const newest = messages[messages.length - 1]?.createdAt
   useEffect(() => {
