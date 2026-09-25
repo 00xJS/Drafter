@@ -116,13 +116,13 @@ describe('the plugin is in the app', () => {
     expect(didLoad).toContain('bridge?.registerPluginInstance(SubjectLiftPlugin())')
   })
 
-  it('names the same bridge as Main.storyboard’s first view controller, from the App target', () => {
-    const storyboard = read(`${APP}/Base.lproj/Main.storyboard`)
-    const initial = /initialViewController="([^"]+)"/.exec(storyboard)?.[1]
-    const controller = new RegExp(`<viewController id="${initial}"[^>]*>`).exec(storyboard)?.[0] ?? ''
-    expect(controller).toContain('customClass="DrafterBridgeViewController"')
-    expect(controller).toContain('customModule="App" customModuleProvider="target"')
-    expect(storyboard).not.toContain('CAPBridgeViewController')
+  it('is the only bridge: no storyboard makes a window, and a bridge, of its own', () => {
+    // SceneDelegate builds the scene's window itself; a storyboard named in
+    // Info.plist had UIKit build one first, with a second bridge inside it
+    const plist = read(`${APP}/Info.plist`)
+    expect(plist).not.toMatch(/UISceneStoryboardFile|UIMainStoryboardFile/)
+    expect(project).not.toContain('Main.storyboard')
+    expect(scene).toMatch(/window = UIWindow\(windowScene: windowScene\)/)
   })
 })
 

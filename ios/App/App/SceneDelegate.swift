@@ -26,6 +26,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options connectionOptions: UIScene.ConnectionOptions) {
         guard let windowScene = scene as? UIWindowScene else { return }
 
+        // The scene's one window, built here: Info.plist names no storyboard, so
+        // UIKit makes none of its own, with a bridge of its own inside it.
         window = UIWindow(windowScene: windowScene)
         // Settings → Appearance, before anything is drawn: the status bar, the
         // keyboard, pickers, alerts and the web view's own prefers-color-scheme
@@ -90,9 +92,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     private func deliver(_ shortcutItem: UIApplicationShortcutItem) -> Bool {
         guard let url = Self.url(for: shortcutItem.type) else { return false }
         // AppPlugin observes this and turns it into the JS `appUrlOpen` that
-        // native.ts already routes, retaining it until a listener consumes it.
-        // Deliberately NOT also ApplicationDelegateProxy.lastURL: App.getLaunchUrl()
-        // drains that, and a quick action fed to both channels would be applied twice.
+        // native.ts already routes, retaining it until a listener consumes it —
+        // the one channel the page reads links on. Not ApplicationDelegateProxy.lastURL:
+        // App.getLaunchUrl() answers with that for good, so the page leaves it unread.
         NotificationCenter.default.post(name: .capacitorOpenURL, object: ["url": url, "options": [String: Any]()])
         return true
     }
@@ -119,8 +121,15 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     // Resign-active, not enter-background: the switcher can be dragged open while
     // the scene is merely inactive, and that is the moment iOS snapshots.
+    //
+    // Except for an alert the page has just asked iOS for (notifications, your
+    // location, Face ID: ShellPlugin.expectSystemPrompt). It makes the scene
+    // inactive too, and covered, it stood on a blank launch screen with nothing
+    // to say what it was for. That one pass is left uncovered; leaving for the
+    // switcher or the Home Screen still covers, in sceneDidEnterBackground.
     func sceneWillResignActive(_ scene: UIScene) {
         coverGeneration += 1
+        if SystemPrompt.consume() { return }
         showPrivacyCover()
     }
 
@@ -232,8 +241,9 @@ public class AppearancePlugin: CAPPlugin, CAPBridgedPlugin {
 
 /// The bridge, plus the plugins compiled into this target: the page's own light
 /// or dark (AppearancePlugin, above), the garment cut-out's subject lifting
-/// (SubjectLiftPlugin.swift), and the widget's snapshot and Siri's captures
-/// (WidgetBridgePlugin.swift). `cap sync` writes packageClassList from
+/// (SubjectLiftPlugin.swift), the widget's snapshot and Siri's captures
+/// (WidgetBridgePlugin.swift), and the page's word about the shell itself
+/// (ShellPlugin.swift). `cap sync` writes packageClassList from
 /// node_modules alone and rewrites it every time, so a plugin that lives in
 /// ios/App is registered here, by hand. It has to be this hook: registering
 /// injects the plugin's JS proxy as a user script, and capacitorDidLoad is the
@@ -247,6 +257,7 @@ class DrafterBridgeViewController: CAPBridgeViewController {
         bridge?.registerPluginInstance(AppearancePlugin())
         bridge?.registerPluginInstance(SubjectLiftPlugin())
         bridge?.registerPluginInstance(WidgetBridgePlugin())
+        bridge?.registerPluginInstance(ShellPlugin())
         paintGround()
     }
 

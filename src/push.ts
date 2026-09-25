@@ -1,5 +1,5 @@
 import { apiFetch } from './api'
-import { isNative } from './native'
+import { expectSystemPrompt, isNative, notificationsAllowed } from './native'
 
 // Web push: the browser's subscription is registered with /api/push, keyed to
 // the signed-in user; the hourly digest function sends to it.
@@ -95,7 +95,13 @@ const loadPlugin = async (): Promise<TokenSource> => (await import('@capacitor/p
 export async function nativeToken({ ask = true, plugin }: { ask?: boolean; plugin?: TokenSource } = {}): Promise<string> {
   const push = plugin ?? (await loadPlugin())
   let perm = await push.checkPermissions()
-  if (perm.receive !== 'granted' && ask) perm = await push.requestPermissions()
+  if (perm.receive !== 'granted' && ask) {
+    // only an unanswered question puts an alert up; the page stays in sight behind it
+    if (perm.receive !== 'denied') await expectSystemPrompt()
+    perm = await push.requestPermissions()
+    // one yes for the whole app: the phone's own reminders can be set now too
+    if (perm.receive === 'granted') notificationsAllowed()
+  }
   if (perm.receive !== 'granted') throw new Error('Notifications were not allowed. Turn them on in the iPhone Settings app, under Drafter.')
   const handles: { remove(): Promise<void> }[] = []
   let settled = false

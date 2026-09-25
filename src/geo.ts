@@ -3,6 +3,8 @@
 // the same ask, without touching that cache: "I'm here" only wants where
 // you are standing right now, and a pin on a place is saved on that place.
 
+import { expectSystemPrompt } from './native'
+
 export interface Coord {
   lat: number
   lon: number
@@ -91,17 +93,20 @@ export function requestDevicePosition(): Promise<Coord | null> {
       resolve(null)
       return
     }
-    try {
-      navigator.geolocation.getCurrentPosition(
-        pos => {
-          const here = tidyCoords({ lat: pos.coords.latitude, lon: pos.coords.longitude })
-          resolve(here ?? null)
-        },
-        () => resolve(null),
-        { enableHighAccuracy: true, timeout: 12_000, maximumAge: 30_000 },
-      )
-    } catch {
-      resolve(null)
-    }
+    // the first ask puts iOS's own alert up: the shell leaves the page in sight behind it
+    void expectSystemPrompt().then(() => {
+      try {
+        navigator.geolocation.getCurrentPosition(
+          pos => {
+            const here = tidyCoords({ lat: pos.coords.latitude, lon: pos.coords.longitude })
+            resolve(here ?? null)
+          },
+          () => resolve(null),
+          { enableHighAccuracy: true, timeout: 12_000, maximumAge: 30_000 },
+        )
+      } catch {
+        resolve(null)
+      }
+    })
   })
 }

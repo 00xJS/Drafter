@@ -2,6 +2,7 @@ import { startTransition, useState } from 'react'
 import type { GarmentType, Recipe } from '../../types'
 import type { ChatSide } from '../Chat'
 import { readChatSeen, writeChatSeen } from '../../chat'
+import { rememberView, restoredView } from '../../reloadstate'
 import {
   CAL_MODE_KEY,
   INNER_VIEW_KEYS,
@@ -62,8 +63,12 @@ export type WardrobeOpen = {
  * the first moments of a launch this changes nothing you can see.
  */
 export function useNavigation() {
-  const [view, showView] = useState<View>('home')
-  const setView = (v: View) => startTransition(() => showView(v))
+  // Home, or after iOS reclaimed the page in the shell, the tab it was on (reloadstate.ts)
+  const [view, showView] = useState<View>(restoredView)
+  const setView = (v: View) => {
+    rememberView(v)
+    startTransition(() => showView(v))
+  }
   const [calMode, showCalMode] = useState<CalendarMode>(storedCalMode)
   /** Move the Calendar's mode for this visit only. */
   const goCalMode = (mode: CalendarMode) => startTransition(() => showCalMode(mode))

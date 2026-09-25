@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useRef } from 'react'
+import { isNative, openExternalOnClick } from '../native'
 import { scrollBehavior } from '../utils'
 import type { BackupList } from '../admin'
 import { isEnvelope, type Snapshot } from '../backupcrypto'
@@ -113,12 +114,16 @@ export function SnapshotFiles({ users, busy, pending, opened, link, passphrase, 
                     {link.error ? (
                       <p className="warn">{link.error}</p>
                     ) : (
-                      <div className="copy-row">
-                        <input readOnly value={link.url} aria-label="Download link" onFocus={e => e.currentTarget.select()} />
-                        <a className="btn" href={link.url} target="_blank" rel="noreferrer">
-                          Open
-                        </a>
-                      </div>
+                      <>
+                        <div className="copy-row">
+                          <input readOnly value={link.url} aria-label="Download link" onFocus={e => e.currentTarget.select()} />
+                          <a className="btn" href={link.url} target="_blank" rel="noreferrer" onClick={openExternalOnClick(link.url)}>
+                            Open
+                          </a>
+                        </div>
+                        {/* the app opens nothing by itself after the round trip (Admin.tsx's download) */}
+                        {isNative() && <p className="field-hint">Tap Open to fetch the file.</p>}
+                      </>
                     )}
                   </li>
                 )}

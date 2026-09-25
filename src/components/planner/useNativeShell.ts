@@ -1,19 +1,10 @@
 import { useEffect, useEffectEvent, useLayoutEffect, useRef } from 'react'
 import type { Store } from '../../store'
 import { notifyDue } from '../../notify'
-import {
-  clearAppBadge,
-  genericRemindersEnabled,
-  initNative,
-  isAppLockShowing,
-  isNative,
-  localRemindersEnabled,
-  planDayPref,
-  requestLocalNotificationPermission,
-  scheduleLocalReminders,
-} from '../../native'
+import { genericRemindersEnabled, initNative, isNative, localRemindersEnabled, onNotificationsAllowed, planDayPref, scheduleLocalReminders, setAppBadge } from '../../native'
 import { refreshNativePush } from '../../push'
-import { deviceReminders } from '../../reminders'
+import { badgeCount, deviceReminders } from '../../reminders'
+import { getSupabase } from '../../supabase'
 import { useWidgetBridge } from '../../widgetbridge'
 import type { useDeepLinks } from './useDeepLinks'
 
@@ -40,6 +31,10 @@ export function useNativeShell({ store, applyLinkRef, myId }: Deps) {
   // phone changes none of it: the server's "Due now" nudges go to browsers
   // alone (digest.mjs), so the phone's task reminders are the only ones it hears.
   const remindersRef = useRef(() => {})
+  // The Home Screen badge means one thing wherever it is set: my tasks overdue
+  // or due today (badgeCount), the number the morning digest sends. The app
+  // keeps it true while it runs; the phone's own reminders set it as each rings.
+  const badgeRef = useRef(() => {})
   // the data a queued rewrite reads when its turn comes: the render last committed, never the one it was asked from
   const latest = useRef({ store, myId })
   useLayoutEffect(() => {
@@ -49,21 +44,22 @@ export function useNativeShell({ store, applyLinkRef, myId }: Deps) {
     }
     remindersRef.current = () => {
       if (!isNative()) return
-      const local = localRemindersEnabled()
-      const planDay = planDayPref()
-      if (!local && !planDay.on) return
-      void (async () => {
-        // Plan your day is on by default, so the first run that would set it asks
-        // iOS for notifications; after that iOS answers from the choice made,
-        // without asking again. Never over the lock screen: a later run asks
-        if (planDay.on && !isAppLockShowing()) await requestLocalNotificationPermission().catch(() => false)
-        // one rewrite at a time (scheduleLocalReminders), each worked out when its
-        // turn comes, from the data and the switches as they are by then
-        await scheduleLocalReminders(() => {
-          const { store: now, myId: me } = latest.current
-          return deviceReminders(now, new Date(), { local: localRemindersEnabled(), generic: genericRemindersEnabled(), planDay: planDayPref(), events: now.events, myId: me })
-        }).catch(() => {})
-      })()
+      if (!localRemindersEnabled() && !planDayPref().on) return
+      // Never asks iOS whether it may notify: that question comes only from a
+      // button someone pressed — the bell's Turn on, Settings → Notifications,
+      // the offer after a task is given a time (src/reminderoffer.ts) — and a
+      // yes to any of them runs this again (onNotificationsAllowed, below).
+      // Until then scheduleLocalReminders sets nothing. One rewrite at a time,
+      // each worked out when its turn comes, from the data and the switches as
+      // they are by then.
+      void scheduleLocalReminders(() => {
+        const { store: now, myId: me } = latest.current
+        return deviceReminders(now, new Date(), { local: localRemindersEnabled(), generic: genericRemindersEnabled(), planDay: planDayPref(), events: now.events, myId: me })
+      }).catch(() => {})
+    }
+    badgeRef.current = () => {
+      // an empty store before the local copy is in would read as nothing due
+      if (store.loaded) void setAppBadge(badgeCount(store.tasks, myId, new Date()))
     }
   })
 
@@ -72,10 +68,12 @@ export function useNativeShell({ store, applyLinkRef, myId }: Deps) {
   // Only a tap on one of our own reminders may carry an `act=` that writes on
   // arrival; a drafter:// link from Safari or a Shortcut still just navigates.
   const openUrl = useEffectEvent((url: string, fromNotif?: boolean) => applyLinkRef.current(url, '', !!fromNotif))
+  // Coming back sets the badge to what is due now; Notification Centre is left
+  // alone, so a household message not yet read is still there to be read.
   const resumed = useEffectEvent(() => {
     void store.syncNowManual()
     remindersRef.current()
-    void clearAppBadge()
+    badgeRef.current()
   })
 
   // the iOS shell: links, push taps, and a sync whenever the app comes forward
@@ -94,8 +92,6 @@ export function useNativeShell({ store, applyLinkRef, myId }: Deps) {
         return
       }
       dispose = d
-      // resume does not fire at launch, so a cold start clears the badge here
-      void clearAppBadge()
       // while server push is on for this iPhone, the token Apple holds for it
       // is asked for again, and the server told when it changed
       void refreshNativePush().catch(() => {})
@@ -106,6 +102,10 @@ export function useNativeShell({ store, applyLinkRef, myId }: Deps) {
     }
   }, [])
 
+  // iOS has just said this phone may notify, from whichever button asked: the
+  // reminders that were waiting on it are set now, not at the next change
+  useEffect(() => onNotificationsAllowed(() => remindersRef.current()), [])
+
   // due tasks and my events as they start, while the app is open (device-local,
   // never a store write): the copies in Google and Outlook no longer ring
   useEffect(() => {
@@ -114,14 +114,27 @@ export function useNativeShell({ store, applyLinkRef, myId }: Deps) {
     return () => window.clearInterval(t)
   }, [])
 
-  // meals too: a takeaway logged tonight takes that place's nudge off the phone;
-  // and who I am, which may be known only after the last change, so a household
-  // member's events never stay on this phone for want of it
+  // The phone's reminders and the badge, a moment after the data settles — the
+  // first time as a cold start's local copy comes in. Meals too: a takeaway
+  // logged tonight takes that place's nudge off the phone; and who I am, which
+  // may be known only after the last change, so a household member's events
+  // never stay on this phone for want of it.
   useEffect(() => {
     if (!store.loaded) return
-    const t = window.setTimeout(() => remindersRef.current(), 1500)
+    const t = window.setTimeout(() => {
+      remindersRef.current()
+      badgeRef.current()
+    }, 1500)
     return () => window.clearTimeout(t)
   }, [store.loaded, store.tasks, store.people, store.places, store.meals, store.events, myId])
+
+  // a sign-out wipes this device and reloads to the sign-in: nothing is due for nobody
+  useEffect(() => {
+    const auth = getSupabase()?.auth.onAuthStateChange(event => {
+      if (event === 'SIGNED_OUT') void setAppBadge(0)
+    })
+    return () => auth?.data.subscription.unsubscribe()
+  }, [])
 
   // iOS: the Home Screen widget's snapshot of the day, and what Siri was asked
   // to add while the app was shut (src/widgetbridge.ts)

@@ -65,3 +65,43 @@ describe('the app’s privacy manifest', () => {
     expect(spawnSync('git', ['check-ignore', '-q', MANIFEST], { cwd: ROOT }).status).toBe(1)
   })
 })
+
+// iOS ends the app on the spot, with no message, when it reaches for something
+// private whose reason Info.plist does not give: Save to Photos on a long-pressed
+// picture, or Save Image in the share sheet, without the photo-library string,
+// and Take Photo or Video → Video on "+ Attach a file" without the microphone's.
+// So every feature the app uses that iOS asks about is paired here with the
+// sentence iOS shows, and the code that reaches for it.
+describe('the app’s Info.plist says why, for everything it asks iOS for', () => {
+  const plist = read('ios/App/App/Info.plist')
+  const reason = (key: string) => new RegExp(`<key>${key}</key>\\s*<string>([^<]*)</string>`).exec(plist)?.[1] ?? ''
+  const pkg = JSON.parse(read('package.json')) as { dependencies: Record<string, string> }
+
+  const uses: [key: string, why: string, used: () => boolean][] = [
+    // every file field offers Take Photo; the attachments' one takes any file, video too
+    ['NSCameraUsageDescription', 'a file field offers Take Photo', () => /type="file"/.test(read('src/components/taskeditor/Images.tsx'))],
+    ['NSMicrophoneUsageDescription', '“+ Attach a file” takes any file, so Take Video too', () => /type="file"\s+multiple\s+hidden/.test(read('src/components/taskeditor/Attachments.tsx'))],
+    // the web view offers Save to Photos on any picture it shows, and the share sheet Save Image
+    ['NSPhotoLibraryAddUsageDescription', 'a long-pressed picture offers Save to Photos', () => /<img\b/.test(read('src/components/taskeditor/Images.tsx'))],
+    ['NSFaceIDUsageDescription', 'the lock asks for Face ID', () => '@aparajita/capacitor-biometric-auth' in pkg.dependencies],
+    ['NSLocationWhenInUseUsageDescription', 'the forecast and I’m here ask where you are', () => /navigator\.geolocation\.getCurrentPosition/.test(read('src/geo.ts'))],
+  ]
+
+  it.each(uses)('gives %s, because %s', (key, _why, used) => {
+    expect(used(), `${key}: the feature is still in the code`).toBe(true)
+    const text = reason(key)
+    // a sentence about Drafter, in plain words, as iOS puts it in the prompt
+    expect(text, key).toMatch(/^[A-Z].{30,}\.$/)
+    expect(text, key).toMatch(/\bDrafter\b/)
+  })
+
+  it('says when it saves to Photos and records sound: only when you ask', () => {
+    expect(reason('NSPhotoLibraryAddUsageDescription')).toMatch(/only when you choose Save to Photos or Save Image/)
+    expect(reason('NSMicrophoneUsageDescription')).toMatch(/only when you record a video to attach/)
+  })
+
+  it('asks nothing for dictation, which the shell leaves to the keyboard (src/speech.ts)', () => {
+    expect(plist).not.toContain('NSSpeechRecognitionUsageDescription')
+    expect(read('src/speech.ts')).toMatch(/function ctor\(\): Ctor \| null \{\s*if \(isNative\(\)\) return null/)
+  })
+})

@@ -3,7 +3,7 @@ import { AdminGroup, AdminStatus, AdminUser, AiTest, BackupList, BackupReport, D
 import { siteOrigin } from '../api'
 import { isEnvelope, unwrapSnapshot } from '../backupcrypto'
 import type { EvalResult } from '../chateval'
-import { saveFile } from '../native'
+import { isNative, saveFile } from '../native'
 import { SnapshotFiles, readableName, type OpenedSnapshot, type SnapshotLink } from './AdminBackups'
 import { AdminOps } from './AdminOps'
 import { ConfirmButton } from './ConfirmButton'
@@ -244,12 +244,24 @@ export function Admin({ initialGroup = 'users', initial }: Props) {
     }
   }
 
+  /**
+   * A link the server has just made, shown with its Copy button. A browser
+   * that allows it copies it straight away as well; the iPhone app's WebKit
+   * lets the clipboard be written only inside the tap itself, and a round
+   * trip to the server is long past it, so there the Copy button does it.
+   */
+  const showLink = (link: string) => {
+    setCopied(false)
+    if (isNative()) setLinkOut(link)
+    else void copyLink(link)
+  }
+
   /** Link only: a reset link to copy. Supabase keeps one per account, so this cancels any reset email sent before it. */
   const makeResetLink = () =>
     runNamed('linkOnly', async () => {
       const r = await adminAction<{ actionLink?: string | null }>('resetPassword', { email: resetEmail })
       setSentTo('')
-      if (r.actionLink) await copyLink(r.actionLink)
+      if (r.actionLink) showLink(r.actionLink)
     })
 
   /**
@@ -295,9 +307,11 @@ export function Admin({ initialGroup = 'users', initial }: Props) {
     setPending(`link:${path}`)
     return adminAction<{ url: string }>('downloadBackup', { path })
       .then(r => {
-        // the link is also shown under the row: opening after an await can trip a popup blocker
+        // the link is also shown under the row, with its Open: opening after an
+        // await can trip a popup blocker, and the iPhone app's WebKit opens no
+        // window at all without the tap, so there Open is the way
         setLink({ path, url: r.url })
-        window.open(r.url, '_blank', 'noopener')
+        if (!isNative()) window.open(r.url, '_blank', 'noopener')
       })
       .catch(e => setLink({ path, url: '', error: (e as Error).message }))
       .finally(() => setPending(''))
@@ -397,7 +411,7 @@ export function Admin({ initialGroup = 'users', initial }: Props) {
                   runNamed('invite', async () => {
                     const r = await adminAction<{ actionLink: string | null }>('inviteUser', { email: inviteEmail })
                     setInviteEmail('')
-                    if (r.actionLink) await copyLink(r.actionLink)
+                    if (r.actionLink) showLink(r.actionLink)
                     await refreshUsers()
                   })
                 }
@@ -502,6 +516,7 @@ export function Admin({ initialGroup = 'users', initial }: Props) {
               )}
             </div>
           )}
+          {linkOut.startsWith('http') && !copied && isNative() && <p className="field-hint">Tap Copy to put the link on the clipboard.</p>}
 
           <h4>Accounts on this site</h4>
           <details className="admin-optional">

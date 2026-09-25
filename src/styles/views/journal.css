@@ -245,9 +245,11 @@
   font-variant-numeric: tabular-nums;
   /* the scrub reads clientX along the chart, so the horizontal gesture is ours
      and the vertical one is still the page's. Never `none`: that would trap a
-     scroll that merely started on the chart. pinch-zoom stays with the browser
-     too — this is a dense 150px graphic, and magnifying it is exactly what a
-     low-vision reader needs (the anti-zoom note at the end of this sheet). */
+     scroll that merely started on the chart. pinch-zoom stays with a browser
+     too — this is a dense 150px graphic, and magnifying it is what a
+     low-vision reader there needs (the zoom guard's note, 16-zoom-guard.css).
+     The iOS app has no pinch-zoom — Capacitor turns it off, and it stays off;
+     there the reader's Dynamic Type size is what makes it bigger. */
   touch-action: pan-y pinch-zoom;
 }
 /* fixed SVG geometry, like .tick-label above. The labels' strength is a

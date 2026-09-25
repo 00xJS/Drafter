@@ -1,13 +1,19 @@
 import UIKit
 import Capacitor
+import UserNotifications
 
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate {
 
     var window: UIWindow?
 
+    /// The notification centre's delegate until Capacitor's bridge exists (LaunchNotificationRelay, below).
+    private let notificationRelay = LaunchNotificationRelay()
+
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        // Override point for customization after application launch.
+        // Apple asks for the notification centre's delegate before launch
+        // finishes; Capacitor sets its own only as the scene connects.
+        notificationRelay.install()
         return true
     }
 
@@ -52,5 +58,76 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
                                           sessionRole: connectingSceneSession.role)
         config.delegateClass = SceneDelegate.self
         return config
+    }
+}
+
+/// A tap on a notification that started the app — a reminder's banner, or its
+/// Done, Tomorrow or Saw them — reaches the notification centre's delegate,
+/// and Apple asks for that delegate to be set before launch finishes: one set
+/// later may miss it. Capacitor sets its own (NotificationRouter) only when the
+/// bridge is built, as the scene connects. This stands in until then: a
+/// response that reaches it is held, and handed to Capacitor's delegate once
+/// the bridge's view has appeared, whose plugins keep it for the page
+/// (localNotificationActionPerformed, pushNotificationActionPerformed) until
+/// the page listens. The bridge makes its own router the delegate as it is
+/// built, so from then on this hears nothing.
+final class LaunchNotificationRelay: NSObject, UNUserNotificationCenterDelegate {
+    private var held: [(response: UNNotificationResponse, done: () -> Void)] = []
+    /// Set until the bridge's view has appeared.
+    private var observer: NSObjectProtocol?
+
+    func install() {
+        UNUserNotificationCenter.current().delegate = self
+        observer = NotificationCenter.default.addObserver(forName: .capacitorViewDidAppear, object: nil, queue: .main) { [weak self] _ in
+            self?.bridgeAppeared()
+        }
+    }
+
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                didReceive response: UNNotificationResponse,
+                                withCompletionHandler completionHandler: @escaping () -> Void) {
+        DispatchQueue.main.async {
+            self.held.append((response, completionHandler))
+            self.handOver()
+        }
+    }
+
+    // One arriving while the app is still starting in front: shown as it would
+    // be with the app shut, since nothing of the app's is up to show it in.
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                willPresent notification: UNNotification,
+                                withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        completionHandler([.banner, .list, .sound, .badge])
+    }
+
+    private func bridgeAppeared() {
+        if let observer {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        observer = nil
+        handOver()
+    }
+
+    /// Everything held, to the delegate the bridge put in this one's place. The
+    /// bridge sets it and loads its plugins in one go on the main thread, so a
+    /// delegate other than this one is ready to take them.
+    private func handOver() {
+        let center = UNUserNotificationCenter.current()
+        let waiting = held
+        if let next = center.delegate, next !== self {
+            held.removeAll()
+            for (response, done) in waiting {
+                if next.userNotificationCenter?(center, didReceive: response, withCompletionHandler: done) == nil {
+                    done()
+                }
+            }
+        } else if observer == nil {
+            // the bridge is up and set no delegate of its own: nobody will take these
+            held.removeAll()
+            for (_, done) in waiting {
+                done()
+            }
+        }
+        // otherwise the bridge is not built yet, and they wait for it
     }
 }

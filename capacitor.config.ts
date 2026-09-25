@@ -26,7 +26,9 @@ const config: CapacitorConfig = {
   },
   plugins: {
     PushNotifications: { presentationOptions: ['badge', 'sound', 'alert'] },
-    Keyboard: { resize: 'native', resizeOnFullScreen: true },
+    // iOS shrinks the web view by the keyboard (src/native.ts's watchKeyboard);
+    // the plugin's full-screen fix is Android's alone, and there is no Android app
+    Keyboard: { resize: 'native' },
   },
 }
 

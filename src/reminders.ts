@@ -1,9 +1,10 @@
 import { CalendarEntry, Meal, OPEN_STATUSES, Person, Place, Task } from './types'
 import { upcomingOccasions } from './people'
 import { placeCadenceStatus } from './places'
-import { excerpt, fmtTime } from './utils'
+import { dateKey, excerpt, fmtTime } from './utils'
 import { hasDueTime } from '../shared/due.mts'
 import { isMineTask } from '../shared/domain.mts'
+import { bucketByDue } from '../shared/today.mts'
 import { OCCASION_ACTION_TYPE, TASK_ACTION_TYPE, type PlanDayPref } from './native'
 
 // Reminders the phone can fire by itself: one at each of your tasks' due
@@ -33,12 +34,31 @@ export interface LocalReminder {
   /**
    * The action buttons the banner offers (Done / Tomorrow, or Saw them). Left
    * off generic reminders: a banner that will not say which task it is must not
-   * offer to finish it either. The badge is not set here — scheduleLocalReminders
-   * numbers the whole set in time order.
+   * offer to finish it either.
    */
   actionTypeId?: string
   /** Repeats every day at this hour and minute rather than firing once at `at`: the morning's Plan your day. */
   daily?: { hour: number; minute: number }
+  /** The Home Screen badge as it rings: badgeCount at `at`. deviceReminders sets it; one that repeats has none. */
+  badge?: number
+}
+
+/** A due date's day on this phone's calendar, or null for one that is no date. */
+const dueDay = (iso: string): string | null => (Number.isFinite(Date.parse(iso)) ? dateKey(iso) : null)
+
+/**
+ * What the Home Screen badge says at `at`: my open tasks overdue or due that
+ * day. The morning digest's number (buildDigest in shared/digest.mts: the same
+ * bucketByDue, over the tasks isMineTask gives me), read on this phone's
+ * calendar as Today reads it. The digest sets it each morning, the phone's own
+ * reminders as each rings, and the app whenever it is open.
+ */
+export function badgeCount(tasks: readonly Task[], myId: string | null | undefined, at: Date): number {
+  const { overdue, dueToday } = bucketByDue(
+    tasks.filter(t => isMineTask(t, myId)),
+    { today: dateKey(at), dayKey: dueDay },
+  )
+  return overdue.length + dueToday.length
 }
 
 /** Stable 31-bit id from a string (djb2), so rescheduling replaces rather than duplicates. */
@@ -254,7 +274,14 @@ export function deviceReminders(
   opts: BuildReminderOpts & { local: boolean; planDay: PlanDayPref },
 ): LocalReminder[] {
   const plan = planDayReminder(opts.planDay, now)
-  return distinctIds([...(opts.local ? buildLocalReminders(data.tasks, data.people, data.places, data.meals, now, 30, opts) : []), ...(plan ? [plan] : [])])
+  // each one that rings once leaves the badge at what is overdue or due by
+  // then, as the tasks stand now; the set is rebuilt whenever they change. Plan
+  // your day repeats, and a number fixed now would be wrong from its second morning.
+  const once = (opts.local ? buildLocalReminders(data.tasks, data.people, data.places, data.meals, now, 30, opts) : []).map(r => ({
+    ...r,
+    badge: badgeCount(data.tasks, opts.myId, r.at),
+  }))
+  return distinctIds([...once, ...(plan ? [plan] : [])])
 }
 
 /**

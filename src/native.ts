@@ -58,6 +58,56 @@ export async function syncNativeAppearance(pref: ThemePref, theme: Theme): Promi
   }
 }
 
+/** The shell's word about itself (ios/App/App/ShellPlugin.swift). */
+interface ShellPlugin {
+  expectSystemPrompt(): Promise<void>
+  setBadge(options: { count: number }): Promise<void>
+}
+
+let shellPlugin: ShellPlugin | null | undefined
+
+/** The plugin, or null on the web and in a shell built before it. Looked up on first use, never at module load. */
+function shell(): ShellPlugin | null {
+  if (shellPlugin === undefined) {
+    try {
+      shellPlugin = isNative() && Capacitor.isPluginAvailable('Shell') ? registerPlugin<ShellPlugin>('Shell') : null
+    } catch {
+      shellPlugin = null
+    }
+  }
+  return shellPlugin
+}
+
+/** How long the page waits for the shell to hear it before asking iOS anyway. */
+const SHELL_WORD_MS = 500
+
+/**
+ * Say that iOS is about to put up an alert of its own — may Drafter notify
+ * you, know where you are, Face ID — just before asking for it. The alert
+ * makes the app inactive, and the shell covers an inactive app with the
+ * launch screen (SceneDelegate's privacy cover), so the alert stood on a
+ * blank screen with nothing to say what it was for. Told first, the shell
+ * leaves the page in sight behind it; going to the background is covered all
+ * the same. Never throws, and never holds the ask up for long.
+ */
+export async function expectSystemPrompt(): Promise<void> {
+  const plugin = shell()
+  if (!plugin) return
+  try {
+    await withTimeout(plugin.expectSystemPrompt(), SHELL_WORD_MS)
+  } catch {
+    /* the alert comes all the same, over the cover */
+  }
+}
+
+/**
+ * This app's own page in the iPhone Settings app, where notifications taken
+ * away are given back. A link to it leaves the web view like any other address
+ * that is not the app's (Capacitor hands it to UIApplication.open), so a plain
+ * link is the whole of it — offered in the shell only.
+ */
+export const APP_SETTINGS_URL = 'app-settings:'
+
 /** Open a URL outside the web view: Safari's sheet on iOS, a new tab on the web. */
 export async function openExternal(url: string): Promise<void> {
   if (isNative()) {
@@ -106,6 +156,19 @@ export async function startOAuth(url: string): Promise<'native' | 'redirect'> {
   }
   window.location.href = url
   return 'redirect'
+}
+
+/**
+ * A link's click, sent to openExternal. In the shell a bare target="_blank"
+ * leaves for the Safari app, and coming back after the lock's grace asks for
+ * Face ID; openExternal keeps the page in Safari's sheet over the app. The
+ * link keeps its href, so it still reads, copies and long-presses as one.
+ */
+export function openExternalOnClick(url: string): (e: { preventDefault(): void }) => void {
+  return e => {
+    e.preventDefault()
+    void openExternal(url)
+  }
 }
 
 /** Dismiss the sheet opened by openExternal, e.g. once an OAuth flow has come back. */
@@ -176,15 +239,12 @@ export interface NativeHooks {
    * `fromNotification` is true only for a tap on one of our own local reminders,
    * which is the only source allowed to carry a write-on-arrival `act=` button.
    * Every other producer — an external drafter:// link from Safari, a Shortcut,
-   * a cold-start launch URL, a push tap — leaves it false.
+   * a Universal Link, a cold-start launch URL, a push tap — leaves it false.
    */
   onUrl(url: string, fromNotification?: boolean): void
   /** The app came back to the foreground. */
   onResume(): void
 }
-
-/** How long after launch the same URL is treated as the duplicate it is. */
-const LAUNCH_DEDUPE_MS = 5000
 
 /** Wire the shell's events once. Returns a disposer. No-op on the web. */
 export async function initNative(hooks: NativeHooks): Promise<() => void> {
@@ -192,25 +252,18 @@ export async function initNative(hooks: NativeHooks): Promise<() => void> {
   // the first swipe of a session should buzz like every later one
   void warmHaptics()
   const { App } = await import('@capacitor/app')
-  // A cold-start drafter:// URL is delivered on BOTH channels: Capacitor's scene
-  // proxy replays the launch URL contexts as an `appUrlOpen` (retained until a
-  // listener consumes it) and records the same URL for App.getLaunchUrl(). Applied
-  // twice, `drafter://journal?text=…` writes the line twice. Whichever channel
-  // lands first wins, and the copy from the other one is dropped — but only while
-  // the app is starting, so tapping the same Shortcut again later still works.
-  const startedAt = Date.now()
-  const launchSeen = new Set<string>()
-  const deliverUrl = (url: string, fromNotification = false) => {
-    if (Date.now() - startedAt < LAUNCH_DEDUPE_MS) {
-      if (launchSeen.has(url)) return
-      launchSeen.add(url)
-    }
-    hooks.onUrl(url, fromNotification)
-  }
-  const handles = [await App.addListener('appUrlOpen', e => deliverUrl(e.url)), await App.addListener('resume', () => hooks.onResume())]
-  // a cold start from a link may arrive here rather than as an event
-  const launch = await App.getLaunchUrl().catch(() => null)
-  if (launch?.url) deliverUrl(launch.url)
+  // Every link reaches the page as `appUrlOpen`, and only that way. A cold
+  // start's link — a drafter:// URL, a widget's, a Universal Link — is held by
+  // Capacitor's scene proxy until the bridge's view appears and then sent as
+  // this event, which AppPlugin keeps until a listener takes it; a quick
+  // action and Siri's Open Today are sent the same way (SceneDelegate,
+  // DrafterIntents). App.getLaunchUrl() is not read: it answers with the last
+  // link the app was ever handed and never forgets it, so every reload of the
+  // page — iOS reclaiming the web view, a sign-out, the error screen's Reload —
+  // ran that link again: an empty New task, Plan my day, the journal's Add.
+  // A Universal Link is the site's full address (https://…/?task=…), which in
+  // here names another host, so it keeps only its path and query, as a push does.
+  const handles = [await App.addListener('appUrlOpen', e => hooks.onUrl(inAppLink(e.url))), await App.addListener('resume', () => hooks.onResume())]
   try {
     const { LocalNotifications } = await import('@capacitor/local-notifications')
     handles.push(
@@ -220,7 +273,7 @@ export async function initNative(hooks: NativeHooks): Promise<() => void> {
         // 'tap' is the banner itself; anything else is one of the buttons
         // registered below, and rides along on that row's own link.
         const act = a.actionId && a.actionId !== 'tap' ? a.actionId : ''
-        deliverUrl(act ? `${url}${url.includes('?') ? '&' : '?'}act=${encodeURIComponent(act)}` : url, true)
+        hooks.onUrl(act ? `${url}${url.includes('?') ? '&' : '?'}act=${encodeURIComponent(act)}` : url, true)
       }),
     )
   } catch {
@@ -237,12 +290,6 @@ export async function initNative(hooks: NativeHooks): Promise<() => void> {
     )
   } catch {
     /* the plugin is optional at runtime */
-  }
-  try {
-    const stopKeyboard = await watchKeyboard()
-    handles.push({ remove: async () => stopKeyboard() })
-  } catch {
-    /* optional */
   }
   try {
     const stopTextSize = await watchTextSize()
@@ -354,13 +401,42 @@ export async function localNotificationPermission(): Promise<LocalPermission | n
   }
 }
 
-/** Ask iOS once; false if the user said no (the fix is then the Settings app). */
+const allowedWatchers = new Set<() => void>()
+
+/**
+ * Run `cb` each time this phone has just been allowed to notify, whichever
+ * button asked (the bell's Turn on, Settings → Notifications, the offer after
+ * a due time is set): the reminders waiting on it can be set now, not at the
+ * next change. Returns a disposer.
+ */
+export function onNotificationsAllowed(cb: () => void): () => void {
+  allowedWatchers.add(cb)
+  return () => {
+    allowedWatchers.delete(cb)
+  }
+}
+
+/** iOS has just said yes to a question the app asked. */
+export function notificationsAllowed(): void {
+  for (const cb of [...allowedWatchers]) cb()
+}
+
+/**
+ * Ask iOS once; false if the user said no (the fix is then the Settings app).
+ * Only ever from a button someone pressed: the question comes with what it is
+ * for on screen, never by itself as the planner opens.
+ */
 export async function requestLocalNotificationPermission(): Promise<boolean> {
   if (!isNative()) return false
   const { LocalNotifications } = await import('@capacitor/local-notifications')
   let p = await LocalNotifications.checkPermissions()
-  if (p.display !== 'granted') p = await LocalNotifications.requestPermissions()
-  return p.display === 'granted'
+  if (p.display === 'granted') return true
+  // only an unanswered question puts an alert up; after that iOS answers alone
+  if (p.display !== 'denied') await expectSystemPrompt()
+  p = await LocalNotifications.requestPermissions()
+  if (p.display !== 'granted') return false
+  notificationsAllowed()
+  return true
 }
 
 /** The action buttons a reminder can carry. Omitted from a generic reminder. */
@@ -375,6 +451,12 @@ export interface PendingReminder {
   url: string
   /** TASK_ACTION_TYPE / OCCASION_ACTION_TYPE, or nothing for a title-less banner. */
   actionTypeId?: string
+  /**
+   * The Home Screen badge as it rings: what will be overdue or due today then,
+   * the morning digest's number (badgeCount in src/reminders.ts). Absent, the
+   * badge is left as it is.
+   */
+  badge?: number
   /**
    * Fires every day at this hour and minute, this phone's own time, not once at
    * `at`: the morning's Plan your day. Its own numbers, not `at`'s: on the
@@ -472,17 +554,17 @@ async function writeReminders(items: PendingReminder[]): Promise<number> {
     .sort((a, b) => a.at.getTime() - b.at.getTime())
     .slice(0, Math.max(0, 60 - daily.length))
   const notifications = [
-    ...upcoming.map((i, idx) => ({
+    ...upcoming.map(i => ({
       id: i.id,
       title: i.title,
       body: i.body,
       schedule: { at: i.at, allowWhileIdle: true },
       extra: { url: i.url },
       sound: 'default',
-      // the badge counts reminders that have fired since Drafter was last
-      // opened — these are in time order, so the nth to fire leaves n behind.
-      // clearAppBadge() zeroes it again on the next launch or resume.
-      badge: idx + 1,
+      // one meaning for the badge wherever it is set — what is overdue or due
+      // today, as the morning digest and the open app set it — worked out for
+      // the moment this one rings
+      ...(typeof i.badge === 'number' ? { badge: i.badge } : {}),
       ...(i.actionTypeId ? { actionTypeId: i.actionTypeId } : {}),
     })),
     ...daily.map(i => ({
@@ -514,18 +596,19 @@ async function writeReminders(items: PendingReminder[]): Promise<number> {
   return notifications.length
 }
 
-/** Clear the home-screen badge when the app comes forward. */
-export async function clearAppBadge(): Promise<void> {
-  if (!isNative()) return
+/**
+ * Set the Home Screen badge to `count`: what is overdue or due today, the one
+ * thing the badge means (badgeCount in src/reminders.ts). Notification Centre
+ * is left alone — the app used to empty it on every launch and return, and a
+ * household message not yet read went with it. No-op on the web.
+ */
+export async function setAppBadge(count: number): Promise<void> {
+  const plugin = shell()
+  if (!plugin) return
   try {
-    const { LocalNotifications } = await import('@capacitor/local-notifications')
-    // This one both empties Notification Centre and sets the icon badge to zero,
-    // with no registration guard. The push plugin's identically named method
-    // rejects until APNs registration has run, which never happens on a free
-    // Apple team — so the badge used to stick to the icon for good.
-    await LocalNotifications.removeAllDeliveredNotifications()
+    await plugin.setBadge({ count: Math.max(0, Math.floor(count)) })
   } catch {
-    /* the plugin is optional at runtime */
+    /* no badge allowed: iOS shows none */
   }
 }
 
@@ -568,14 +651,41 @@ export async function onAppResume(cb: () => void): Promise<() => void> {
 
 // ---- keyboard: signal the keyboard, and give multi-line fields a Done key ----
 
+/** Inputs that take no typing: nothing of theirs sits under a caret. */
+const UNTYPED_INPUTS = new Set(['button', 'checkbox', 'color', 'file', 'hidden', 'image', 'radio', 'range', 'reset', 'submit'])
+
 /**
- * Publish the keyboard state to CSS.
+ * The field being typed into, when it is on the surface the reader sees: the
+ * topmost open sheet while one is up, else the page. Null for anything else —
+ * a button, a read-only field, one the lock card has made inert, or a field
+ * left focused on the page behind a sheet.
+ */
+export function typingField(el: Element | null): HTMLElement | null {
+  if (!(el instanceof HTMLElement) || !el.isConnected) return null
+  const typed =
+    el.isContentEditable ||
+    (el instanceof HTMLTextAreaElement && !el.readOnly && !el.disabled) ||
+    (el instanceof HTMLInputElement && !el.readOnly && !el.disabled && !UNTYPED_INPUTS.has(el.type))
+  if (!typed || el.closest('[inert], [hidden], [aria-hidden="true"]')) return null
+  const sheets = el.ownerDocument.querySelectorAll('[aria-modal="true"]')
+  const top = sheets[sheets.length - 1]
+  return !top || top.contains(el) ? el : null
+}
+
+/**
+ * Publish the keyboard state to CSS, and keep the field being typed in sight.
+ * Called once, as the app starts (main.tsx), so the sign-in form has it too.
  *
  * `capacitor.config.ts` uses `resize: 'native'`, so iOS already shrinks the
  * WebView by the keyboard height: `--keyboard-h` is a SIGNAL, never an inset to
  * spend on padding — doing that subtracts the keyboard twice. The `keyboard-open`
  * class is what layout rules should key off (see `.keyboard-open .tabs-compact` in
  * src/styles/08-responsive.css, which slides the fixed tab bar out of the caret's way).
+ *
+ * WebKit scrolls a focused field into view before the web view has shrunk, so a
+ * field low in a sheet or page could end up under the keyboard once it had.
+ * Each resize while the keyboard is up brings the field back into view, the
+ * least distance there is (block: 'nearest': a field already in sight stays put).
  */
 export async function watchKeyboard(): Promise<() => void> {
   if (!isNative()) return () => {}
@@ -604,10 +714,16 @@ export async function watchKeyboard(): Promise<() => void> {
       if (document.visibilityState === 'visible') set(0)
     }
     document.addEventListener('visibilitychange', onVisible)
+    const onResize = () => {
+      if (!document.documentElement.classList.contains('keyboard-open')) return
+      typingField(document.activeElement)?.scrollIntoView({ block: 'nearest' })
+    }
+    window.addEventListener('resize', onResize)
     return () => {
       void show.remove()
       void hide.remove()
       document.removeEventListener('visibilitychange', onVisible)
+      window.removeEventListener('resize', onResize)
       set(0)
     }
   } catch {
@@ -769,6 +885,8 @@ export async function checkAppLock(): Promise<BiometryStatus> {
 export async function authenticateAppLock(reason = 'Unlock Drafter'): Promise<boolean> {
   try {
     const { BiometricAuth } = await import('@aparajita/capacitor-biometric-auth')
+    // Face ID stands over the lock card, or over Settings, not the launch screen
+    await expectSystemPrompt()
     await BiometricAuth.authenticate({ reason, allowDeviceCredential: true, cancelTitle: 'Cancel' })
     return true
   } catch {

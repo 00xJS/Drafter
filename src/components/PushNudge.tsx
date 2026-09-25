@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { isNative } from '../native'
+import { APP_SETTINGS_URL, isNative } from '../native'
 import { currentEndpoint, enablePush, fetchPushInfo, pushPermission, pushSupported, testPush } from '../push'
 
 type State = 'hidden' | 'offer' | 'blocked' | 'busy' | 'on' | 'tested'
@@ -25,6 +25,20 @@ function rememberNotNow(): void {
 
 /** The button's words, and Settings → Notifications' too: one phrase for one switch. */
 export const TURN_ON = 'Turn on for this device'
+
+/**
+ * Where iOS has said no, asking again shows nothing: this goes to Drafter's
+ * page in the iPhone Settings app instead, where notifications are given
+ * back. The shell only: a browser's site settings have no address to open.
+ */
+export function OpenSettings({ primary = false }: { primary?: boolean }) {
+  if (!isNative()) return null
+  return (
+    <a className={primary ? 'btn primary' : 'btn'} href={APP_SETTINGS_URL}>
+      Open Settings
+    </a>
+  )
+}
 
 /**
  * The bell's own switch for this device. A notice always lands in the bell;
@@ -120,7 +134,14 @@ export function PushNudge() {
             ? 'iOS isn’t letting Drafter send notifications, so these stay in here. Turn them on in iPhone Settings → Notifications → Drafter.'
             : 'This browser is blocking Drafter’s notifications, so these stay in here. Allow them in the browser’s settings for this site.'}
         </p>
-        {later}
+        {isNative() ? (
+          <div className="push-nudge-actions">
+            <OpenSettings primary />
+            {later}
+          </div>
+        ) : (
+          later
+        )}
       </div>
     )
   }

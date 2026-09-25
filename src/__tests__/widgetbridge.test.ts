@@ -23,6 +23,7 @@ import {
   CAPTURES_QUEUED,
   WIDGET_DEBOUNCE_MS,
   WIDGET_ITEMS,
+  WIDGET_RENEW_MS,
   WIDGET_STALE_MS,
   buildWidgetSnapshot,
   captureRecords,
@@ -346,26 +347,47 @@ describe('the bridge', () => {
     expect(written[0]).toEqual(buildWidgetSnapshot(sources, { now: NOW, generic: false }))
   })
 
-  it('does not write the same day twice, except on the way out', async () => {
+  it('does not write the same day twice, on the way out either, until it nears going stale', async () => {
     vi.useFakeTimers()
+    let clock = NOW
     const { store } = fakeStore()
     const { plugin, written } = fakePlugin()
-    const bridge = createWidgetBridge({ plugin, store: () => store, generic: () => false, now: () => NOW })
+    const bridge = createWidgetBridge({ plugin, store: () => store, generic: () => false, now: () => clock })
     bridge.changed()
     await vi.advanceTimersByTimeAsync(WIDGET_DEBOUNCE_MS)
     bridge.changed()
     await vi.advanceTimersByTimeAsync(WIDGET_DEBOUNCE_MS)
     expect(written).toHaveLength(1)
-    // pause: written again, which is what keeps it from going stale
+    // every app switch wrote it again, and had WidgetKit draw the widget anew
+    for (const minutes of [1, 30, 60 * 5]) {
+      clock = new Date(NOW.getTime() + minutes * 60_000)
+      expect(await bridge.flush(), `${minutes} minutes on`).toBe(false)
+    }
+    expect(written).toHaveLength(1)
+    // within WIDGET_RENEW_MS of going stale, the same day is written again, stamped afresh
+    clock = new Date(Date.parse(written[0].staleAt) - WIDGET_RENEW_MS + 1)
     expect(await bridge.flush()).toBe(true)
     expect(written).toHaveLength(2)
-    // a flush takes over a debounce that was still waiting
+    expect(written[1].days).toEqual(written[0].days)
+    expect(Date.parse(written[1].staleAt)).toBe(clock.getTime() + WIDGET_STALE_MS)
+    // a flush takes over a debounce that was still waiting, and writes what changed
     store.tasks = [...store.tasks, task('New today', { dueAt: at(22, 20) })]
     bridge.changed()
-    await bridge.flush()
+    expect(await bridge.flush()).toBe(true)
     await vi.advanceTimersByTimeAsync(WIDGET_DEBOUNCE_MS * 2)
     expect(written).toHaveLength(3)
     expect(written[2].days[0].count).toBe(7)
+  })
+
+  it('writes a new day at once: the day it shows is part of what is compared', async () => {
+    let clock = NOW
+    const { store } = fakeStore()
+    const { plugin, written } = fakePlugin()
+    const bridge = createWidgetBridge({ plugin, store: () => store, generic: () => false, now: () => clock })
+    await bridge.flush()
+    clock = new Date(2026, 8, 23, 0, 5)
+    expect(await bridge.flush()).toBe(true)
+    expect(written.map(w => w.days[0].day)).toEqual(['2026-09-22', '2026-09-23'])
   })
 
   it('writes again when the lock-screen switch changes, with counts only', async () => {

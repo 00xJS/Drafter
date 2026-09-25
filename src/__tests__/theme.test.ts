@@ -365,7 +365,8 @@ describe('main.tsx: the theme is kept for the whole visit', () => {
 
   it('starts the theme straight after the platform classes and before the first render, and hands every repaint to the shell', () => {
     expect(main).toMatch(/^import \{ startTheme \} from '\.\/theme'$/m)
-    expect(main).toMatch(/^import \{ applyPlatformClasses, syncNativeAppearance \} from '\.\/native'$/m)
+    // (and the keyboard's watch, which starts beside it: keyboard.dom.test.tsx)
+    expect(main).toMatch(/^import \{ applyPlatformClasses, syncNativeAppearance(?:, \w+)* \} from '\.\/native'$/m)
     expect(code).toMatch(/\bapplyPlatformClasses\(\)\s*startTheme\(\(pref, theme\) => void syncNativeAppearance\(pref, theme\)\)\n/)
     expect(code.indexOf('startTheme(')).toBeLessThan(code.indexOf('createRoot('))
   })

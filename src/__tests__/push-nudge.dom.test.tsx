@@ -22,7 +22,7 @@ const push = vi.hoisted(() => ({
 }))
 vi.mock('../push', () => push)
 const shell = vi.hoisted(() => ({ native: false }))
-vi.mock('../native', () => ({ isNative: () => shell.native }))
+vi.mock('../native', () => ({ isNative: () => shell.native, APP_SETTINGS_URL: 'app-settings:' }))
 
 import { PUSH_NUDGE_NOT_NOW_KEY, PushNudge, TURN_ON } from '../components/PushNudge'
 
@@ -161,6 +161,8 @@ describe('where iOS or the browser has said no', () => {
     expect(screen.getByRole('status').textContent).toContain('Turn them on in iPhone Settings → Notifications → Drafter.')
     expect(screen.queryByRole('button', { name: TURN_ON })).toBeNull()
     expect(screen.getByRole('button', { name: 'Not now' })).toBeTruthy()
+    // and a way there: Drafter's own page in the Settings app, which the shell hands to iOS
+    expect(screen.getByRole('link', { name: 'Open Settings' }).getAttribute('href')).toBe('app-settings:')
   })
 
   it('in a browser, says where that browser keeps the switch', async () => {
@@ -170,6 +172,8 @@ describe('where iOS or the browser has said no', () => {
     expect(await shown()).toBe(true)
     expect(screen.getByRole('status').textContent).toContain('Allow them in the browser’s settings for this site.')
     expect(screen.queryByRole('button', { name: TURN_ON })).toBeNull()
+    // a browser's site settings have no address to open
+    expect(screen.queryByRole('link', { name: 'Open Settings' })).toBeNull()
   })
 
   it('says so as soon as the answer is no, and offers it again once it is turned on in Settings', async () => {

@@ -1,5 +1,12 @@
 import { Component, ReactNode } from 'react'
 import { reportRenderError } from '../errorreport'
+import { forgetView } from '../reloadstate'
+
+/** Reload, onto Home: the shell brings a reloaded page back to its last tab, and not to the one that broke. */
+function reloadAfresh() {
+  forgetView()
+  window.location.reload()
+}
 
 interface Props {
   children: ReactNode
@@ -52,7 +59,7 @@ export class ErrorBoundary extends Component<Props, State> {
           <button className="btn" onClick={this.retry}>
             Try again
           </button>{' '}
-          <button className="btn subtle" onClick={() => window.location.reload()}>
+          <button className="btn subtle" onClick={reloadAfresh}>
             Reload
           </button>
         </p>
@@ -103,7 +110,7 @@ export function AppBoundary({ children }: { children: ReactNode }) {
           <p>Your data is safe on this device. Reload to carry on.</p>
           <p className="error-detail">{error.message}</p>
           <p>
-            <button type="button" className="btn primary" onClick={() => window.location.reload()}>
+            <button type="button" className="btn primary" onClick={reloadAfresh}>
               Reload
             </button>
           </p>
