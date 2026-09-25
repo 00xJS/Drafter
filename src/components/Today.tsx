@@ -185,7 +185,8 @@ interface Props {
   /** Open the hub. */
   onOpenNotices?(): void
   // ---- Home's top section (2026-09-25). Optional: without them the week's
-  // days, the two tiles and the week's highlight are drawn but open nothing.
+  // days and the two tiles are drawn but open nothing, and the week's
+  // highlight, which is only a way into Insights, is not drawn.
   /**
    * More than one account shares the planner: tonight's dinner says who it is
    * for and who cooks, and the week's highlight counts the household's work.

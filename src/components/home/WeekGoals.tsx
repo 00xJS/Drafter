@@ -194,9 +194,17 @@ export function WeekGoals({ reviews, record, noon, focusTitles, onSave, onMakeTa
                 {/* the whole line ticks it, not only the box: a thumb's target */}
                 <label className="dash-main goals-tick">
                   <input type="checkbox" className="tcheck" checked={g.done} aria-label={`Mark “${g.text}” ${g.done ? 'not done' : 'done'}`} onChange={() => toggle(g)} />
-                  <span className="dash-title">{g.text}</span>
-                  {/* the line stays; its task is on the focus card below too */}
-                  {focusTitles.has(g.text.toLowerCase()) && <span className="badge focus-badge">Today’s focus</span>}
+                  {/* the words and the badge flow as a line of text: the badge wraps under a long goal, never the goal under its box */}
+                  <span className="goals-words-line">
+                    <span className="dash-title">{g.text}</span>
+                    {/* the line stays; its task is on the focus card below too */}
+                    {focusTitles.has(g.text.toLowerCase()) && (
+                      <>
+                        {' '}
+                        <span className="badge focus-badge">Today’s focus</span>
+                      </>
+                    )}
+                  </span>
                 </label>
                 {!g.done && (
                   <button type="button" className="btn subtle goals-task" aria-label={`Make “${g.text}” a task`} title="Make it a task" onClick={() => onMakeTask(g.text)}>

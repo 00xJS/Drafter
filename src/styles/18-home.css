@@ -33,10 +33,12 @@
   font-size: 0.9375rem;
   line-height: 1.35;
 }
-/* the date and the sky each hold together; the line breaks between them */
+/* the date and the sky each hold together, so a line breaks between them;
+   one wider than the line (the largest Dynamic Type) still wraps inside */
 .home-hero-date,
 .home-hero-sky {
-  white-space: nowrap;
+  display: inline-block;
+  max-width: 100%;
 }
 .home-hero > .today-head-actions {
   grid-area: actions;
@@ -116,7 +118,8 @@
   grid-area: 1 / 1;
 }
 .goals-ring-count {
-  font-size: 0.8125rem;
+  /* it grows with the text, to what the ring's hole can hold */
+  font-size: min(0.8125rem, 15px);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
@@ -140,20 +143,26 @@
 .goals-tick {
   display: flex;
   flex: 1;
-  flex-wrap: wrap;
+  flex-direction: row;
   align-items: center;
-  gap: 4px 10px;
+  gap: 10px;
   min-width: 0;
   min-height: 36px;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
-.goals-tick .dash-title {
-  flex: 1 1 8rem;
+.goals-words-line {
+  flex: 1;
   min-width: 0;
+  overflow-wrap: anywhere;
+}
+.goals-tick .dash-title {
+  display: inline;
   font-weight: 500;
   white-space: normal;
-  overflow-wrap: anywhere;
+}
+.goals-words-line > .badge {
+  display: inline-block;
 }
 .goals-list .tcheck {
   accent-color: var(--ok);
