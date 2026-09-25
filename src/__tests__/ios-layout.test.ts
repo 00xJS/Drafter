@@ -59,3 +59,12 @@ describe('Tasks → List’s toolbar on a phone', () => {
     expect(css).not.toMatch(/select\[aria-label='Filter by priority'\]\s*\{/)
   })
 })
+
+describe('Kitchen → Recipes’ Includes chips', () => {
+  it('keep to the column, and scroll sideways in it on a phone', () => {
+    // as wide as its chips, the row was 1003px in a 343px column: eight of fifteen out of reach
+    expect(rule(css, '.recipe-includes')).toMatch(/min-width:\s*0/)
+    expect(phone('.recipe-includes > .kind-chips')).toMatch(/min-width:\s*0/)
+    expect(phone('.kind-chips')).toMatch(/overflow-x:\s*auto/)
+  })
+})
