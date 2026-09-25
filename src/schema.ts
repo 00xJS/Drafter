@@ -36,7 +36,9 @@ import {
   MESSAGE_MAX,
   ChatTurn,
   Account,
+  AccountHolding,
   AccountType,
+  ACCOUNT_HOLDINGS,
   ACCOUNT_TYPES,
   BalanceCheck,
   Habit,
@@ -449,6 +451,7 @@ const SNOOZE_TARGETS = new Set<string>(['person', 'place', 'event'])
 /** What a message can be about: the record kinds one can point at from the chat. */
 const MESSAGE_ABOUT_KINDS = new Set<string>(['task', 'event', 'meal', 'note'])
 const ACCOUNT_TYPE_SET = new Set<string>(ACCOUNT_TYPES)
+const ACCOUNT_HOLDING_SET = new Set<string>(ACCOUNT_HOLDINGS)
 const PLACE_CATEGORY_SET = new Set<string>(PLACE_CATEGORIES)
 const MEAL_SLOT_SET = new Set<string>(MEAL_SLOTS)
 const GROCERY_STATE_SET = new Set<string>(GROCERY_STATES)
@@ -1028,6 +1031,11 @@ export function sanitizeWear(raw: unknown): Wear | null {
  * An account and its balance check-ins. One check-in per day: re-typing a day
  * replaces it rather than doubling it, and the list is kept oldest-first so
  * "the latest" is always the last of it, whatever order a device wrote them.
+ *
+ * What an investment holds (`holding`) is one of the five kinds or nothing:
+ * any other value is dropped, and so is one on an account that is not an
+ * investment. It is always in what this returns, undefined when dropped, so
+ * withUnknownFields never carries a value this build refused.
  */
 export function sanitizeAccount(raw: unknown): Account | null {
   if (!raw || typeof raw !== 'object') return null
@@ -1044,11 +1052,13 @@ export function sanitizeAccount(raw: unknown): Account | null {
     const amount = Number(b?.amount)
     if (on && Number.isFinite(amount)) byDay.set(on, { on, amount: Math.round(amount * 100) / 100 })
   }
+  const type = typeof r.type === 'string' && ACCOUNT_TYPE_SET.has(r.type) ? (r.type as AccountType) : 'checking'
   return {
     kind: 'account',
     id,
     name: name ?? '',
-    type: typeof r.type === 'string' && ACCOUNT_TYPE_SET.has(r.type) ? (r.type as AccountType) : 'checking',
+    type,
+    holding: type === 'investment' && typeof r.holding === 'string' && ACCOUNT_HOLDING_SET.has(r.holding) ? (r.holding as AccountHolding) : undefined,
     memberId: idOrUndefined(r.memberId),
     balances: [...byDay.values()].sort((a, b) => a.on.localeCompare(b.on)).slice(-400),
     archivedAt: isoDate(r.archivedAt),
@@ -1540,9 +1550,9 @@ function jsonLength(v: unknown, room: number, depth = 0): number {
  * device keeps the same ones — never a field the kind's sanitizer knows, whose
  * answer stands even when it was to drop it, and never a key neverCarried
  * refuses. Each is copied, so the record shares nothing with what it was
- * read from.
+ * read from. Exported for the tests that play an older build through it.
  */
-function withUnknownFields<T extends Item>(clean: T, raw: Record<string, unknown>): T {
+export function withUnknownFields<T extends Item>(clean: T, raw: Record<string, unknown>): T {
   const alsoKnown = READ_NOT_RETURNED[clean.kind]
   let room = UNKNOWN_FIELDS_MAX
   let out: Record<string, unknown> | null = null

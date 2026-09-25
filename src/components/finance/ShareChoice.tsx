@@ -21,3 +21,36 @@ export function ShareChoice({ shared, onChange, noun }: { shared: boolean; onCha
     </div>
   )
 }
+
+/**
+ * Who can see one already written. Its owner has the choice; anyone else is
+ * told whose it is, because only the owner can keep a task back and the
+ * database refuses anyone else's try (the task editor's AssignFields says the
+ * same, the same way).
+ */
+export function ShareField({
+  ownerId,
+  myId,
+  members,
+  shared,
+  onChange,
+  noun,
+}: {
+  ownerId?: string
+  myId?: string | null
+  members: readonly { id: string; displayName: string }[]
+  shared: boolean
+  onChange(shared: boolean): void
+  noun: string
+}) {
+  if (!ownerId || !myId || ownerId === myId) return <ShareChoice shared={shared} onChange={onChange} noun={noun} />
+  const owner = members.find(m => m.id === ownerId)?.displayName
+  return (
+    <div className="field">
+      <span>Who can see it</span>
+      <small className="muted">
+        <span aria-hidden="true">👥</span> {owner ? `${owner}’s ${noun}` : `Someone else’s ${noun}`} — only {owner ?? 'they'} can keep it to themselves.
+      </small>
+    </div>
+  )
+}

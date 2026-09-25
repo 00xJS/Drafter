@@ -819,6 +819,27 @@ export const ACCOUNT_TYPE_META: Record<AccountType, { label: string; emoji: stri
   cash: { label: 'Cash', emoji: '💵' },
 }
 
+/**
+ * What an investment account holds: a brokerage, a 401(k), a coin wallet, an
+ * HSA. It rides beside `type` rather than as more types, because the phones
+ * still on builds from before it read a type they do not know as checking —
+ * a 401(k) would have landed in safe to spend. Every one of these stays
+ * `type: 'investment'`, which every build counts in net worth and nowhere
+ * else, and an older build carries this field along untouched
+ * (schema.ts withUnknownFields). Read on investments only; one with none
+ * written is an "Investment" until it is given one.
+ */
+export type AccountHolding = 'stocks' | 'retirement' | 'crypto' | 'hsa' | 'other'
+export const ACCOUNT_HOLDINGS: AccountHolding[] = ['stocks', 'retirement', 'crypto', 'hsa', 'other']
+/** `label` names the kind where there is room for it; `short` where it follows a name ("Fidelity · Retirement"). */
+export const HOLDING_META: Record<AccountHolding, { label: string; short: string; emoji: string }> = {
+  stocks: { label: 'Stocks & funds', short: 'Stocks & funds', emoji: '📈' },
+  retirement: { label: 'Retirement (401(k), IRA)', short: 'Retirement', emoji: '🏖️' },
+  crypto: { label: 'Crypto', short: 'Crypto', emoji: '🪙' },
+  hsa: { label: 'HSA', short: 'HSA', emoji: '🩺' },
+  other: { label: 'Other investment', short: 'Other investment', emoji: '📊' },
+}
+
 /** One balance you typed in, on the day it was true. */
 export interface BalanceCheck {
   /** YYYY-MM-DD, a local day key. */
@@ -850,6 +871,8 @@ export interface Account extends Owned {
   id: string
   name: string
   type: AccountType
+  /** On an investment, what it holds (AccountHolding). Never a type of its own. */
+  holding?: AccountHolding
   /** Whose it is; absent means the household's. */
   memberId?: string
   /** Newest last, one per day. */

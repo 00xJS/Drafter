@@ -1,6 +1,7 @@
 import { memberName } from '../../household'
 import { Icon } from '../Icon'
 import { inTrash, newerStamp } from '../../itemops'
+import type { Account } from '../../types'
 import type { PlannerCtx } from './ctx'
 import { Board, Finance, NotesView, TasksTable } from './lazy'
 import { TASKS_TABS } from './routes'
@@ -10,6 +11,8 @@ export function TasksScreen({ p }: { p: PlannerCtx }) {
   const { store, upsert, remove, restore, household, projectMap, inHousehold } = p
   const { tasksTab, setTasksTab, notesProjectId, setNotesProjectId, setTrashOpen, noteOpenId, setNoteOpenId, financeCheckIn, setFinanceCheckIn } = p
   const { openTask, newTask, deleteTask, changeStatus, applyStatus, showToast } = p
+  // a change of an account's with an Undo that puts back the account as it was (or takes a new one away)
+  const undoAccount = (before: Account | null, after: Account) => () => (before ? upsert({ ...before, updatedAt: newerStamp(after.updatedAt) }) : remove(after.id))
   // counted here rather than in the list: the Trash button lives on the
   // segment row now. `inTrash` is the Trash's own rule, imported rather than
   // repeated, so the badge and the list always say the same number.
@@ -21,8 +24,9 @@ export function TasksScreen({ p }: { p: PlannerCtx }) {
   return (
     <>
       {/* one workspace, four lenses on the same project data — the list, the
-          board, the money (bills, paydays and accounts) and the project notes */}
-      <p className="field-hint tasks-home-note">The day is on Home. This is every task — the list, the board, the money and the notes.</p>
+          board, the money (bills, paydays and accounts) and the project notes.
+          Finance opens on what is safe to spend, not on this line about tasks. */}
+      {tasksTab !== 'bills' && <p className="field-hint tasks-home-note">The day is on Home. This is every task — the list, the board, the money and the notes.</p>}
       <div className="people-tab-seg with-trash">
         <span className="segmented" role="tablist" aria-label="Tasks view">
           {TASKS_TABS.map(t => (
@@ -90,7 +94,22 @@ export function TasksScreen({ p }: { p: PlannerCtx }) {
             remove(t.id)
             showToast('Weekly check-in off', () => restore([t.id]))
           }}
-          onSaveAccount={a => upsert(a)}
+          // from a bill's or a payday's short sheet: the Trash with its Undo, as
+          // any task's delete; and Archive, which is Canceled — counted nowhere,
+          // kept — with an Undo that puts back the status it had
+          onDeleteTask={deleteTask}
+          onArchiveTask={(t, archive) => {
+            const change = applyStatus(t.id, archive ? 'canceled' : 'todo')
+            if (!change) return
+            showToast(`${archive ? 'Archived' : 'Restored'} “${t.title || 'Untitled'}”`, () => {
+              upsert({ ...change.prev, updatedAt: newerStamp(change.next.updatedAt) })
+              if (change.spawnedId) remove(change.spawnedId)
+            })
+          }}
+          onChangeAccount={(before, after, message) => {
+            upsert(after)
+            showToast(message, undoAccount(before, after))
+          }}
           onRemoveAccount={id => {
             remove(id)
             showToast('Account removed', () => restore([id]))

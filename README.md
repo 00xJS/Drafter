@@ -5,7 +5,7 @@ A home planner and journal for a household: tasks, the calendar, money, meals, p
 Five tabs, **Home · Tasks · Calendar · Keep · Insights**:
 
 - **Home** is today: a briefing, focus tasks, habits and routines, the journal and notes, the bell for what's new, and the chat, with the household's thread and a private one with Drafter's assistant.
-- **Tasks** holds the List, the Board, **Finance** (safe to spend until payday, bills, paydays, check-ins and savings goals) and Notes.
+- **Tasks** holds the List, the Board, **Finance** (safe to spend, counting paychecks and bills alike; bills, paydays, check-ins and savings goals) and Notes.
 - **Calendar** shows tasks, events, meals and work days, mirrors Google and Outlook, and overlays any `.ics` feed.
 - **Keep** is People, Places, Kitchen and Wardrobe: who you've seen, where you went, recipes and the week's meals, and an outfit board for planning what to wear.
 - **Insights** is Stats, the Journal archive and the weekly Review.

@@ -1,7 +1,7 @@
 import { formatMoney, isMoney, isPayday, isSaving, savedSoFar } from './bills'
-import { ACCOUNT_TYPE_META, OPEN_STATUSES, type Account, type BalanceCheck, type Bill, type RecurrenceFreq, type Task } from './types'
+import { ACCOUNT_TYPE_META, HOLDING_META, OPEN_STATUSES, type Account, type AccountHolding, type AccountType, type BalanceCheck, type Bill, type RecurrenceFreq, type Task } from './types'
 import { dateKey } from './utils'
-import { CHECK_IN_PREFIX, isCheckIn, nextOccurrence, seriesRoot } from '../shared/domain.mts'
+import { CHECK_IN_PREFIX, isCheckIn, seriesRoot, stepDue } from '../shared/domain.mts'
 import { isOverdue } from '../shared/due.mts'
 import { shiftDayKey } from '../shared/journal.mts'
 
@@ -57,6 +57,73 @@ export const isSpendable = (a: Account): boolean => a.type === 'checking' || a.t
 
 /** The accounts a total counts: live, not archived. */
 export const countable = (accounts: readonly Account[]): Account[] => accounts.filter(a => !a.deletedAt && !a.archivedAt)
+
+// ---- what an account is -------------------------------------------------------
+//
+// Checking, savings, cash and a card are types. A brokerage, a 401(k), a coin
+// wallet and an HSA are all `type: 'investment'` with what each holds beside
+// it (types.ts AccountHolding), because a phone on an older build reads a type
+// it does not know as checking and would count a 401(k) as money to spend.
+// The picker offers the nine as one list; this is where a choice becomes a
+// type and a holding, and where an account says which it is.
+
+/** What an account is added as: a type, or for an investment what it holds. */
+export type AccountKind = Exclude<AccountType, 'investment'> | AccountHolding
+/** The picker's order: money to spend, money kept, what is owed, then what is invested. */
+export const ACCOUNT_KINDS: readonly AccountKind[] = ['checking', 'savings', 'cash', 'credit', 'stocks', 'retirement', 'crypto', 'hsa', 'other']
+
+const isHolding = (kind: AccountKind): kind is AccountHolding => kind in HOLDING_META
+
+/** The type and holding a kind is written as: an investment's kind is its holding, never a type of its own. */
+export function kindParts(kind: AccountKind): { type: AccountType; holding?: AccountHolding } {
+  return isHolding(kind) ? { type: 'investment', holding: kind } : { type: kind }
+}
+
+/** An account's kind; null for an investment nobody has said the holding of yet. */
+export function kindOf(a: Pick<Account, 'type' | 'holding'>): AccountKind | null {
+  return a.type === 'investment' ? (a.holding ?? null) : a.type
+}
+
+/** A kind in a word or two, as the picker names it: "Checking", "Retirement". */
+export const kindLabel = (kind: AccountKind): string => (isHolding(kind) ? HOLDING_META[kind].short : ACCOUNT_TYPE_META[kind].label)
+/** …and in full, where there is room to say what it covers: "Retirement (401(k), IRA)". */
+export const kindName = (kind: AccountKind): string => (isHolding(kind) ? HOLDING_META[kind].label : ACCOUNT_TYPE_META[kind].label)
+/** A kind's emoji, as text; on screen, finance/KindMark.tsx draws crypto's as a gold ₿ coin instead. */
+export const kindEmoji = (kind: AccountKind): string => (isHolding(kind) ? HOLDING_META[kind].emoji : ACCOUNT_TYPE_META[kind].emoji)
+
+/** What an account is, after its name: "Retirement", or "Investment" for one whose holding is not written yet. */
+export function accountKindLabel(a: Pick<Account, 'type' | 'holding'>): string {
+  const kind = kindOf(a)
+  return kind ? kindLabel(kind) : ACCOUNT_TYPE_META.investment.label
+}
+
+/** The account as another kind: an investment's holding goes when it stops being one. */
+export function withKind(a: Account, kind: AccountKind): Account {
+  const { holding: _was, ...rest } = a
+  return { ...rest, ...kindParts(kind) }
+}
+
+/** What adding an account is filled in with: its kind, its name, whose it is, and what it holds today, if that was typed. */
+export interface NewAccount {
+  kind: AccountKind
+  name: string
+  memberId?: string
+  /** Today's balance; on a card, what is owed on it. */
+  balance?: number
+}
+
+/**
+ * A new account, or null without a name. It is never called after its kind:
+ * that is how two investments came to be two rows called "Investment", and
+ * nothing could tell a 401(k) from a coin wallet.
+ */
+export function accountFromForm(f: NewAccount, o: { id: string; now: string; today: string }): Account | null {
+  const name = f.name.trim()
+  if (!name) return null
+  const account: Account = { kind: 'account', id: o.id, name, ...kindParts(f.kind), ...(f.memberId ? { memberId: f.memberId } : {}), balances: [], createdAt: o.now, updatedAt: o.now }
+  if (f.balance === undefined || !Number.isFinite(f.balance)) return account
+  return withBalance(account, isLiability(account) ? Math.abs(f.balance) : f.balance, o.today)
+}
 
 export interface MoneyTotals {
   /** Everything owned less everything owed. */
@@ -114,93 +181,333 @@ export function moneyTotals(accounts: readonly Account[]): MoneyTotals {
   return { net: round(net), liquid: round(liquid), spendable: round(spendable), owed: round(owed), unknown, asOf, spendableAsOf }
 }
 
-/** One dated money movement the forecast counts: a payday in, a bill or a set-aside out. */
+export type AccountGroupKey = 'spending' | 'savings' | 'investments' | 'owed'
+
+/** One of Manage's groups of accounts: which they are, and what they come to between them. */
+export interface AccountGroup {
+  key: AccountGroupKey
+  label: string
+  accounts: Account[]
+  /** What they hold between them (for Owed, what is owed on them), by moneyTotals: the figure its own total would give. */
+  total: number
+  /** Whether any of them has a balance typed in: with none, there is no total to show. */
+  checked: boolean
+}
+
+const GROUPS: { key: AccountGroupKey; label: string; has(a: Account): boolean; total(t: MoneyTotals): number }[] = [
+  { key: 'spending', label: 'Spending', has: isSpendable, total: t => t.spendable },
+  { key: 'savings', label: 'Savings', has: a => a.type === 'savings', total: t => t.liquid },
+  { key: 'investments', label: 'Investments', has: a => a.type === 'investment', total: t => t.net },
+  { key: 'owed', label: 'Owed', has: isLiability, total: t => t.owed },
+]
+
+/**
+ * The live accounts in Manage's groups — money to spend, savings,
+ * investments, cards — each with its subtotal, and only the groups there are
+ * accounts in. Every subtotal is moneyTotals over the group, so a group of one
+ * shows exactly what its account holds and the four add up to the totals.
+ */
+export function accountGroups(accounts: readonly Account[]): AccountGroup[] {
+  const live = countable(accounts)
+  return GROUPS.flatMap(g => {
+    const list = live.filter(a => g.has(a))
+    return list.length ? [{ key: g.key, label: g.label, accounts: list, total: g.total(moneyTotals(list)), checked: list.some(a => !!latestBalance(a)) }] : []
+  })
+}
+
+// ---- the one rule -------------------------------------------------------------
+//
+// The balance you checked in is the truth on its day. Every bill, payday and
+// set-aside dated AFTER that day counts: money in and money out alike, done or
+// not. Anything dated on or before it is already in the balance.
+//
+// The timeline used to take the bills off and never put a payday on. A payday
+// due today or already gone by was left out while an overdue bill came off,
+// and a series counted its one open occurrence alone, so a fortnightly wage
+// landed once in 30 days and next month's rent not at all. Leaving bills out
+// is not a floor, it is a guess on the bright side. Now safe to spend, the cash
+// line, Coming up and the 60 days under Accounts are all read off one list
+// (moneyForecast), built here and nowhere else.
+//
+// An occurrence's date is its due day, never the day it was ticked off: a
+// paycheck already in Friday's balance that gets its "Got it" on Saturday is
+// still Thursday's, and counting it on Saturday would count it twice. One
+// dated after the check-in and already past lands on today: it has happened,
+// or is owed or expected, since. A done one counts what was paid (Paid, or the
+// amount due when nothing was typed, as withPaidDefault records it) and the
+// rest the amount due; one with no amount is listed and never counted.
+//
+// A repeat counts every time it lands. Each series is stepped on from its open
+// occurrence (its last one, when none is open and it still repeats) with
+// stepDue, the step nextOccurrence takes when one is ticked off, so these are
+// the days the real occurrences will have. That goes for an open one whose
+// day has gone as well: a rent paid by autopay, or a wage paid in, that nobody
+// ticks off still comes round next time. The ones a repeat brings are
+// expected, not tasks: Coming up draws them lighter, with nothing to tick.
+
+const round = (n: number) => Math.round(n * 100) / 100
+
+/** How many bills, paydays and set-asides: what a figure counted, or had to leave out. */
+export interface MoneyCounts {
+  bills: number
+  paydays: number
+  setAsides: number
+}
+
+const noCounts = (): MoneyCounts => ({ bills: 0, paydays: 0, setAsides: 0 })
+const tally = (counts: MoneyCounts, r: { income: boolean; saving: boolean }) => {
+  if (r.income) counts.paydays += 1
+  else if (r.saving) counts.setAsides += 1
+  else counts.bills += 1
+}
+
+/**
+ * One bill, payday or set-aside on its day, as the timeline reads it: an
+ * occurrence written down, open or done, or one its repeat will bring.
+ */
+export interface MoneyRow {
+  /** The task: for a projected one, the occurrence of its series it was stepped on from. */
+  task: Task & { bill: Bill }
+  /** YYYY-MM-DD it is due. */
+  due: string
+  /** YYYY-MM-DD it counts on: its due day, or today for one that has gone by since the check-in. */
+  day: string
+  /** Still open, and its day is over (shared/due.mts: a day is overdue once it has gone). */
+  overdue: boolean
+  income: boolean
+  saving: boolean
+  /** What it counts: a done one what was paid, the rest the amount due. Undefined with no amount: listed, never counted. */
+  amount?: number
+  /** Not a task yet: its repeat brings it. Expected, and nothing to tick. */
+  projected: boolean
+  /** Ticked off: counted when it is dated after the check-in, and never listed. */
+  done: boolean
+  /** Dated on or before the check-in, so the balance already has it and nothing counts it again. */
+  inBalance: boolean
+}
+
+/** One day on the spendable line: what moved on it, and where that left checking and cash. */
 export interface MoneyDay {
   day: string
   /** Positive in, negative out. */
   change: number
   /** Running spendable balance (checking and cash) at the end of that day. */
   balance: number
-  rows: { title: string; amount: number; income: boolean; saving?: boolean }[]
+  rows: { title: string; amount: number; income: boolean; saving?: boolean; projected?: boolean; task: Task & { bill: Bill } }[]
+}
+
+/** The day an occurrence is due on this device's calendar; null with no date, or one that is not a date. */
+const dueDay = (dueAt: string | undefined): string | null => {
+  if (!dueAt) return null
+  const at = new Date(dueAt)
+  return Number.isNaN(at.getTime()) ? null : dateKey(at)
+}
+
+/** What an occurrence counts: a done one what was paid (withPaidDefault's rule), any other the amount due. */
+const amountOf = (t: Task, done: boolean): number | undefined => {
+  const n = done ? (t.actualCost ?? t.estimateCost) : t.estimateCost
+  return n !== undefined && Number.isFinite(n) ? n : undefined
 }
 
 /**
- * One open bill, payday or set-aside with a date, as the timeline reads it:
- * Coming up lists them, and the runway, the cash line and "safe to spend" add
- * up the ones with an amount.
+ * The days a series falls due, from `task`'s own due day up to `through`, that
+ * day included: stepped on from its due date with stepDue, keeping the day a
+ * bill remembers, exactly as nextOccurrence steps the real ones. Empty for one
+ * with no date or due after `through`; its own day alone when it does not
+ * repeat. For money, whose repeats keep their day: a chore's comes round from
+ * when it was done instead.
  */
-export interface MoneyRow {
-  task: Task & { bill: Bill }
-  /** YYYY-MM-DD it counts on. One already overdue is owed NOW, so it lands on today. */
-  day: string
-  /** YYYY-MM-DD it was due. */
-  due: string
-  /** Its day is over and it is still open (shared/due.mts: a day is overdue once it has gone). */
-  overdue: boolean
-  income: boolean
-  saving: boolean
-  /** Undefined when no amount is written down: such a row is listed, and never counted. */
-  amount?: number
+export function seriesDays(task: Pick<Task, 'dueAt' | 'recurrence' | 'bill'>, through: string, cap = 10_000): string[] {
+  if (!task.dueAt) return []
+  let at = new Date(task.dueAt)
+  if (Number.isNaN(at.getTime())) return []
+  const freq = task.recurrence?.freq
+  let day = task.bill && Number.isInteger(task.bill.day) ? task.bill.day : undefined
+  const days: string[] = []
+  for (let key = dateKey(at), i = 0; key <= through; i++) {
+    days.push(key)
+    if (!freq || i >= cap) break
+    const next = stepDue(at, freq, day)
+    at = next.at
+    day = next.day
+    key = dateKey(at)
+  }
+  return days
+}
+
+/** Everything the timeline counts and lists, for one window: the one rule, worked through. */
+export interface MoneyForecast {
+  /** Today, and the last day it looks at: YYYY-MM-DD. */
+  today: string
+  through: string
+  /** What checking and cash held when checked in (never savings). */
+  checkedIn: number
+  /** The day that was true: the oldest of their check-ins (moneyTotals). Null with none, and then nothing counts. */
+  asOf: string | null
+  /** Every occurrence up to `through`, open, done and projected, in Coming up's order: overdue first, then by day, money in before money out. */
+  rows: MoneyRow[]
+  /** Open bills, paydays and set-asides with no date: never counted, and never dropped. */
+  undated: (Task & { bill: Bill })[]
+  /** The end of each day something counts on, from the balance checked in: today first, for what has gone by since. */
+  days: MoneyDay[]
+  /** The end of today: the check-in, and what has fallen due since. */
+  now: number
+  /** The lowest point from today to `through`, today's included, and the first day it gets there. */
+  low: { day: string; balance: number }
+  high: number
+  /** The first day it goes below zero, today included. */
+  short: { day: string; balance: number } | null
+  /** What it counted, done or not, money in and out alike. */
+  counted: MoneyCounts
+  /** Occurrences it would count with no amount written down. */
+  unpriced: number
+  /** Accounts nobody has typed a balance into: not in any figure. */
+  unchecked: number
 }
 
 const byTitle = (a: MoneyRow, b: MoneyRow) => (a.task.title || '').localeCompare(b.task.title || '') || a.task.id.localeCompare(b.task.id)
+const paydaysFirst = (a: Task, b: Task) => Number(isPayday(b)) - Number(isPayday(a)) || (a.title || '').localeCompare(b.title || '') || a.id.localeCompare(b.id)
 
 /**
- * Every open bill, payday and set-aside due up to `days` from `now`, overdue
- * ones first, then by day — money in before money out on the same day, the
- * order the runway nets them in.
+ * The money timeline from the balance checked in to `days` from today, by the
+ * one rule above: every figure Finance shows is read off this.
  *
  * Open is to do, doing or blocked: one still on the Wishlist, or cancelled, is
- * not money anybody owes (the rule the Stats lens and the month of bills keep).
+ * not money anybody owes or is owed (the rule the Stats lens and the month of
+ * bills keep). A series is its occurrences' shared id (seriesRoot, as
+ * savedSoFar reads it), so two open copies of one, ticked off on two devices,
+ * count once, and a day it already has written down is never projected over.
  */
-export function moneyRows(tasks: readonly Task[], now: Date, days: number): MoneyRow[] {
-  const start = dateKey(now)
-  const end = dateKey(new Date(now.getFullYear(), now.getMonth(), now.getDate() + days))
-  const out: MoneyRow[] = []
-  for (const t of tasks) {
-    if (!isMoney(t) || !t.dueAt || !OPEN_STATUSES.includes(t.status)) continue
-    const due = dateKey(new Date(t.dueAt))
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(due)) continue
+export function moneyForecast(accounts: readonly Account[], tasks: readonly Task[], days: number, now: Date): MoneyForecast {
+  const today = dateKey(now)
+  const through = shiftDayKey(today, days)
+  const totals = moneyTotals(accounts)
+  const asOf = totals.spendableAsOf
+  const inBalance = (due: string) => asOf !== null && due <= asOf
+  const row = (task: Task & { bill: Bill }, due: string, how: 'open' | 'done' | 'projected'): MoneyRow => ({
+    task,
+    due,
+    day: due < today ? today : due,
     // the one overdue rule (shared/due.mts): its day is over, whatever its time
-    const overdue = isOverdue(t.dueAt, now)
-    const day = overdue ? start : due
-    if (day > end) continue
-    const amount = t.estimateCost !== undefined && Number.isFinite(t.estimateCost) ? t.estimateCost : undefined
-    out.push({ task: t, day, due, overdue, income: isPayday(t), saving: isSaving(t), amount })
+    overdue: how === 'open' && isOverdue(task.dueAt, now),
+    income: isPayday(task),
+    saving: isSaving(task),
+    amount: amountOf(task, how === 'done'),
+    projected: how === 'projected',
+    done: how === 'done',
+    inBalance: inBalance(due),
+  })
+
+  const rows: MoneyRow[] = []
+  const undated: (Task & { bill: Bill })[] = []
+  const series = new Map<string, { open?: Task & { bill: Bill }; openDue: string; last?: Task & { bill: Bill }; lastDue: string; days: Set<string> }>()
+  for (const t of tasks) {
+    if (!isMoney(t)) continue
+    const done = t.status === 'done'
+    if (!done && !OPEN_STATUSES.includes(t.status)) continue
+    const due = dueDay(t.dueAt)
+    if (!due) {
+      if (!done) undated.push(t)
+      continue
+    }
+    const root = seriesRoot(t.id)
+    let s = series.get(root)
+    if (!s) series.set(root, (s = { openDue: '', lastDue: '', days: new Set() }))
+    s.days.add(due)
+    if (done) {
+      // what a series that has run out of open ones still repeats from
+      if (t.recurrence && due > s.lastDue) {
+        s.last = t
+        s.lastDue = due
+      }
+      if (due <= through && !inBalance(due)) rows.push(row(t, due, 'done'))
+    } else if (!s.open || due < s.openDue) {
+      s.open = t
+      s.openDue = due
+    }
   }
-  return out.sort((a, b) => Number(b.overdue) - Number(a.overdue) || a.due.localeCompare(b.due) || Number(b.income) - Number(a.income) || byTitle(a, b))
+  for (const s of series.values()) {
+    if (s.open && s.openDue <= through) rows.push(row(s.open, s.openDue, 'open'))
+    const from = s.open ?? s.last
+    if (!from?.recurrence) continue
+    for (const due of seriesDays(from, through).slice(1)) {
+      if (s.days.has(due) || inBalance(due)) continue
+      // with nothing checked in, a repeat's past has nothing to count against
+      if (asOf === null && due < today) continue
+      rows.push(row(from, due, 'projected'))
+    }
+  }
+  rows.sort((a, b) => Number(b.overdue) - Number(a.overdue) || a.due.localeCompare(b.due) || Number(b.income) - Number(a.income) || Number(a.projected) - Number(b.projected) || byTitle(a, b))
+
+  // the line: with no balance for checking or cash there is nothing to count from
+  const counted = noCounts()
+  let unpriced = 0
+  const out: MoneyDay[] = []
+  if (asOf !== null) {
+    const byDay = new Map<string, MoneyDay['rows']>()
+    for (const r of rows) {
+      if (r.inBalance) continue
+      if (r.amount === undefined) {
+        if (!r.done) unpriced += 1
+        continue
+      }
+      tally(counted, r)
+      const list = byDay.get(r.day) ?? []
+      list.push({
+        title: r.task.title || (r.income ? 'Payday' : r.saving ? 'Savings' : 'Bill'),
+        amount: r.amount,
+        income: r.income,
+        ...(r.saving ? { saving: true } : {}),
+        ...(r.projected ? { projected: true } : {}),
+        task: r.task,
+      })
+      byDay.set(r.day, list)
+    }
+    let balance = totals.spendable
+    for (const day of [...byDay.keys()].sort()) {
+      const list = byDay.get(day)!
+      const change = list.reduce((n, r) => n + (r.income ? r.amount : -r.amount), 0)
+      balance = round(balance + change)
+      out.push({ day, change: round(change), balance, rows: list })
+    }
+  }
+  const start = out[0]?.day === today ? out[0].balance : round(totals.spendable)
+  let low = { day: today, balance: start }
+  let high = start
+  let short = start < 0 ? { day: today, balance: start } : null
+  for (const d of out) {
+    if (d.day === today) continue
+    if (d.balance < low.balance) low = { day: d.day, balance: d.balance }
+    if (d.balance > high) high = d.balance
+    if (!short && d.balance < 0) short = { day: d.day, balance: d.balance }
+  }
+  return {
+    today,
+    through,
+    checkedIn: totals.spendable,
+    asOf,
+    rows,
+    undated: undated.sort(paydaysFirst),
+    days: out,
+    now: start,
+    low,
+    high,
+    short,
+    counted,
+    unpriced,
+    unchecked: totals.unknown,
+  }
 }
 
 /**
- * Spendable cash (checking and cash, not savings), day by day, from today to
- * `days` out.
- *
- * Built from what is already written down: every open bill, payday and
- * set-aside with a due date in the window, counted once, against the spendable
- * balance as it stands now. A set-aside goes OUT here: it is money moved to
- * where it will not be spent, which is exactly what this is about, even though
- * no figure calls it spending. It does not invent a repeat — a series has
- * exactly one open occurrence at a time (bills.ts), so a fortnightly wage shows
- * its next payment and not the three after it. That is a floor, not a
- * projection, and it is the honest one: it can only be better than it says.
+ * Spendable cash (checking and cash, not savings) at the end of each day
+ * something counts on, from the balance checked in to `days` from today, by
+ * the one rule above. A set-aside goes OUT here: it is money moved to where it
+ * will not be spent, which is exactly what this is about, even though no
+ * figure calls it spending. Empty until checking or cash has a balance.
  */
 export function cashRunway(accounts: readonly Account[], tasks: readonly Task[], days = 60, now = new Date()): MoneyDay[] {
-  const byDay = new Map<string, MoneyDay['rows']>()
-  for (const r of moneyRows(tasks, now, days)) {
-    if (r.amount === undefined) continue
-    const rows = byDay.get(r.day) ?? []
-    rows.push({ title: r.task.title || (r.income ? 'Payday' : r.saving ? 'Savings' : 'Bill'), amount: r.amount, income: r.income, ...(r.saving ? { saving: true } : {}) })
-    byDay.set(r.day, rows)
-  }
-  let balance = moneyTotals(accounts).spendable
-  const out: MoneyDay[] = []
-  for (const day of [...byDay.keys()].sort()) {
-    const rows = byDay.get(day)!
-    const change = rows.reduce((n, r) => n + (r.income ? r.amount : -r.amount), 0)
-    balance = Math.round((balance + change) * 100) / 100
-    out.push({ day, change: Math.round(change * 100) / 100, balance, rows })
-  }
-  return out
+  return moneyForecast(accounts, tasks, days, now).days
 }
 
 /** The first day the runway goes below zero, and by how much. Null when it never does. */
@@ -222,129 +529,289 @@ export function shortfallLine(short: { day: string; balance: number }, dayLabel:
 
 // ---- the timeline -------------------------------------------------------------
 //
-// Finance opens on one question: are we OK until payday? Everything below is
-// the arithmetic behind that screen, pure, so the view only draws it. Money in
-// and out still comes from the rows above (moneyRows), the balances from
-// moneyTotals, and a series' progress from what its finished occurrences paid
-// (bills.ts) — nothing here counts a thing a second way.
+// Finance opens on one question: how much can we spend today and still cover
+// everything coming? Everything below is the arithmetic behind that screen,
+// pure, so the view only draws it, and all of it is moneyForecast's: the
+// balances from moneyTotals, the money in and out by the one rule, a series'
+// progress from what its finished occurrences paid (bills.ts). Nothing here
+// counts a thing a second way.
 
-/** A payday this many days off or nearer is the one "safe to spend" runs to. */
-export const PAYDAY_HORIZON_DAYS = 45
-/** How far Coming up and the cash line look, and what "safe to spend" covers with no payday in sight. */
+/** How far safe to spend, Coming up and the cash line look (the line goes to 60 at a tap). */
 export const TIMELINE_DAYS = 30
-
-const round = (n: number) => Math.round(n * 100) / 100
 
 /** Whether any account meant for spending has a balance typed in: without one there is nothing to count from. */
 export const hasSpendableBalance = (accounts: readonly Account[]): boolean => countable(accounts).some(a => isSpendable(a) && !!latestBalance(a))
 
 export interface SafeToSpend {
-  /** Spendable now, less every bill and set-aside that falls due before `through` ends. Null with no spendable balance typed in. */
+  /**
+   * The lowest the spendable line goes in the next TIMELINE_DAYS, today's
+   * point included: the most that could go today with everything dated in
+   * that time still covered, counting the paydays that land before each bill.
+   * Null with no balance typed in for checking or cash.
+   */
   amount: number | null
-  /** What checking and cash hold, as typed in (never savings). */
+  /** What checking and cash held when checked in (never savings). */
   spendable: number
-  /** The oldest check-in on those accounts (moneyTotals): how stale the figure is. */
+  /** The oldest check-in on those accounts (moneyTotals): the day it counts from, and how stale the figure is. */
   asOf: string | null
-  /** The payday it runs to: the first one after today, when it lands within PAYDAY_HORIZON_DAYS. */
-  payday: MoneyRow | null
-  /** The last day it counts, YYYY-MM-DD: the day before that payday, or TIMELINE_DAYS on. */
+  /** The day the line is lowest, YYYY-MM-DD: the first day it gets there, and today when nothing takes it lower. */
+  low: string
+  /** The first payday after that day in the window: the one the low point comes before. */
+  before: MoneyRow | null
+  /** With no payday after it: the biggest bill or set-aside on that day, the one that takes the line down there. */
+  after?: MoneyRow | null
+  /** The first day in the window the line goes below zero, today included (moneyForecast's). */
+  short?: { day: string; balance: number } | null
+  /** The last day it counts, YYYY-MM-DD: TIMELINE_DAYS on. */
   through: string
-  /** What came off it: how many bills, how many set-asides, and what they add up to. */
+  /** What it counted in that time, done or not: how many bills, paydays and set-asides. */
   bills: number
+  paydays: number
   setAsides: number
-  owed: number
-  /** Bills and set-asides in that span with no amount written down: listed, not counted. */
+  /** Ones in that time with no amount written down: listed, not counted. */
   unpriced: number
+  /** Open ones with no date at all: listed under Needs a date, not counted. */
+  undated: MoneyCounts
   /** Accounts nobody has typed a balance into: not in the figure at all. */
   unchecked: number
 }
 
 /**
- * Safe to spend until payday: what checking and cash hold (savings is kept,
- * not spent, so it stays out), less
- * every bill and set-aside that falls due before the next payday — overdue
- * ones too, since those are owed now. The payday is the first after today:
- * one due today, or late, is either in the balance you typed or not here yet,
- * and a floor adds neither. A bill due ON payday is left to that payday.
- *
- * With no payday within PAYDAY_HORIZON_DAYS it covers the next TIMELINE_DAYS
- * instead, the window Coming up and the cash line show.
+ * Safe to spend: the lowest point of the spendable line over the next
+ * TIMELINE_DAYS, today's included. Spending that much today still leaves
+ * enough for every bill and set-aside dated in the window, with each payday
+ * counted on the day it lands, so a rent due the day after a paycheck is
+ * covered by it and one due the day before is not. Below zero, it is what is
+ * missing on the worst day.
  */
 export function safeToSpend(accounts: readonly Account[], tasks: readonly Task[], now: Date): SafeToSpend {
-  const today = dateKey(now)
-  const totals = moneyTotals(accounts)
-  const rows = moneyRows(tasks, now, PAYDAY_HORIZON_DAYS)
-  let payday: MoneyRow | null = null
-  for (const r of rows) if (r.income && r.day > today && (!payday || r.day < payday.day)) payday = r
-  const through = payday ? shiftDayKey(payday.day, -1) : shiftDayKey(today, TIMELINE_DAYS)
-  let owed = 0
-  let bills = 0
-  let setAsides = 0
-  let unpriced = 0
-  for (const r of rows) {
-    if (r.income || r.day > through) continue
-    if (r.amount === undefined) {
-      unpriced += 1
-      continue
-    }
-    owed += r.amount
-    if (r.saving) setAsides += 1
-    else bills += 1
-  }
+  const f = moneyForecast(accounts, tasks, TIMELINE_DAYS, now)
+  const undated = noCounts()
+  for (const t of f.undated) tally(undated, { income: isPayday(t), saving: isSaving(t) })
+  // what the low day took out, when it took the line down at all
+  const fell = (f.days.find(d => d.day === f.low.day)?.change ?? 0) < 0
+  const out = fell ? f.rows.filter(r => r.day === f.low.day && !r.income && !r.inBalance && r.amount !== undefined) : []
   return {
-    amount: hasSpendableBalance(accounts) ? round(totals.spendable - owed) : null,
-    spendable: totals.spendable,
-    asOf: totals.spendableAsOf,
-    payday,
-    through,
-    bills,
-    setAsides,
-    owed: round(owed),
-    unpriced,
-    unchecked: totals.unknown,
+    amount: f.asOf === null ? null : f.low.balance,
+    spendable: f.checkedIn,
+    asOf: f.asOf,
+    low: f.low.day,
+    before: f.rows.find(r => r.income && !r.inBalance && r.amount !== undefined && r.day > f.low.day) ?? null,
+    after: out.reduce<MoneyRow | null>((big, r) => (!big || r.amount! > big.amount! ? r : big), null),
+    short: f.short,
+    through: f.through,
+    bills: f.counted.bills,
+    paydays: f.counted.paydays,
+    setAsides: f.counted.setAsides,
+    unpriced: f.unpriced,
+    undated,
+    unchecked: f.unchecked,
   }
 }
 
-/** "after 3 bills and a set-aside", "after 1 bill", "nothing due before then". */
-export function afterLine(s: Pick<SafeToSpend, 'bills' | 'setAsides'>): string {
-  const n = (count: number, one: string, many: string) => (count === 1 ? one : `${count} ${many}`)
-  const parts = [s.bills ? n(s.bills, '1 bill', 'bills') : '', s.setAsides ? n(s.setAsides, 'a set-aside', 'set-asides') : ''].filter(Boolean)
-  return parts.length ? `after ${parts.join(' and ')}` : 'nothing due before then'
+/** "4 bills, 3 paydays and 1 set-aside": the kinds there are any of, in that order. Empty with none. */
+export function countsList(c: MoneyCounts): string {
+  const of = (n: number, one: string, many: string) => (n === 1 ? `1 ${one}` : `${n} ${many}`)
+  const parts = [c.bills ? of(c.bills, 'bill', 'bills') : '', c.paydays ? of(c.paydays, 'payday', 'paydays') : '', c.setAsides ? of(c.setAsides, 'set-aside', 'set-asides') : ''].filter(Boolean)
+  return parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}` : (parts[0] ?? '')
 }
 
-/** The cash line: spendable now, then each day something falls due, as far as it looks. */
+/**
+ * What safe to spend is, under the figure: "Lowest on Wed, Sep 30, before
+ * Maria’s pay · counts 5 bills and 4 paydays through Oct 23". A payday is
+ * named only when one comes after the low point in the window, the one that
+ * lifts the line again; otherwise the day alone.
+ */
+export function safeLine(s: SafeToSpend, today: string, say: { day(key: string): string; short(key: string): string; payday(row: MoneyRow): string }): string {
+  const counted = countsList(s)
+  if (!counted) return `Nothing falls due through ${say.short(s.through)}`
+  return `${lowWhen(s, today, say)} · counts ${counted} through ${say.short(s.through)}`
+}
+
+/** "Lowest on Thu, Oct 1, before Maria’s pay": the day, and the payday that lifts the line after it. */
+function lowWhen(s: SafeToSpend, today: string, say: { day(key: string): string; payday(row: MoneyRow): string }): string {
+  const when = s.low === today ? 'Lowest today' : `Lowest on ${say.day(s.low)}`
+  return `${when}${s.before ? `, before ${say.payday(s.before)}` : ''}`
+}
+
+/**
+ * The low point on its own, as the summary under safe to spend says it:
+ * safeLine's first half, and with no payday after it in the window, what took
+ * the line down there instead — "Lowest on Tue, Oct 20, after Car insurance".
+ */
+export function lowLine(s: SafeToSpend, today: string, say: { day(key: string): string; short(key: string): string; payday(row: MoneyRow): string; bill(row: MoneyRow): string }): string {
+  if (!countsList(s)) return `Nothing falls due through ${say.short(s.through)}`
+  const low = lowWhen(s, today, say)
+  return !s.before && s.after ? `${low}, after ${say.bill(s.after)}` : low
+}
+
+/** "2 paydays have no date, so they aren’t counted yet." Null when every one has a date. */
+export function undatedLine(u: MoneyCounts): string | null {
+  const n = u.bills + u.paydays + u.setAsides
+  if (!n) return null
+  return `${countsList(u)} ${n === 1 ? 'has no date, so it isn’t counted yet' : 'have no date, so they aren’t counted yet'}.`
+}
+
+/** The cash line: checking and cash from the end of today, then each day something counts on, as far as it looks. */
 export interface CashLine {
   /** Today and the last day drawn, YYYY-MM-DD. */
   from: string
   to: string
-  /** Spendable now, where the line starts. */
+  /** Where the line starts: the end of today, with what has gone by since the check-in counted in. */
   start: number
-  /** The end of each day something falls due (cashRunway). */
+  /** The end of each day after today that something counts on (moneyForecast). */
   days: MoneyDay[]
-  /** The lowest the line goes, and the first day it gets there; today's balance when nothing takes it lower. */
+  /** The lowest the line goes, and the first day it gets there; today when nothing takes it lower. Over 30 days, it is safe to spend. */
   low: { day: string; balance: number }
   high: number
-  /** The first day it goes under, in firstShortfall's words. */
+  /** The first day it goes under, today included, in firstShortfall's words. */
   short: { day: string; balance: number } | null
 }
 
 /** The cash line for `days` ahead (30, or 60 at a tap), or null with no spendable balance to start it from. */
 export function cashLine(accounts: readonly Account[], tasks: readonly Task[], days: number, now: Date): CashLine | null {
-  if (!hasSpendableBalance(accounts)) return null
-  const from = dateKey(now)
-  const start = moneyTotals(accounts).spendable
-  const run = cashRunway(accounts, tasks, days, now)
-  let low = { day: from, balance: start }
-  let high = start
-  for (const d of run) {
-    if (d.balance < low.balance) low = { day: d.day, balance: d.balance }
-    if (d.balance > high) high = d.balance
-  }
-  return { from, to: shiftDayKey(from, days), start, days: run, low, high, short: firstShortfall(run) }
+  const f = moneyForecast(accounts, tasks, days, now)
+  if (f.asOf === null) return null
+  return { from: f.today, to: f.through, start: f.now, days: f.days.filter(d => d.day > f.today), low: f.low, high: f.high, short: f.short }
 }
 
-/** Bills, paydays and set-asides for Coming up: the next TIMELINE_DAYS, overdue ones first. */
-export const comingUp = (tasks: readonly Task[], now: Date): MoneyRow[] => moneyRows(tasks, now, TIMELINE_DAYS)
+/** Coming up: the money with no date, and every open or expected occurrence in the next TIMELINE_DAYS. */
+export interface ComingUp {
+  /** Listed first, under Needs a date: nothing counts one until it has a date. */
+  undated: (Task & { bill: Bill })[]
+  /** Open ones, overdue first, and what their repeats bring. A done one counts but is not listed. */
+  rows: MoneyRow[]
+}
+
+export function comingUp(accounts: readonly Account[], tasks: readonly Task[], now: Date): ComingUp {
+  const f = moneyForecast(accounts, tasks, TIMELINE_DAYS, now)
+  return { undated: f.undated, rows: f.rows.filter(r => !r.done) }
+}
+
+// ---- pay periods --------------------------------------------------------------
+//
+// Finance opens on the money cut at each payday: what each paycheck has to
+// cover before the next one lands, and what is left when it does. Nothing here
+// counts anything a second time. A period is a stretch of the forecast's own
+// rows, from one payday's day to the day before the next, and what is left at
+// its end is the forecast's own line on that day. A bill due on a payday is
+// that payday's to cover: the forecast counts money in before money out on a
+// day, and the line at the end of the day has both in it.
+
+/** One payday's stretch of the forecast, or Now: what falls due before the first payday. */
+export interface PayPeriod {
+  /** 'now', or the day its paydays land. */
+  key: string
+  /** The paydays that open it, all on one day, counted or not yet priced; none for Now. */
+  paydays: MoneyRow[]
+  /** The first and last days in it: today (Now) or the paydays' day, to the day before the next ones or the window's last. */
+  from: string
+  to: string
+  /** The paydays that open the next period: what "Left before" names. None for the last. */
+  next: MoneyRow[]
+  /** What it lists, in Coming up's order: its bills and set-asides open or expected, and a payday still open in the balance. Never a done one. */
+  rows: MoneyRow[]
+  /** What its paydays bring in, and what its bills and set-asides take: the rows the forecast counts, done ones included. */
+  pay: number
+  out: number
+  /** How much of the pay they take, in whole percent; null with no pay to take it from. */
+  share: number | null
+  /** The spendable line at the end of its last day, off the forecast; null with nothing checked in. */
+  left: number | null
+}
+
+/** The spendable line at the end of `day`: the forecast's running balance, or the check-in before anything moved it. Null with nothing checked in. */
+export function balanceAt(f: MoneyForecast, day: string): number | null {
+  if (f.asOf === null) return null
+  let balance = f.checkedIn
+  for (const d of f.days) {
+    if (d.day > day) break
+    balance = d.balance
+  }
+  return balance
+}
+
+/**
+ * The forecast as pay periods: Now, when anything falls due before the first
+ * payday in the window, then one period for each day a payday lands, real or
+ * one its repeat brings. A payday already in the balance opens nothing: its
+ * money is in the check-in, so it is listed where its day falls, to be ticked
+ * off, and counted nowhere.
+ */
+export function payPeriods(f: MoneyForecast): PayPeriod[] {
+  const counts = (r: MoneyRow) => !r.inBalance && r.amount !== undefined
+  const byDay = new Map<string, MoneyRow[]>()
+  for (const r of f.rows) {
+    if (!r.income || r.inBalance) continue
+    const list = byDay.get(r.day) ?? []
+    list.push(r)
+    byDay.set(r.day, list)
+  }
+  const starts = [...byDay.keys()].sort()
+  const open: { key: string; from: string; paydays: MoneyRow[] }[] = starts.map(day => ({ key: day, from: day, paydays: byDay.get(day)! }))
+  if (!starts.length || starts[0] > f.today) open.unshift({ key: 'now', from: f.today, paydays: [] })
+  const out: PayPeriod[] = []
+  open.forEach((p, i) => {
+    const next = open[i + 1]
+    const to = next ? shiftDayKey(next.from, -1) : f.through
+    const inIt = f.rows.filter(r => r.day >= p.from && r.day <= to && !p.paydays.includes(r))
+    const rows = inIt.filter(r => !r.done)
+    if (p.key === 'now' && !rows.length) return
+    const pay = round(p.paydays.filter(counts).reduce((n, r) => n + r.amount!, 0))
+    const spent = round(inIt.filter(r => !r.income && counts(r)).reduce((n, r) => n + r.amount!, 0))
+    out.push({
+      key: p.key,
+      paydays: p.paydays,
+      from: p.from,
+      to,
+      next: next?.paydays ?? [],
+      rows,
+      pay,
+      out: spent,
+      share: pay > 0 ? Math.round((spent / pay) * 100) : null,
+      left: balanceAt(f, to),
+    })
+  })
+  return out
+}
+
+/** A kind of money as Manage lists it: each series once, by its open occurrence. */
+export interface MoneySeries {
+  /** With a date, soonest first. */
+  dated: (Task & { bill: Bill })[]
+  /** With none: listed first, under Needs a date. */
+  undated: (Task & { bill: Bill })[]
+  /** Archived (cancelled): counted nowhere and kept, newest first; a series still running is never among them. */
+  archived: (Task & { bill: Bill })[]
+}
+
+/**
+ * Bills, paydays or set-asides (`pick`) as series, the way Manage lists them:
+ * one row a series (seriesRoot), by its soonest open occurrence, so two open
+ * copies of one ticked off on two devices are one row.
+ */
+export function moneySeries(tasks: readonly Task[], pick: (t: Task) => t is Task & { bill: Bill }): MoneySeries {
+  const open = new Map<string, Task & { bill: Bill }>()
+  const archived = new Map<string, Task & { bill: Bill }>()
+  for (const t of tasks) {
+    if (!pick(t)) continue
+    const root = seriesRoot(t.id)
+    if (OPEN_STATUSES.includes(t.status)) {
+      const seen = open.get(root)
+      if (!seen || (t.dueAt ?? '9999') < (seen.dueAt ?? '9999')) open.set(root, t)
+    } else if (t.status === 'canceled') {
+      const seen = archived.get(root)
+      if (!seen || t.updatedAt > seen.updatedAt) archived.set(root, t)
+    }
+  }
+  const all = [...open.values()]
+  const byDue = (a: Task, b: Task) => (a.dueAt ?? '').localeCompare(b.dueAt ?? '') || (a.title || '').localeCompare(b.title || '') || a.id.localeCompare(b.id)
+  return {
+    dated: all.filter(t => !!dueDay(t.dueAt)).sort(byDue),
+    undated: all.filter(t => !dueDay(t.dueAt)).sort(paydaysFirst),
+    archived: [...archived.entries()].filter(([root]) => !open.has(root)).map(([, t]) => t).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
+  }
+}
 
 /** Whole days from one day key to another: 0 the same day, 2 for a balance typed in the day before yesterday. */
 export function daysBetween(from: string, to: string): number {
@@ -405,20 +872,12 @@ export interface GoalView {
 
 /**
  * How many times a series falls due from its open occurrence up to and
- * including `by`: stepped with nextOccurrence, the rule the repeat itself
- * follows, so a monthly one due on the 31st lands where the real ones will.
+ * including `by`: its own day and the ones seriesDays steps on to, by the
+ * rule the repeat itself follows (stepDue), so a monthly one due on the 31st
+ * lands where the real ones will.
  */
 export function occurrencesUntil(task: Task, by: string, cap = 1000): number {
-  if (!task.dueAt || dateKey(new Date(task.dueAt)) > by) return 0
-  let n = 1
-  let cur: Task = task
-  for (let i = 0; i < cap && cur.recurrence; i++) {
-    const next = nextOccurrence({ ...cur, status: 'done', completedAt: cur.dueAt }, () => '')
-    if (!next?.dueAt || dateKey(new Date(next.dueAt)) > by) break
-    n += 1
-    cur = next
-  }
-  return n
+  return seriesDays(task, by, cap).length
 }
 
 /** Every savings goal with an open set-aside, soonest-due first. */

@@ -1,5 +1,6 @@
 import { localMidnightIso } from '../shared/domain.mts'
 import type { Bill, BillKind, RecurrenceFreq, Task } from './types'
+import { dateKey } from './utils'
 
 // + Bill's picker: the bills most US households pay, each a name, a kind, an
 // emoji and how often it comes round, so adding the electric is a tap, an
@@ -133,5 +134,85 @@ export function goalFromForm(g: QuickGoal, o: { id: string; now: string }): Task
     updatedAt: o.now,
     tags: [],
     shared: g.shared ?? false,
+  }
+}
+
+/** What + Payday's short form is filled in with. */
+export interface QuickPayday {
+  name: string
+  /** Whose pay it is: a household member's id. Left out alone. */
+  whose?: string
+  amount: number
+  /** YYYY-MM-DD: when the next one lands. The form will not add one without it. */
+  due: string
+  freq: RecurrenceFreq
+  /** Who can see it, when there is a household to see it; left out alone. */
+  shared?: boolean
+}
+
+/**
+ * A payday: the bill facet with the sign the other way round (kind 'income'),
+ * the amount paid in as its estimate, landing on the day with no time and
+ * coming round again. What the editor would have saved, as a template's bill
+ * is, so Finance counts it from the day it is added.
+ */
+export function paydayFromForm(p: QuickPayday, o: { id: string; now: string }): Task {
+  return {
+    kind: 'task',
+    id: o.id,
+    title: p.name.trim(),
+    description: '',
+    status: 'todo',
+    priority: 'normal',
+    dueAt: localMidnightIso(p.due) ?? undefined,
+    recurrence: { freq: p.freq },
+    bill: { kind: 'income', ...(p.whose ? { forMemberId: p.whose } : {}) },
+    estimateCost: Math.round(p.amount * 100) / 100,
+    createdAt: o.now,
+    updatedAt: o.now,
+    tags: [],
+    shared: p.shared ?? false,
+  }
+}
+
+/**
+ * What a bill's, a payday's or a set-aside's short sheet saves over the
+ * occurrence it was opened on: the fields it shows. `autopay` and `whose` are
+ * left as they were when not given, and so is `shared`.
+ */
+export interface MoneyEdit {
+  name: string
+  amount: number
+  /** YYYY-MM-DD: when it next falls due. The sheet will not save without it. */
+  due: string
+  /** How often it comes round; null for once. */
+  freq: RecurrenceFreq | null
+  autopay?: boolean
+  /** Whose pay: a member's id, or null for nobody's in particular. */
+  whose?: string | null
+  shared?: boolean
+}
+
+/**
+ * The occurrence with the short sheet's fields written over it, and the rest
+ * — its payee, its goal, the day of the month a bill keeps — as it was. A due
+ * day left alone keeps its time; one moved lands on the new day with none
+ * (local midnight), as + Bill and Needs a date write one.
+ */
+export function editedMoney(t: Task & { bill: Bill }, e: MoneyEdit, updatedAt: string): Task & { bill: Bill } {
+  const { autopay: _autopay, forMemberId: _whose, ...bill } = t.bill
+  const autopay = e.autopay ?? t.bill.autopay
+  const whose = e.whose === undefined ? t.bill.forMemberId : (e.whose ?? undefined)
+  const sameDay = !!t.dueAt && !Number.isNaN(Date.parse(t.dueAt)) && dateKey(t.dueAt) === e.due
+  const { recurrence: _recurrence, ...rest } = t
+  return {
+    ...rest,
+    title: e.name.trim(),
+    estimateCost: Math.round(e.amount * 100) / 100,
+    dueAt: sameDay ? t.dueAt : (localMidnightIso(e.due) ?? t.dueAt),
+    ...(e.freq ? { recurrence: { freq: e.freq } } : {}),
+    bill: { ...bill, ...(autopay ? { autopay: true } : {}), ...(whose ? { forMemberId: whose } : {}) },
+    ...(e.shared !== undefined ? { shared: e.shared } : {}),
+    updatedAt,
   }
 }

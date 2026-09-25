@@ -113,6 +113,13 @@
   /* the garment cut-out's ground. It is the product image, not chrome, so it
      stays pure white in both themes */
   --photo-white: #ffffff;
+  /* crypto's gold ₿ coin (finance/KindMark.tsx). No emoji has the Bitcoin sign
+     and Apple draws 🪙 in silver, so the coin is drawn: gold in both themes */
+  --coin-shine: #fff6cf;
+  --coin-gold: #f9cf3a;
+  --coin-deep: #dea004;
+  --coin-edge: #a86f00;
+  --coin-ink: #8a5300;
   /* radius scale — one soft family. Bumped a notch (10→12) for a less boxy
      feel; the sm/lg/xl steps let a chip, a card and a sheet each sit right. */
   --radius-sm: 9px;
@@ -211,8 +218,8 @@
    theme-tokens.test.ts pins them all and lists
    those changes with what each was. Only themed
    tokens appear here: the fixed ones (the accent with its glow and gradient
-   ends, --on-accent, the ink on user colours, the photo controls, --sheen and
-   --mark-bg) are declared once, above. */
+   ends, --on-accent, the ink on user colours, the photo controls, --sheen,
+   --mark-bg and the gold coin) are declared once, above. */
 :root[data-theme='dark'] {
   color-scheme: dark;
   --bg: #0c0e12;

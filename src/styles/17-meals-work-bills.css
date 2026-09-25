@@ -312,44 +312,15 @@
 }
 
 /* ---- Finance (v3.27) -----------------------------------------------------
-   Bills grew into three segments: the month of bills it always was, the
-   paydays that say what comes in, and the accounts whose balances make "is
-   there enough before the 3rd" answerable. The rows are the bill rows, so
-   only what is new is here. */
-/* money in reads as money in, wherever it is: a payday's amount and a runway
-   day that is still above water */
+   Bills grew into Finance: the pay periods it opens on, and Manage behind
+   them with the month of bills it always was, the paydays and the accounts.
+   The rows are the bill rows, so only what is new is here. */
+/* money in reads as money in, wherever it is: a payday's amount */
 .bill-amount.in {
   color: var(--tone-mint);
 }
-/* what is owed, and a day the runway goes under */
-.account-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  align-items: center;
-  margin-left: auto;
-}
-.account-entry {
-  width: 9rem;
-  font-variant-numeric: tabular-nums;
-}
 .finance-totals {
   margin: 12px 0;
-}
-/* the runway is a long list of short rows: no glyph column, and the amount
-   pinned right so the balance reads as one column down the page */
-
-@media (max-width: 640px) {
-  /* at 375pt the balance box and its three buttons need the full width under
-     the name rather than a fifth of it each */
-  .account-actions {
-    flex: 1 0 100%;
-    margin-left: 0;
-  }
-  .account-entry {
-    flex: 1;
-    width: auto;
-  }
 }
 
 /* Bills' own period bar: the month between its arrows, + Bill at the end.

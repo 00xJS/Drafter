@@ -49,60 +49,83 @@
 .bill-row {
   min-width: 0;
 }
-.finance-section {
-  margin-top: 4px;
-}
-/* what is owed, and a day the runway goes under */
+/* what is owed, and a day the line goes under */
 .bill-amount.owed {
   color: var(--danger);
 }
-.finance-short {
-  margin: 0 4px 12px;
+
+/* A bill's or a payday's second line: its next date first and whole, and
+   the rest (whose, who pays, how often) giving way when the line is short.
+   One with no date says so in the warning ink. */
+.bill-copy small.fin-meta {
+  display: flex;
+  min-width: 0;
 }
-.account-row {
-  flex-wrap: wrap;
-  gap: 8px;
-  padding: 10px 12px;
+.fin-next {
+  flex: none;
 }
-.account-row.archived {
-  opacity: 0.6;
+.fin-meta-rest {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  /* keeps the spaces round the dot: a nowrap line drops a leading one */
+  white-space: pre;
 }
-.account-name {
-  background: none;
-  border: 0;
-  padding: 0;
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
-  text-align: left;
-}
-/* the runway is a long list of short rows: no glyph column, and the amount
-   pinned right so the balance reads as one column down the page */
-.bill-list.runway .bill-row {
-  padding: 6px 12px;
-}
-.bill-list.runway .bill-copy {
-  flex: 1;
-}
-.bill-list.runway .bill-amount {
-  margin-left: auto;
+.fin-nodate {
+  color: var(--warn-text);
+  font-weight: 600;
 }
 
-/* ---------- the money timeline ----------
-   Finance opens on one screen: safe to spend until payday, the next 30 days
-   as a line, what falls due, the accounts and the goals. Every colour here is
-   a token, so it reads the same in the light theme and the dark; a phone's
-   rules sit under the width and pointer guards at the end. */
-.finance-seg {
-  margin: 0 0 14px;
-}
-.fin-timeline {
+/* ---------- the pay periods ----------
+   Finance opens on one screen: a slim bar with Manage and the +, safe to
+   spend, then each paycheck's card, then the accounts and the goals. Every
+   colour here is a token, so it reads the same in the light theme and the
+   dark; a phone's rules sit under the width and pointer guards at the end. */
+.fin-periods {
   display: flex;
   flex-direction: column;
   gap: 16px;
   min-width: 0;
   /* the rows below ask how wide it is in rem, which grows with Dynamic Type */
   container: fin / inline-size;
+}
+
+/* Manage on the left, one + on the right: the row of four buttons that sat
+   under safe to spend is this now */
+.fin-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: -6px;
+}
+.btn.subtle.fin-manage-open {
+  padding-inline: 4px 8px;
+  color: var(--accent-text);
+  font-weight: 600;
+}
+/* a way into a screen of its own: the chevron iOS puts on one, kept out of
+   the button's name */
+.fin-chevron {
+  margin-left: 5px;
+  font-size: 1.15em;
+  line-height: 1;
+}
+/* tinted rather than filled: the top bar's + (a new task) is the filled one,
+   and two of those one above the other read as the same button twice */
+.btn.fin-plus {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 1px solid var(--accent-ring);
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+.btn.fin-plus:hover {
+  background: var(--accent-ring);
 }
 
 /* safe to spend */
@@ -116,6 +139,12 @@
   background: color-mix(in srgb, var(--accent) 5%, var(--surface));
   box-shadow: var(--shadow);
 }
+.fin-hero-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
 .fin-hero-label {
   margin: 0;
   font-size: 0.78rem;
@@ -123,6 +152,12 @@
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--muted);
+}
+.btn.subtle.fin-see-line {
+  flex: none;
+  margin: -6px -10px -6px 0;
+  color: var(--accent-text);
+  font-weight: 600;
 }
 .fin-hero-amount {
   margin: 2px 0 0;
@@ -140,6 +175,13 @@
   margin: 0;
   color: var(--text-2);
   font-size: 0.9375rem;
+}
+/* what has no date, and so is not in the figure above it */
+.fin-hero-undated {
+  margin: 4px 0 0;
+  color: var(--warn-text);
+  font-size: 0.8125rem;
+  font-weight: 600;
 }
 .fin-hero-asof {
   display: flex;
@@ -170,145 +212,14 @@
   justify-self: start;
   min-width: 8rem;
 }
-
-/* + Bill · + Payday · Check in · + Goal */
-.fin-actions {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
-}
-.fin-actions .btn {
-  min-height: 40px;
-  padding-inline: 6px;
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-/* the cash line */
-.fin-card {
-  min-width: 0;
-  padding: 12px 14px 10px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--surface);
-  box-shadow: var(--shadow);
-}
-.fin-card-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 6px;
-}
-.fin-card-head h3 {
-  margin: 0;
-  font-size: 0.9375rem;
-}
-/* a small track: the heading beside it keeps its line. Specific enough to
-   outrank the native shell's full-width track (.native .segmented.seg-track) */
-.fin-card-head .segmented.seg-track.fin-span {
-  flex: none;
-  width: 8.5rem;
-  max-width: 8.5rem;
-}
-.fin-card-head .segmented.seg-track.fin-span .seg {
-  padding: 4px 6px;
-  font-size: 0.75rem;
-  white-space: nowrap;
-}
-.fin-chart {
-  display: block;
-  width: 100%;
-  margin: 0;
-  padding: 0;
-  border: 0;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-.fin-plot {
-  position: relative;
-  display: block;
-  height: 118px;
-}
-.fin-plot svg {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  overflow: visible;
-}
-.fin-area {
-  fill: var(--accent-soft);
-}
-.fin-area.under {
-  fill: color-mix(in srgb, var(--danger) 16%, transparent);
-}
-.fin-path {
-  fill: none;
-  stroke: var(--viz-series-1);
-  stroke-width: 2.25;
-  stroke-linejoin: round;
-  vector-effect: non-scaling-stroke;
-}
-.fin-path.under {
-  stroke: var(--danger);
-}
-.fin-zero {
-  stroke: var(--viz-baseline);
-  stroke-width: 1;
-  stroke-dasharray: 4 3;
-  vector-effect: non-scaling-stroke;
-}
-.fin-low-dot {
-  position: absolute;
-  width: 11px;
-  height: 11px;
-  margin: -5.5px 0 0 -5.5px;
-  border: 2.5px solid var(--viz-series-1);
-  border-radius: 50%;
-  background: var(--surface);
-}
-.fin-low-dot.under {
-  border-color: var(--danger);
-}
-/* under the dot: it is the lowest point, so nothing of the line is down there */
-.fin-low-label {
-  position: absolute;
-  margin-top: 9px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  line-height: 1.2;
-  white-space: nowrap;
-  color: var(--text-2);
-  transform: translateX(-50%);
-}
-.fin-low-label.start {
-  transform: translateX(-6px);
-}
-.fin-low-label.end {
-  transform: translateX(calc(-100% + 6px));
-}
-.fin-low-label.under {
-  color: var(--danger);
-}
-.fin-axis {
-  display: flex;
-  justify-content: space-between;
-  margin-top: 4px;
-  color: var(--muted);
-  font-size: 0.6875rem;
-}
 .fin-short {
-  margin: 8px 0 0;
+  margin: 6px 0 0;
   font-size: 0.8125rem;
 }
 
-/* Coming up, the accounts and the goals */
-.fin-section {
+.fin-plan,
+.fin-strip,
+.fin-goals-mini {
   min-width: 0;
 }
 .fin-section-head {
@@ -317,7 +228,9 @@
   justify-content: space-between;
   gap: 8px;
 }
-.fin-section-head .bills-head {
+.fin-section-head .bills-head,
+.fin-strip > .bills-head,
+.fin-goals-mini > .bills-head {
   margin: 2px 0 8px;
 }
 .fin-empty {
@@ -328,6 +241,181 @@
   color: var(--text-2);
   font-size: 0.875rem;
 }
+
+/* one card a paycheck: the payday, how much of it its bills take, the bills,
+   and what is left the day before the next one */
+.fin-period-list {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.fin-period {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+.fin-period-head {
+  display: grid;
+  gap: 2px;
+  padding: 8px 14px 4px;
+}
+/* whose and how much on one line, when on the next the whole width, and
+   Got it beside the two */
+.fin-payday {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.fin-payday-main {
+  display: grid;
+  flex: 1;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    'name amount'
+    'when when';
+  align-items: baseline;
+  column-gap: 10px;
+  min-width: 0;
+  min-height: 48px;
+  padding: 4px 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.fin-payday-main > strong {
+  grid-area: name;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 1.0625rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fin-payday-main > small {
+  grid-area: when;
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+.fin-payday-main > .bill-amount {
+  grid-area: amount;
+  font-size: 1.0625rem;
+}
+.fin-payday > .bill-pay {
+  flex: none;
+  margin: 0 -8px 0 0;
+}
+/* a paycheck its repeat brings, not yet the open one: a step back in ink */
+.fin-payday.projected .fin-payday-main strong {
+  color: var(--text-2);
+  font-weight: 600;
+}
+.fin-now {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 48px;
+}
+.fin-now strong {
+  font-size: 1.0625rem;
+}
+.fin-now small {
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+/* how much of the paycheck its stretch takes: past all of it, the warning ink */
+.fin-take {
+  display: grid;
+  gap: 4px;
+  padding: 2px 14px 10px;
+}
+.fin-take-bar {
+  display: block;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--surface-3);
+}
+.fin-take-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--tone-sky);
+}
+.fin-take small {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+.fin-take.over .fin-take-bar > span {
+  background: var(--tone-amber);
+}
+.fin-take.over small {
+  color: var(--warn-text);
+  font-weight: 600;
+}
+/* its rows sit in the card, not as cards of their own: a hairline between */
+.fin-period-rows {
+  gap: 0;
+  border-top: 1px solid var(--hairline);
+}
+.fin-period .fin-period-rows .bill-row {
+  border: 0;
+  border-bottom: 1px solid var(--hairline);
+  border-radius: 0;
+  background: transparent;
+}
+.fin-period .fin-period-rows .bill-row:last-child {
+  border-bottom: 0;
+}
+.fin-period-rows .bill-main {
+  padding-left: 14px;
+}
+.fin-period-none {
+  margin: 0;
+  padding: 10px 14px;
+  border-top: 1px solid var(--hairline);
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+.fin-period-left {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--hairline);
+  background: var(--surface-2);
+}
+.fin-period-left > span {
+  min-width: 0;
+  color: var(--text-2);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+.fin-period-left > strong {
+  font-size: 1.0625rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.fin-period-left > strong.owed {
+  color: var(--danger);
+}
+.btn.subtle.fin-more-days {
+  display: block;
+  margin: 10px auto 0;
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
+/* each bill, payday and set-aside on its day */
 .fin-rows .bill-main {
   gap: 10px;
 }
@@ -384,23 +472,145 @@
   color: var(--muted);
   font-weight: 400;
 }
+/* What a repeat brings is expected, not a task: a dashed day, and its name
+   and amount a step back in ink (never below 4.5:1). */
+.fin-row.projected {
+  border-style: dashed;
+  background: transparent;
+}
+.fin-row.projected .fin-date {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+.fin-row.projected .bill-copy strong,
+.fin-row.projected .bill-amount:not(.in):not(.kept) {
+  color: var(--text-2);
+  font-weight: 600;
+}
+.fin-row.projected .bill-main {
+  min-height: 48px;
+}
+/* Needs a date: first, each with the field that gives it one */
+.fin-needs {
+  margin-bottom: 14px;
+}
+.fin-undated-head {
+  margin: 0 0 6px;
+  color: var(--warn-text);
+  font-size: calc(0.75rem * var(--type-scale));
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.fin-row.undated {
+  border-style: dashed;
+  border-color: var(--border-strong);
+}
+/* its field, with what it is for beside it: an empty date field shows
+   nothing on an iPhone, and a greyed-out today on a Mac */
+.fin-undated-date {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  margin-right: 8px;
+  color: var(--text-2);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+/* a typed field is 16px or a phone zooms (16-zoom-guard.css) */
+.fin-date-input {
+  width: 10rem;
+  min-height: 40px;
+  font-size: max(16px, 1rem);
+}
 
-.fin-tiles {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+/* the accounts, as a strip of chips: a tap opens one's sheet */
+.fin-chips {
+  display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
-.fin-tile {
+.fin-chips > li {
+  display: flex;
+  min-width: 0;
+}
+.fin-chip {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 2px;
+  justify-content: center;
+  gap: 1px;
+  min-width: 9.5rem;
+  max-width: 15rem;
+  min-height: 56px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.fin-chip:hover {
+  border-color: var(--border-strong);
+}
+.fin-chip-name {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--text-2);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fin-chip-line {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  max-width: 100%;
+  white-space: nowrap;
+}
+.fin-chip-line strong {
+  font-size: 1rem;
+  font-variant-numeric: tabular-nums;
+}
+.fin-chip-line strong.owed {
+  color: var(--danger);
+}
+.fin-chip-line small,
+.fin-chip-checkin small {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+.fin-chip-line small.stale {
+  color: var(--warn-text);
+}
+.fin-chip.fin-chip-checkin {
+  border-style: dashed;
+  background: transparent;
+}
+.fin-chip-checkin .fin-chip-name {
+  color: var(--accent-text);
+}
+
+/* the goals, a row each with its bar */
+.fin-goal-rows {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.fin-goal-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   width: 100%;
-  height: 100%;
-  min-height: 78px;
   padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -409,45 +619,116 @@
   text-align: left;
   cursor: pointer;
 }
-.fin-tile:hover {
-  border-color: var(--border-strong);
+.fin-goal-row-copy {
+  display: grid;
+  flex: 1;
+  gap: 5px;
+  min-width: 0;
 }
-.fin-tile-name {
-  max-width: 100%;
+.fin-goal-row-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.fin-goal-row-head strong {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
-  color: var(--text-2);
-  font-size: 0.8125rem;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.fin-tile strong {
-  font-size: 1.15rem;
+.fin-goal-row small {
+  color: var(--muted);
+  font-size: 0.8125rem;
   font-variant-numeric: tabular-nums;
 }
-.fin-tile strong.owed {
+.fin-goal-row.behind .fin-bar > span {
+  background: var(--tone-amber);
+}
+
+/* ---------- Manage ----------
+   The lists, the month of bills, the accounts in their groups, the goals and
+   the weekly check-in, under a track of four. */
+.fin-manage {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+  container: fin / inline-size;
+}
+.fin-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+.fin-pane-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.fin-pane-bar .bills-head,
+.fin-group-copy .bills-head,
+.fin-archived .bills-head,
+.fin-month-of > .bills-head {
+  margin: 0;
+}
+.fin-pane .fin-needs {
+  margin-bottom: 0;
+}
+.fin-item.archived .bill-copy strong,
+.fin-item.archived .bill-amount {
+  color: var(--muted);
+}
+.fin-archived,
+.fin-month-of {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+}
+.fin-month-of .bills-period {
+  margin-top: 4px;
+}
+.fin-group {
+  display: grid;
+  gap: 6px;
+}
+.fin-group-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 6px;
+}
+.fin-group-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.fin-group-copy small {
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+.fin-group-head > strong {
+  font-size: 1.0625rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.fin-group-head > strong.owed {
   color: var(--danger);
 }
-.fin-tile small {
-  color: var(--muted);
-  font-size: 0.75rem;
+.fin-totals {
+  margin: 6px 0 0;
 }
-.fin-tile small.stale {
-  color: var(--warn-text);
-}
-.fin-tile.add {
-  align-items: center;
-  justify-content: center;
-  border-style: dashed;
-  background: transparent;
-  color: var(--text-2);
-  font-weight: 600;
+.btn.fin-checkin-all {
+  align-self: flex-start;
 }
 .fin-weekly {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px 12px;
-  margin-top: 10px;
   padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -560,14 +841,197 @@
   color: var(--danger);
 }
 
-/* the sheets: Check in, + Bill's picker and its short form, + Goal */
+/* ---------- the sheets ----------
+   The +, Check in, + Bill's picker and its short form, a bill's or a
+   payday's short sheet, an account's, + Goal and the cash line. */
 .fin-sheet .fin-sheet-hint {
   margin: 0;
 }
-/* the check-in's amounts are typed, and a typed field is 16px or a phone zooms */
+/* the amounts are typed, and a typed field is 16px or a phone zooms */
 .fin-amount-input {
   font-size: max(16px, 1rem);
   font-variant-numeric: tabular-nums;
+}
+.fin-add-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.fin-add-choice {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  min-height: 60px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.fin-add-choice:hover,
+.fin-kind:hover {
+  border-color: var(--accent-ring);
+  background: var(--accent-softer);
+}
+.fin-add-emoji {
+  flex: none;
+  width: 2rem;
+  font-size: 1.6rem;
+  line-height: 1;
+  text-align: center;
+}
+.fin-add-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.fin-add-copy strong {
+  font-size: 1rem;
+}
+.fin-add-copy small {
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+/* what kind of account: nine, three across */
+.fin-kinds {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.fin-kind {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 0;
+  min-height: 68px;
+  padding: 8px 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+.fin-kind.on {
+  border-color: var(--accent);
+  background: var(--accent-softer);
+  box-shadow: 0 0 0 2px var(--accent-ring);
+}
+.fin-kind-emoji {
+  font-size: 1.4rem;
+  line-height: 1;
+}
+/* crypto's mark (KindMark.tsx): a gold coin with ₿ tilted as Bitcoin's own
+   is. Sized off the text around it to an emoji's drawn size, about 1em, and
+   sat where one sits: its baseline is its bottom edge, a touch below the
+   line's. */
+.fin-coin {
+  display: inline-block;
+  width: 1.55em;
+  height: 1.55em;
+  overflow: hidden;
+  border-radius: 50%;
+  background: radial-gradient(circle at 32% 28%, var(--coin-shine) 0 10%, var(--coin-gold) 40%, var(--coin-deep) 78%, var(--coin-edge) 100%);
+  box-shadow:
+    inset 0 0 0 0.07em var(--coin-edge),
+    inset 0 0 0 0.16em var(--coin-gold);
+  color: var(--coin-ink);
+  font-size: 0.66em;
+  font-weight: 800;
+  line-height: 1.55em;
+  text-align: center;
+  text-shadow: 0 0.05em 0 var(--coin-shine);
+  vertical-align: -0.18em;
+  transform: rotate(14deg);
+}
+.fin-kind-name {
+  max-width: 100%;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.2;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+/* the kind picked, in full, above the name */
+.fin-kind-picked {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 6px 6px 12px;
+  border: 1px solid var(--accent-ring);
+  border-radius: var(--radius);
+  background: var(--accent-softer);
+  font-weight: 600;
+}
+.fin-kind-picked .btn.subtle {
+  flex: none;
+  color: var(--accent-text);
+}
+/* in an account's own sheet the kinds are one field of several: shorter */
+.account-sheet .field .fin-kind {
+  min-height: 56px;
+  padding-block: 6px;
+}
+.account-sheet .field .fin-kind-emoji {
+  font-size: 1.2rem;
+}
+/* an account's last few balances, newest first */
+.fin-history-list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.fin-history-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--hairline);
+}
+.fin-history-list li:last-child {
+  border-bottom: 0;
+}
+.fin-history-list li > span {
+  flex: 1;
+  color: var(--text-2);
+}
+.fin-history-list strong {
+  font-variant-numeric: tabular-nums;
+}
+.fin-history-list strong.owed {
+  color: var(--danger);
+}
+.fin-history-list .fin-move {
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+.fin-history-list .fin-move.better {
+  color: var(--tone-green);
+}
+.fin-history-list .fin-move.worse {
+  color: var(--warn-text);
+}
+/* More options, Archive, Delete: under the fields, apart from them */
+.fin-sheet-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--hairline);
+}
+.fin-sheet-actions .spacer {
+  flex: 1;
 }
 .checkin-list {
   display: grid;
@@ -609,8 +1073,20 @@
 }
 .checkin-add {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
   gap: 8px;
+}
+/* the kinds first, the width of the sheet, then the kind picked above its name */
+.checkin-add > .fin-kinds,
+.checkin-add > .fin-kind-picked,
+.checkin-add-ask {
+  grid-column: 1 / -1;
+}
+.checkin-add-ask {
+  color: var(--text-2);
+  font-size: 0.875rem;
+  font-weight: 600;
 }
 .checkin-add-open,
 .fin-back,
@@ -698,67 +1174,163 @@
   background: var(--tone-amber-bg);
   color: var(--tone-amber);
 }
+/* the cash line */
+.fin-chart {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.fin-plot {
+  position: relative;
+  display: block;
+  height: 118px;
+}
+.fin-plot svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.fin-area {
+  fill: var(--accent-soft);
+}
+.fin-area.under {
+  fill: color-mix(in srgb, var(--danger) 16%, transparent);
+}
+.fin-path {
+  fill: none;
+  stroke: var(--viz-series-1);
+  stroke-width: 2.25;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+.fin-path.under {
+  stroke: var(--danger);
+}
+.fin-zero {
+  stroke: var(--viz-baseline);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+  vector-effect: non-scaling-stroke;
+}
+.fin-low-dot {
+  position: absolute;
+  width: 11px;
+  height: 11px;
+  margin: -5.5px 0 0 -5.5px;
+  border: 2.5px solid var(--viz-series-1);
+  border-radius: 50%;
+  background: var(--surface);
+}
+.fin-low-dot.under {
+  border-color: var(--danger);
+}
+/* under the dot: it is the lowest point, so nothing of the line is down there */
+.fin-low-label {
+  position: absolute;
+  margin-top: 9px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  color: var(--text-2);
+  transform: translateX(-50%);
+}
+.fin-low-label.start {
+  transform: translateX(-6px);
+}
+.fin-low-label.end {
+  transform: translateX(calc(-100% + 6px));
+}
+.fin-low-label.under {
+  color: var(--danger);
+}
+.fin-axis {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.6875rem;
+}
 
-/* A wide screen has room for two columns: the money on the left, what falls
-   due on the right, then the accounts and the goals side by side. */
-@media (min-width: 1000px) {
-  .fin-timeline {
+/* A wide screen has room for two columns: safe to spend, the accounts and
+   the goals on the left, the pay periods down the right. */
+@media (min-width: 1024px) {
+  .fin-periods {
     display: grid;
-    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
     grid-template-areas:
-      'hero coming'
-      'actions coming'
-      'line coming'
-      'accounts goals'
-      'month month';
-    /* a long Coming up gives its extra height to the row under the line, so
-       the hero and the buttons stay together at the top */
-    grid-template-rows: auto auto 1fr auto auto;
+      'top top'
+      'hero plan'
+      'strip plan'
+      'goals plan'
+      '. plan';
+    /* a long run of periods gives its extra height to the last row, so the
+       left column stays together at the top */
+    grid-template-rows: auto auto auto auto 1fr;
     align-items: start;
-    gap: 16px 24px;
+    gap: 16px 28px;
   }
-  .fin-hero {
+  .fin-top {
+    grid-area: top;
+    margin-bottom: 0;
+  }
+  .fin-periods > .fin-hero {
     grid-area: hero;
   }
-  .fin-actions {
-    grid-area: actions;
+  .fin-plan {
+    grid-area: plan;
   }
-  .fin-line {
-    grid-area: line;
+  .fin-strip {
+    grid-area: strip;
   }
-  .fin-coming {
-    grid-area: coming;
-  }
-  .fin-accounts {
-    grid-area: accounts;
-  }
-  .fin-goals-section {
+  .fin-goals-mini {
     grid-area: goals;
   }
-  .fin-month {
-    grid-area: month;
+  /* Manage's lists at a reading width: a name at the window's left and its
+     amount at the right, 1,200px apart, read as two lists */
+  .fin-manage {
+    max-width: 860px;
   }
 }
 
 @media (max-width: 640px) {
+  /* the date on its line and the rest on the next, rather than the rest cut to a dot or two */
+  .bill-copy small.fin-meta {
+    flex-direction: column;
+  }
+  .fin-meta-dot {
+    display: none;
+  }
   .fin-hero {
     padding: 14px 16px 10px;
   }
   .fin-hero-amount {
     font-size: 2.2rem;
   }
-  .fin-actions {
-    gap: 6px;
-  }
-  .fin-actions .btn {
-    padding-inline: 2px;
-    font-size: 0.875rem;
+  .fin-period-head,
+  .fin-take,
+  .fin-period-none,
+  .fin-period-left {
+    padding-inline: 12px;
   }
   /* the name gets what the row can spare: a narrower day, and a Paid
      button no wider than its word */
   .fin-rows .bill-main {
     gap: 8px;
     padding: 8px 6px 8px 10px;
+  }
+  .fin-period-rows .bill-main {
+    padding-left: 12px;
   }
   .fin-date {
     width: 34px;
@@ -770,27 +1342,66 @@
     margin-right: 6px;
     padding-inline: 8px;
   }
-  .fin-tiles {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .fin-payday > .bill-pay {
+    margin-right: -8px;
+  }
+  /* the accounts run on in one line to the screen's edge, and scroll there */
+  .fin-chips {
+    flex-wrap: nowrap;
+    margin-inline: -12px;
+    padding: 1px 12px 2px;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scroll-padding-inline: 12px;
+    scroll-snap-type: x proximity;
+    scrollbar-width: none;
+  }
+  .fin-chips::-webkit-scrollbar {
+    display: none;
+  }
+  /* the iOS shell's page has 16pt sides, not 12 (19-native-shell.css) */
+  .native .fin-chips {
+    margin-inline: -16px;
+    padding-inline: 16px;
+    scroll-padding-inline: 16px;
+  }
+  .fin-chips > li {
+    flex: none;
+    scroll-snap-align: start;
   }
   .tpl-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
-  .checkin-add {
-    grid-template-columns: minmax(0, 1fr) auto;
+  /* a sheet with no foot ends on its body: its last choice clear of the
+     home indicator, as a foot is (19-native-shell.css .modal-foot) */
+  .native .fin-sheet .modal-body {
+    padding-bottom: calc(16px + var(--safe-b));
   }
-  .checkin-add > select {
-    grid-column: 1 / -1;
+}
+/* A row with no date puts its field on a line of its own where the name and
+   the field would not both fit beside the amount: a phone, or a narrow column. */
+@container fin (max-width: 30rem) {
+  .fin-row.undated {
+    flex-wrap: wrap;
+  }
+  .fin-row.undated .bill-main {
+    flex-basis: 100%;
+  }
+  .fin-row.undated .fin-undated-date {
+    flex: 1 1 100%;
+    margin: 0 10px 10px;
+  }
+  .fin-row.undated .fin-date-input {
+    flex: 1 1 auto;
+    width: auto;
+    min-width: 0;
   }
 }
 /* Large text on a phone. A container query's rem is the page's own, so these
-   turn on as Dynamic Type grows, not only on a narrower screen: the four
-   buttons go two by two, and a row puts its amount under the name, which
-   keeps the name instead of cutting it to a letter or two. */
+   turn on as Dynamic Type grows, not only on a narrower screen: a row puts
+   its amount under the name, which keeps the name instead of cutting it to a
+   letter or two. */
 @container fin (max-width: 21rem) {
-  .fin-actions {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
   .fin-rows .bill-main {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr);
@@ -810,14 +1421,25 @@
     grid-area: amount;
     justify-self: start;
   }
+  .fin-kinds {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 @media (pointer: coarse) {
-  .fin-actions .btn,
+  .btn.fin-plus {
+    width: 44px;
+    height: 44px;
+  }
+  .fin-manage-open,
+  .fin-see-line,
   .fin-hero-checkin,
-  .fin-tile,
+  .fin-more-days,
   .fin-goal,
+  .fin-goal-row,
+  .fin-checkin-all,
   .tpl,
-  .fin-autopay {
+  .fin-autopay,
+  .fin-date-input {
     min-height: 44px;
   }
   .goal-emoji-pick {
