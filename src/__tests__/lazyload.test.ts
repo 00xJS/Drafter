@@ -262,8 +262,11 @@ describe('the lazy set stays out of the first load', () => {
     expect(leaked).toEqual([])
   })
 
-  it('loads every one of them through planner/lazy.ts', () => {
-    const lazy = readFileSync(resolve(SRC, 'components/planner/lazy.ts'), 'utf8')
+  it('loads every one of them through planner/lazy.ts, or the Stats registry it re-exports', () => {
+    // the four areas' Stats sit in lazystats.ts, which the Kitchen and the
+    // Stats lens import: lazy.ts names every lazy chunk, and a view that
+    // imported it was renamed with it on every deploy
+    const lazy = readFileSync(resolve(SRC, 'components/planner/lazy.ts'), 'utf8') + readFileSync(resolve(SRC, 'components/planner/lazystats.ts'), 'utf8')
     for (const name of LAZY_VIEWS) expect(lazy).toContain(`import('../${name}')`)
   })
 })

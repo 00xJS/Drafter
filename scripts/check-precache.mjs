@@ -1,12 +1,14 @@
 // Every file `vite build` writes to dist/assets must be in the service
 // worker's precache list (dist/sw.js), or an offline launch breaks on the
 // first lazy view or editor whose chunk was left out — every file but the few
-// chunks named below, which only work online anyway. Run after vite build.
+// chunks named below, which only work online anyway. Run after vite build:
+// `node scripts/check-precache.mjs` checks dist/, and a directory named after
+// it is checked instead (a build written elsewhere; check-precache.test.ts).
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
-import { join, relative, sep } from 'node:path'
+import { join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const dist = fileURLToPath(new URL('../dist/', import.meta.url))
+const dist = process.argv[2] ? resolve(process.argv[2]) + sep : fileURLToPath(new URL('../dist/', import.meta.url))
 const swPath = join(dist, 'sw.js')
 const assetsDir = join(dist, 'assets')
 
@@ -99,13 +101,19 @@ if (preloadedAssistant.length) {
   console.error(`check-precache: index.html loads the assistant's code before first paint:\n  ${preloadedAssistant.join('\n  ')}`)
   process.exit(1)
 }
-// Nor anything but the entry, the two vendor chunks and Rolldown's runtime
-// helpers, which it always keeps in a chunk of their own (0.7 KiB). Anything
-// else is the entry split apart again — vite.config.ts keeps what it imports
-// statically in it — and one more file to fetch before the first paint.
-const strays = firstLoad.filter(url => !/^assets\/(index|vendor-react|vendor-supabase|rolldown-runtime)-[\w-]+\.js$/.test(url))
+// Nor anything but the entry, the page's half of the stable chunk, the vendor
+// chunks and Rolldown's runtime helpers, which it always keeps in a chunk of
+// their own (0.7 KiB). Anything else is the entry split apart again —
+// vite.config.ts keeps what it imports statically in it — and one more file
+// to fetch before the first paint. The stable chunk (app-*.js) and the iOS
+// bridge's core (vendor-capacitor-*.js) came in on purpose, with the hash
+// cascade's fix (scripts/lib/chunkplan.mjs): the code the lazy views share
+// with the page used to sit in the entry, and every view that named the entry
+// was renamed with it on every deploy; the bridge's plugins, which import its
+// core, were among them.
+const strays = firstLoad.filter(url => !/^assets\/(index|app|vendor-react|vendor-supabase|vendor-capacitor|rolldown-runtime)-[\w-]+\.js$/.test(url))
 if (strays.length) {
-  console.error(`check-precache: index.html loads more than its entry, the vendor chunks and the bundler's runtime before first paint:\n  ${strays.join('\n  ')}`)
+  console.error(`check-precache: index.html loads more than its entry, the stable chunk, the vendor chunks and the bundler's runtime before first paint:\n  ${strays.join('\n  ')}`)
   process.exit(1)
 }
 const planner = assets.filter(url => /^assets\/Planner-[\w-]+\.js$/.test(url))
@@ -125,6 +133,20 @@ for (const todo = [...firstLoad, ...planner]; todo.length; ) {
 const launchedAssistant = [...launch].filter(url => assistant.includes(url))
 if (launchedAssistant.length) {
   console.error(`check-precache: a launch imports the assistant's code statically:\n  ${launchedAssistant.join('\n  ')}`)
+  process.exit(1)
+}
+
+// The hash cascade stays fixed: no chunk a launch does not load — a lazy
+// view, an editor, a sheet — imports the entry or the Planner chunk. Each
+// names every lazy chunk (the entry the Planner, the Planner the views), so a
+// view that imported either was renamed whenever any view changed, and every
+// deploy re-downloaded almost the whole app (scripts/lib/chunkplan.mjs).
+const hubsOfLaunch = [...launch].filter(url => /^assets\/(index|Planner)-[\w-]+\.js$/.test(url))
+const cascades = assets
+  .filter(url => url.endsWith('.js') && !launch.has(url))
+  .flatMap(url => staticImports(url).filter(dep => hubsOfLaunch.includes(dep)).map(dep => `${url} imports ${dep}`))
+if (cascades.length) {
+  console.error(`check-precache: lazy chunks import the entry or the Planner chunk, so a change to any view renames them too:\n  ${cascades.join('\n  ')}`)
   process.exit(1)
 }
 

@@ -474,7 +474,9 @@ describe('List · Stats', () => {
     expect(source('components/People.tsx')).not.toContain('+ Add person')
     expect(screen).toMatch(/innerViews\.people === 'stats' \? \(\s*<PeopleStats/)
     expect(screen).toContain("import { People, PeopleStats, Places, PlacesStats } from './lazy'")
-    expect(source('components/planner/lazy.ts')).toContain("import('../PeopleStats')")
+    // from the Stats registry lazy.ts re-exports (lazystats.ts)
+    expect(source('components/planner/lazystats.ts')).toContain("import('../PeopleStats')")
+    expect(source('components/planner/lazy.ts')).toContain("from './lazystats'")
     // under Keep's own track, never inside it: KeepScreen closes that div
     // before it renders any segment's body (v3.29)
     const keep = source('components/planner/KeepScreen.tsx')

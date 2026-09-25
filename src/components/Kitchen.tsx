@@ -73,7 +73,7 @@ import { MealDayCard } from './kitchen/MealCards'
 import { Modal, ModalHead, useChanged } from './Modal'
 import { MealPlanSheet, mealsForPicks, type MealPick } from './MealPlanSheet'
 import { RecipeSuggestions } from './RecipeSuggestions'
-import { KitchenStats } from './planner/lazy'
+import { KitchenStats } from './planner/lazystats'
 import { KITCHEN_TABS, KITCHEN_TAB_KEY, storedKitchenTab, type KitchenTab } from './planner/routes'
 import type { CalendarEntry, CalendarEvent, Task } from '../types'
 

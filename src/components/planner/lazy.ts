@@ -1,16 +1,11 @@
 import { useEffect } from 'react'
-import { preloadable, schedulePreload, warm } from '../../lazyload'
+import { preloadable, schedulePreload, warm, withSheet } from '../../lazyload'
 import { isNative } from '../../native'
+import { KitchenStats, PeopleStats, PlacesStats, WardrobeStats } from './lazystats'
 import type { View } from './routes'
 
-/**
- * A view's chunk together with its own style sheet (styles/views/): the rules
- * only that view can match, which used to load before the first paint with
- * everything else. Vite loads the sheet alongside the chunk and waits for it,
- * so the view is never drawn unstyled; the warm-up and a finger on a tab
- * fetch both.
- */
-const withSheet = <T>(view: Promise<T>, sheet: Promise<unknown>): Promise<T> => Promise.all([view, sheet]).then(([m]) => m)
+// the four areas' Stats, in a registry of their own that the Kitchen and the Stats lens import too
+export { KitchenStats, PeopleStats, PlacesStats, WardrobeStats }
 
 // Everything a launch does not paint first, each in a chunk of its own: the
 // views behind the other tabs and segments, and every overlay. Today (with its
@@ -27,15 +22,7 @@ export const Finance = preloadable(() => withSheet(import('../Finance'), import(
 export const NotesView = preloadable(() => withSheet(import('../NotesView'), import('../../styles/views/notes.css')).then(m => m.NotesView), 'NotesView')
 export const People = preloadable(() => import('../People').then(m => m.People), 'People')
 export const Places = preloadable(() => import('../Places').then(m => m.Places), 'Places')
-// People → People's Stats and People → Places' Stats, behind each segment's
-// List · Stats switch, each with the counting only it reads (peoplestats.ts,
-// placestats.ts) in a chunk of its own
-export const PeopleStats = preloadable(() => withSheet(import('../PeopleStats'), import('../../styles/views/people-stats.css')).then(m => m.PeopleStats), 'PeopleStats')
-export const PlacesStats = preloadable(() => import('../PlacesStats').then(m => m.PlacesStats), 'PlacesStats')
 export const Kitchen = preloadable(() => withSheet(import('../Kitchen'), import('../../styles/views/kitchen.css')).then(m => m.Kitchen), 'Kitchen')
-// Kitchen → Stats and the Stats kit it draws with: a chunk of its own, which
-// the Kitchen imports from here and a finger on the Kitchen tab warms too
-export const KitchenStats = preloadable(() => withSheet(import('../kitchen/KitchenStats'), import('../../styles/views/kitchen-stats.css')).then(m => m.KitchenStats), 'KitchenStats')
 export const Review = preloadable(() => withSheet(import('../Review'), import('../../styles/views/review.css')).then(m => m.Review), 'Review')
 // Insights → Journal: the archive of what you wrote, with its mood chart and
 // its search. Writing today's line is Today's, and that card and the editor it
@@ -48,11 +35,6 @@ export const Chat = preloadable(() => withSheet(import('../Chat'), import('../..
 // Home → Wardrobe: the composer, the clothes, the stats and the piece sheet.
 // Only Today's card and the thumbnails it draws stay in the Planner chunk.
 export const Wardrobe = preloadable(() => withSheet(import('../wardrobe/Wardrobe'), import('../../styles/views/wardrobe.css')).then(m => m.Wardrobe), 'Wardrobe')
-// …and the wardrobe's figures on their own, because the Stats lens draws them
-// too and must not drag the composer, the clothes grid and the photo pipeline
-// in behind them. Wardrobe.tsx still imports the view directly, so the two
-// share one chunk rather than shipping it twice.
-export const WardrobeStats = preloadable(() => import('../wardrobe/WardrobeStats').then(m => m.WardrobeStats), 'WardrobeStats')
 // The Stats lens: Insights' Highlights (components/insights, and the rules
 // they pick by, shared/insights.mts), the pages the lens counts itself —
 // Tasks, Money, Habits, Journal and the year — and the counting only it reads

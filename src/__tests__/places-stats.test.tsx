@@ -695,7 +695,9 @@ describe('the shell’s ways into Places → Stats', () => {
   const lazy = read('../components/planner/lazy.ts')
 
   it('loads it lazily, with the People tab’s other chunks', () => {
-    expect(lazy).toContain("import('../PlacesStats')")
+    // from the Stats registry lazy.ts re-exports (lazystats.ts)
+    expect(read('../components/planner/lazystats.ts')).toContain("import('../PlacesStats')")
+    expect(lazy).toContain("from './lazystats'")
     expect(lazy).toMatch(/keep: \[People\.preload, Places\.preload, PeopleStats\.preload, PlacesStats\.preload, ImHereSheet\.preload/)
     expect(screen).toMatch(/import \{ People, PeopleStats, Places, PlacesStats \} from '\.\/lazy'/)
   })

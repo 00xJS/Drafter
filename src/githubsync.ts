@@ -19,8 +19,9 @@ import { dateKey } from './utils'
 // The shell holds only the queue and the pull's timer (githubboard.ts); this
 // file loads the first time either has work to do.
 
-// the switch and the date rule sit beside the queue; re-exported so the rules read in one place
-export { boardDateToDue, projectSyncEnabled } from './githubboard'
+// The switch (projectSyncEnabled) and the date rule (boardDateToDue) sit beside
+// the queue, in githubboard.ts. They are not re-exported here: that made this
+// lazy chunk import the shell's, and so be renamed with it on every deploy.
 export type { ProjectPull } from './githubboard'
 
 /** Option names are compared with spacing and punctuation removed: "To do" === "to-do". */

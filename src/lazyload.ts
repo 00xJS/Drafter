@@ -55,6 +55,15 @@ export function preloadable<P extends object>(factory: () => Promise<ComponentTy
   return Preloadable
 }
 
+/**
+ * A view's chunk together with its own style sheet (styles/views/): the rules
+ * only that view can match, which used to load before the first paint with
+ * everything else. Vite loads the sheet alongside the chunk and waits for it,
+ * so the view is never drawn unstyled; the warm-up and a finger on a tab
+ * fetch both.
+ */
+export const withSheet = <T>(view: Promise<T>, sheet: Promise<unknown>): Promise<T> => Promise.all([view, sheet]).then(([m]) => m)
+
 /** Warm-ups in flight. A chunk that fails while one runs is not worth a reload: the view fetches it again when it opens. */
 let warming = 0
 
