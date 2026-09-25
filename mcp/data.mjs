@@ -27,12 +27,13 @@ const POSTS = `${POSTS_ANY}&deleted=is.false`
 
 /**
  * The posts policy as `owner` meets it, applied again to what came back: the
- * owner's own rows and legacy unowned ones (user_id null) pass, anyone else's
- * only when the household shares that kind — and, for a note, only when its
- * owner shared that note.
+ * owner's own rows pass, anyone else's only when the household shares that
+ * kind — and, for a note, only when its owner shared that note. There are no
+ * unowned rows to let through: posts.user_id has been NOT NULL since
+ * 2026-09-08.
  */
 export function ownerMaySee(row, owner) {
-  return row?.user_id === null || readableRow(row?.data, row?.user_id, owner)
+  return readableRow(row?.data, row?.user_id, owner)
 }
 
 export class DataError extends Error {

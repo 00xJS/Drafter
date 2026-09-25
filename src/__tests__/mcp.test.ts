@@ -460,8 +460,15 @@ describe('personal kinds stay with their owner', () => {
       const digestSees = visibleItemsFor([peerRow], OWNER, [PEER], OWNER).length === 1
       expect(ownerMaySee(peerRow, OWNER), `a peer's ${kind}`).toBe(digestSees)
       expect(ownerMaySee({ user_id: OWNER, data: { kind, id: 'x' } }, OWNER), `my ${kind}`).toBe(true)
-      expect(ownerMaySee({ user_id: null, data: { kind, id: 'x' } }, OWNER), `an unowned ${kind}`).toBe(true)
     }
+  })
+
+  // posts.user_id has been NOT NULL since 2026-09-08, so no row is unowned,
+  // and the pass an unowned row had as the site owner's is gone: one would be
+  // read by the same rule as anyone else's
+  it('gives a row with no owner no pass of its own', () => {
+    for (const kind of PERSONAL_KINDS) expect(ownerMaySee({ user_id: null, data: { kind, id: 'x' } }, OWNER), `an unowned ${kind}`).toBe(false)
+    expect(ownerMaySee({ user_id: null, data: { kind: 'note', id: 'x' } }, OWNER), 'an unowned note').toBe(false)
   })
 
   it('the bot gateway carries the same personal kinds (an edge function cannot import shared/)', () => {

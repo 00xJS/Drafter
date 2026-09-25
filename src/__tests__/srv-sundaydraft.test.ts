@@ -384,17 +384,16 @@ describe('Sunday’s draft is started by the digest and written in the backgroun
     ])
   })
 
-  it('reads 8am when no hour is set, and drafts an account with no settings row at all, legacy rows included — each from its own records', async () => {
+  it('reads 8am when no hour is set, and drafts an account with no settings row at all — each from its own records', async () => {
     // the peer has a row but no hour; the site owner has no row, so UTC and 8am
     settings = [quiet(PEER, { digest_hour: null, timezone: 'Europe/London' })]
-    rows = [doneLastWeek(OWNER, 'fence', 'Fixed the fence'), doneLastWeek(null, 'shed', 'Painted the shed'), doneLastWeek(PEER, 'gutter', 'Cleared the gutter')]
+    rows = [doneLastWeek(OWNER, 'fence', 'Fixed the fence'), doneLastWeek(PEER, 'gutter', 'Cleared the gutter')]
     // 7am in London (BST) is 06:00 UTC; 7am in UTC is 07:00
     expect(await hourly('2026-09-12T00:00:00Z', '2026-09-14T00:00:00Z')).toEqual(['2026-09-13T06:00:00.000Z', '2026-09-13T07:00:00.000Z'])
     const [peers, owners] = ai.prompts
     expect(peers).toContain('Cleared the gutter')
     expect(peers).not.toContain('Fixed the fence')
     expect(owners).toContain('Fixed the fence')
-    expect(owners).toContain('Painted the shed')
     expect(owners).not.toContain('Cleared the gutter')
     expect(drafts().map(r => r.user_id).sort()).toEqual([OWNER, PEER].sort())
   })
