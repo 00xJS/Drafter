@@ -91,27 +91,41 @@ function rangeTotal(res) {
 /**
  * Every row a select matches, in id order, or a throw — never a shorter list.
  * PostgREST cuts a response at max_rows (1000 on Supabase), and a list of
- * pieces of clothing cut short would read as photos nothing points at. So
- * each page asks how many rows are still to come (count=exact) and the next
- * one carries on after the last id it got: a row deleted meanwhile cannot
- * shift another out of the read, as an offset would. `path` selects `id`.
+ * pieces of clothing cut short would read as photos nothing points at. So the
+ * read goes a page at a time, each carrying on after the last id it got (a
+ * row deleted meanwhile cannot shift another out of the read, as an offset
+ * would), and ends at a page shorter than a full one. Each page used to ask
+ * how many rows were still to come (count=exact), which had Postgres count
+ * them all again for every page; a short page says the same for nothing. What
+ * a full page is, the first short one cannot say: the server may have cut it
+ * at a max_rows below `pageSize`. So the read carries on once more at that
+ * page's size — nothing more is the end, a page that size is the server's cap
+ * and the read goes on at it, and one short of it is the end. `path` selects `id`.
  */
 export async function restAll(path, pageSize = 1000) {
   const table = path.split('?')[0]
   const out = []
   let after = null
+  let limit = pageSize
+  /** Whether a page `limit` rows long is known to be a full one, so a shorter page is the end. */
+  let full = false
   for (let page = 0; page < 1000; page++) {
-    const res = await restResponse(`${path}${after === null ? '' : `&id=gt.${encodeURIComponent(after)}`}&order=id.asc&limit=${pageSize}`, {
-      headers: { prefer: 'count=exact' },
-    })
-    const left = rangeTotal(res)
+    const res = await restResponse(`${path}${after === null ? '' : `&id=gt.${encodeURIComponent(after)}`}&order=id.asc&limit=${limit}`)
     const text = await res.text()
     const rows = text ? JSON.parse(text) : []
-    if (left === null || !Array.isArray(rows)) throw new Error(`${table}: the server did not say how many rows there are`)
+    if (!Array.isArray(rows)) throw new Error(`${table}: the server did not answer with rows`)
     out.push(...rows)
-    if (rows.length >= left) return out
+    if (rows.length === 0) return out
+    if (rows.length < limit) {
+      if (full) return out
+      // the end, or the server's cap: the next page, at this size, says which
+      limit = rows.length
+    }
+    full = true
     const last = rows[rows.length - 1]?.id
     if (typeof last !== 'string') throw new Error(`${table}: a page came back without an id to carry on from`)
+    // a page ending where the last one did has not moved on: never read it again and again
+    if (last === after) throw new Error(`${table}: a page did not carry on after the last row`)
     after = last
   }
   throw new Error(`${table}: too many rows to read`)

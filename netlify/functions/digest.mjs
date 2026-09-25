@@ -41,6 +41,12 @@
 // Insights counts them, once — the notice for that month is its watermark,
 // written first. The rows are the digest's, plus that member's journal,
 // habits and clothes, read only on a run where a recap is still to go.
+//
+// Most hours are quiet: no account's morning digest, Sunday draft or recap is
+// due, and all a run can send is "Due now". user_settings, read first, says
+// which hour this is, and a quiet one reads only the tasks that can come due
+// now (dueWindowPath) — or nothing, with no browser to nudge — where every
+// hour used to read every row of the digest's eight kinds.
 
 import { buildDigest, localParts, visibleItemsFor } from '../../shared/digest.mts'
 import { isMineTask } from '../../shared/domain.mts'
@@ -81,6 +87,33 @@ const TOMBSTONE_TTL_MS = 90 * DAY
  * — notes, wardrobe, chat and all — to use these.
  */
 export const DIGEST_KINDS = Object.freeze(['task', 'project', 'person', 'place', 'meal', 'recipe', 'event', 'review'])
+
+/** An account's morning digest is due: once per local day, at or after its hour (8am unless it chose another). */
+function morningDue(u, now) {
+  const { hour, day } = localParts(now, u.timezone || 'UTC')
+  if (hour === null || day === null) return false
+  const wantHour = Number.isInteger(u.digest_hour) ? u.digest_hour : 8
+  return hour >= wantHour && u.last_digest_day !== day
+}
+
+/** An account a "Due now" can reach: push is set up here and it has a browser to push to (the iOS app keeps its own reminders). */
+const nudgeable = u => pushConfigured() && (u.push_subscriptions ?? []).some(s => s?.type !== 'apns')
+
+/**
+ * The rows a quiet hour reads: the tasks that can come due now, open (a row
+ * from before v3, with no kind, is read whatever its status says, as it reads
+ * as a task only once converted), their due date (due_at, stored as text) in
+ * a window a day wider on each side than the furthest a nudge reaches back
+ * (MAX_NUDGE_WINDOW), so an instant written with an offset is inside it too.
+ * The run then keeps, as it always did, only those due since each account's
+ * last check.
+ */
+export function dueWindowPath(now) {
+  const day = ms => new Date(ms).toISOString().slice(0, 10)
+  const from = day(now.getTime() - MAX_NUDGE_WINDOW - DAY)
+  const to = day(now.getTime() + 2 * DAY)
+  return `posts?select=id,data,user_id&deleted=is.false&kind=eq.task&or=(data->>kind.is.null,status.in.(${OPEN.join(',')}))&due_at=gte.${from}&due_at=lt.${to}`
+}
 
 async function rest(path, init = {}) {
   const url = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL
@@ -283,18 +316,28 @@ async function digestRun(now, run) {
   run.counts = { subscribers: active.length, sent: 0, draftsStarted: 0 }
   if (active.length === 0 && !drafting) return new Response(`no subscribers; ${checked}`, { status: 200 })
 
-  // keep row ownership so each recipient only ever sees their own scope. Read a
-  // page at a time (restAll, as the nightly backup reads them): one request
-  // stops at PostgREST's max_rows, and a read that can't be finished fails the
-  // run, to be tried again the next hour, rather than send a digest from part
-  // of the records. Only the kinds a digest reads (DIGEST_KINDS).
-  const rows = /** @type {{ user_id: string | null, data: unknown }[]} */ (await restAll(`posts?select=id,data,user_id&deleted=is.false&kind=in.(${DIGEST_KINDS.join(',')})`))
-  const peers = await buildPeerMap()
   // the monthly recaps still to go this hour, and the rows only they read
   const recaps = await recapsToSend(active, now, ownerId).catch(e => {
     run.failures.push(`recap: ${e?.message ?? e}`)
     return { due: new Map(), rows: [] }
   })
+  // A quiet hour — no morning digest, Sunday draft or recap due anywhere —
+  // can only send "Due now": it reads just the tasks that can come due now,
+  // and nothing with no browser to nudge.
+  const quiet = !drafting && recaps.due.size === 0 && !active.some(u => morningDue(u, now))
+  // keep row ownership so each recipient only ever sees their own scope. Read a
+  // page at a time (restAll, as the nightly backup reads them): one request
+  // stops at PostgREST's max_rows, and a read that can't be finished fails the
+  // run, to be tried again the next hour, rather than send a digest from part
+  // of the records. Only the kinds a digest reads (DIGEST_KINDS).
+  const rows = /** @type {{ user_id: string | null, data: unknown }[]} */ (
+    !quiet
+      ? await restAll(`posts?select=id,data,user_id&deleted=is.false&kind=in.(${DIGEST_KINDS.join(',')})`)
+      : active.some(nudgeable)
+        ? await restAll(dueWindowPath(now))
+        : []
+  )
+  const peers = await buildPeerMap()
   let sent = 0
   // the job's record reads this list as it grows, so a run that throws part-way keeps what failed before
   const failures = run.failures
@@ -342,9 +385,8 @@ async function digestRun(now, run) {
 
       // 1. morning digest — once per local day, at or after the chosen hour so a
       //    skipped or delayed run still delivers instead of silently dropping the day
-      const wantHour = Number.isInteger(u.digest_hour) ? u.digest_hour : 8
       let morning = null
-      if (hour >= wantHour && u.last_digest_day !== day) {
+      if (morningDue(u, now)) {
         // Sunday's digest is the doorway to the weekly review, and to planning the week it starts
         const sunday = weekday === 'Sun'
         const weekPlan = sunday ? weekPlanSummary(proposeWeek(items, { todayKey: day, tz, userId: u.user_id, now })) : null

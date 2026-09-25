@@ -28,6 +28,7 @@ vi.mock('../../netlify/functions/lib/ai.mjs', () => ({ resolveProvider: () => nu
 
 // @ts-expect-error — a function file ships with no .d.mts: Netlify would deploy one as a function of its own
 import digestFunction from '../../netlify/functions/digest.mjs'
+import { pageResponse } from './postgrest'
 
 const SUPABASE = 'https://db.example.test'
 const REST = `${SUPABASE}/rest/v1/`
@@ -123,9 +124,8 @@ beforeEach(() => {
       if (path === 'job_runs?on_conflict=job' && method === 'POST') return new Response(null, { status: 201 })
       if (path.startsWith('posts?select=id,data,user_id&deleted=is.false&')) {
         reads.push(decodeURIComponent(path))
-        // every row, whatever the filter asks: the recap sorts out what is whose itself
-        const page = rows.map(r => ({ id: r.data.id, ...structuredClone(r) }))
-        return new Response(JSON.stringify(page), { headers: { 'content-range': page.length ? `0-${page.length - 1}/${page.length}` : '*/0' } })
+        // every row, whatever the filter asks, a page at a time: the recap sorts out what is whose itself
+        return pageResponse(path, rows.map(r => ({ id: r.data.id as string, ...structuredClone(r) })))
       }
       if (path === 'household_members?select=household_id,user_id') {
         return Response.json([
@@ -205,7 +205,8 @@ describe('when the recap goes', () => {
     expect(recaps()).toEqual([])
     expect([...kept.keys()].filter(id => id.includes('~recap~'))).toEqual([])
     // only the digest's own read: no personal kinds were fetched for a recap not due
-    expect(reads.every(r => r.includes('kind=in.(task,project,person,place,meal,recipe,event,review)'))).toBe(true)
+    // (an hour with only "Due now" to send reads just the tasks that can come due)
+    expect(reads.every(r => r.includes('kind=in.(task,project,person,place,meal,recipe,event,review)') || r.includes('&kind=eq.task&'))).toBe(true)
   })
 })
 
@@ -379,7 +380,8 @@ describe('what the recap says, and to whom', () => {
     settings = [account(JOE)]
     rows = [person('marco', 'Tio Marco')]
     await runAt('2026-10-01T15:00:00.000Z')
-    const personal = () => reads.filter(r => r.includes('kind=in.(journal,habit,garment,wear)'))
+    // a read is its first page: restAll reads on after a short one to be sure it is the end
+    const personal = () => reads.filter(r => r.includes('kind=in.(journal,habit,garment,wear)') && !r.includes('&id=gt.'))
     expect(personal()).toHaveLength(1)
     await runAt('2026-10-01T16:00:00.000Z')
     await runAt('2026-10-01T23:00:00.000Z')
@@ -447,7 +449,7 @@ describe('the recap’s own read', () => {
     settings = [account(JOE)]
     rows = september()
     await runAt('2026-10-01T15:00:00.000Z')
-    const own = reads.filter(r => r.includes('kind=in.(journal,habit,garment,wear)'))
+    const own = reads.filter(r => r.includes('kind=in.(journal,habit,garment,wear)') && !r.includes('&id=gt.'))
     expect(own).toHaveLength(1)
     expect(own[0]).toContain(`user_id=in.(${JOE})`)
     expect(own[0]).not.toContain('user_id.is.null')

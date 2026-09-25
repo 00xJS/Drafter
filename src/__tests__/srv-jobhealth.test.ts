@@ -8,6 +8,7 @@ import backupFunction from '../../netlify/functions/backup.mjs'
 import digestFunction from '../../netlify/functions/digest.mjs'
 // @ts-expect-error — as above
 import adminFunction from '../../netlify/functions/admin.mjs'
+import { pageResponse } from './postgrest'
 
 // backup.mjs and digest.mjs used to log a failure where nobody looks and
 // answer 200 either way, so a job that failed every night — or stopped being
@@ -78,14 +79,10 @@ let settings: Record<string, unknown>[]
 let settingsDown: boolean
 let signedIn: string
 
-/** PostgREST answering restAll: the page after the id it carried on from, and how many were left. */
+/** PostgREST answering restAll: the page after the id it carried on from — or, with the records unreadable, a statement timeout. */
 function page(url: string, rows: Row[]) {
-  const q = new URL(`https://x/${url}`).searchParams
-  const after = q.get('id')?.replace(/^gt\./, '') ?? null
-  const left = rows.filter(r => after === null || r.id > after).sort((x, y) => (x.id < y.id ? -1 : 1))
-  const out = left.slice(0, Number(q.get('limit') ?? 1000))
-  if (postsUnreadable) return new Response(JSON.stringify(out))
-  return new Response(JSON.stringify(out), { headers: { 'content-range': out.length ? `0-${out.length - 1}/${left.length}` : `*/${left.length}` } })
+  if (postsUnreadable) return Response.json({ message: 'canceling statement due to statement timeout' }, { status: 500 })
+  return pageResponse(url, rows)
 }
 
 beforeEach(() => {
@@ -207,8 +204,8 @@ describe('the nightly backup records each run', () => {
 
   it('a night that could not read the records at all: recorded as failed, and still thrown as before', async () => {
     postsUnreadable = true
-    await expect(runBackupJob()).rejects.toThrow('the server did not say how many rows there are')
-    expect(recordOf('backup')).toMatchObject({ ok: false, last_good_at: null, failures: ['the run stopped: posts: the server did not say how many rows there are'] })
+    await expect(runBackupJob()).rejects.toThrow('posts: 500 {"message":"canceling statement due to statement timeout"}')
+    expect(recordOf('backup')).toMatchObject({ ok: false, last_good_at: null, failures: ['the run stopped: posts: 500 {"message":"canceling statement due to statement timeout"}'] })
   })
 
   it('drops client error reports nobody has hit for thirty days', async () => {

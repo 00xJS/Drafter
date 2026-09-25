@@ -25,6 +25,7 @@ vi.mock('../../netlify/functions/lib/ai.mjs', () => ({ resolveProvider: () => nu
 
 // @ts-expect-error — a function file ships with no .d.mts: Netlify would deploy one as a function of its own
 import digestFunction from '../../netlify/functions/digest.mjs'
+import { pageResponse } from './postgrest'
 
 const SUPABASE = 'https://db.example.test'
 const REST = `${SUPABASE}/rest/v1/`
@@ -97,10 +98,7 @@ beforeEach(() => {
         jobRecord = body
         return new Response(null, { status: 201 })
       }
-      if (path.startsWith('posts?select=id,data,user_id&deleted=is.false&')) {
-        const page = rows.map(r => ({ id: r.data.id, ...structuredClone(r) }))
-        return new Response(JSON.stringify(page), { headers: { 'content-range': page.length ? `0-${page.length - 1}/${page.length}` : '*/0' } })
-      }
+      if (path.startsWith('posts?select=id,data,user_id&deleted=is.false&')) return pageResponse(path, rows.map(r => ({ id: r.data.id as string, ...structuredClone(r) })))
       if (path === 'household_members?select=household_id,user_id') {
         return Response.json([
           { household_id: 'h1', user_id: ME },

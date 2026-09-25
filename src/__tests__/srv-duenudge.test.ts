@@ -27,6 +27,7 @@ vi.mock('../../netlify/functions/lib/ai.mjs', () => ({ resolveProvider: () => nu
 import digestFunction from '../../netlify/functions/digest.mjs'
 import { dueNotices } from '../notify'
 import type { Task } from '../types'
+import { pageResponse } from './postgrest'
 
 const SUPABASE = 'https://db.example.test'
 const REST = `${SUPABASE}/rest/v1/`
@@ -88,9 +89,8 @@ beforeEach(() => {
       if (path.startsWith('job_runs?job=eq.')) return Response.json([])
       if (path === 'job_runs?on_conflict=job' && method === 'POST') return new Response(null, { status: 201 })
       if (path.startsWith('posts?select=id,data,user_id&deleted=is.false&')) {
-        // every row in one page, as restAll reads it
-        const page = rows.map(r => ({ id: r.data.id, ...structuredClone(r) }))
-        return new Response(JSON.stringify(page), { headers: { 'content-range': page.length ? `0-${page.length - 1}/${page.length}` : '*/0' } })
+        // every row, a page at a time as restAll reads it
+        return pageResponse(path, rows.map(r => ({ id: r.data.id as string, ...structuredClone(r) })))
       }
       if (path === 'household_members?select=household_id,user_id') return Response.json(households)
       if (path.startsWith('user_settings?user_id=eq.') && method === 'PATCH') {
