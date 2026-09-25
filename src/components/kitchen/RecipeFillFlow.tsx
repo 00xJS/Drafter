@@ -127,7 +127,7 @@ export function RecipeFillFlow({ run, recipes, waiting = NO_ROWS, onDraftRow, my
           <p className="recipe-fill-done" role="status">
             {fillSummary(run)}
           </p>
-          {run.skipped > 0 && onDraftRow && <p className="field-hint">What you skipped stays aside: Recipes offers it again only once you bring it back.</p>}
+          {run.skipped > 0 && onDraftRow && <p className="field-hint">Skipped ones stay aside. Once nothing else is left to fill in, Recipes offers to bring them back.</p>}
         </div>
         <footer className="modal-foot">
           <span className="spacer" />

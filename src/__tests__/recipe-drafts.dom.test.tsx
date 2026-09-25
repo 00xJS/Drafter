@@ -141,7 +141,7 @@ describe('Fill them in, with drafts made ahead of time', () => {
     expect(row(recipeDraftId('dal'))).toMatchObject({ recipeId: 'dal', ingredients: [{ name: 'red lentils', qty: 1, unit: 'cup' }], skippedBy: JOE })
 
     expect(sheet().getByText('1 recipe filled in, 2 skipped. The grocery list uses them from now on.')).toBeTruthy()
-    expect(sheet().getByText(/What you skipped stays aside/)).toBeTruthy()
+    expect(sheet().getByText(/Skipped ones stay aside/)).toBeTruthy()
     fireEvent.click(sheet().getByRole('button', { name: 'Done' }))
 
     // nothing but Save touched a recipe

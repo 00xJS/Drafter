@@ -218,6 +218,6 @@ describe('the sheet, with a draft waiting', () => {
     const done = { ...newFillRun(['a']), at: 1, skipped: 1 }
     const html = renderToStaticMarkup(<RecipeFillFlow run={done} recipes={list} waiting={[]} onDraftRow={noop} fill={never} onDraft={noop} onSave={noop} onEdit={noop} onSkip={noop} onStop={noop} />)
     expect(html).toContain('Nothing saved, 1 skipped.')
-    expect(html).toContain('What you skipped stays aside')
+    expect(html).toContain('Skipped ones stay aside. Once nothing else is left to fill in, Recipes offers to bring them back.')
   })
 })

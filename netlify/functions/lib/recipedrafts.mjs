@@ -40,6 +40,10 @@
 // recipe was deleted, or has ingredients now, is removed: a content-free
 // tombstone, written as the draft's own owner. Each run is kept in job_runs
 // ('recipe-drafts').
+//
+// Before the v3.35 migration the database refuses the kind, so a run that
+// finds it missing (record_kind_allowed) asks the model nothing and says so
+// in its record.
 
 import { JSON_ONLY } from '../../../shared/ai.mts'
 import { localParts, visibleItemsFor } from '../../../shared/digest.mts'
