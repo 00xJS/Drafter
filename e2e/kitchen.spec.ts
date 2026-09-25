@@ -10,7 +10,7 @@ async function planTonight(page: Page, app: App, dish: string) {
   await dinner.getByRole('button', { name: 'Choose…' }).click()
   const picker = page.getByRole('dialog', { name: / · Dinner$/ })
   await picker.getByRole('button', { name: 'Something new…' }).click()
-  await picker.getByRole('textbox', { name: `Name of the new recipe for dinner on ${app.today}` }).fill(dish)
+  await picker.getByRole('textbox', { name: `Name of the new recipe for dinner on ${app.spokenToday}` }).fill(dish)
   await page.keyboard.press('Enter')
   await expect(picker).toBeHidden()
   await expect(dinner.getByText(dish, { exact: true })).toBeVisible()

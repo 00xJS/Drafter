@@ -17,14 +17,19 @@ export interface App {
   go(view: View): Promise<void>
   /** Today's day key, YYYY-MM-DD, in the test's time zone. */
   today: string
+  /** Today as the app says a day to a screen reader ("Friday, September 25"): the meal fields are named with it. */
+  spokenToday: string
 }
 
 export const test = base.extend<AppOptions & { app: App }>({
   appPath: ['/', { option: true }],
   app: async ({ page, appPath }, use) => {
     const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Phoenix' }).format(new Date())
+    // read at noon of the day, as src/utils.ts spokenDay reads it, so no zone moves it
+    const spokenToday = new Date(`${today}T12:00:00`).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
     await use({
       today,
+      spokenToday,
       open: async () => {
         await page.goto(appPath)
         await expect(page.getByRole('main')).toBeVisible()
