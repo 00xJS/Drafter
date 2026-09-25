@@ -3,8 +3,7 @@ import { BILL_TEMPLATES, TEMPLATE_GROUPS, billFromTemplate, goalFromForm } from 
 import { savedSoFar } from '../bills'
 import {
   CHECK_IN_DEFAULT,
-  PAYDAY_HORIZON_DAYS,
-  afterLine,
+  TIMELINE_DAYS,
   cashLine,
   cashRunway,
   checkInDone,
@@ -17,19 +16,21 @@ import {
   occurrencesUntil,
   openCheckIn,
   parseBalance,
+  safeLine,
   safeToSpend,
   savingGoals,
   slotOf,
   withBalance,
 } from '../finance'
+import { dayLabel, shortDay } from '../components/finance/labels'
 import { sanitizeTask } from '../schema'
 import { CHECK_IN_PREFIX } from '../../shared/domain.mts'
 import { BILL_KINDS, RECURRENCE_META, type Account, type Task } from '../types'
 
-// The timeline's arithmetic: safe to spend until payday, the cash line and its
-// low point, Coming up's order, and how a savings goal is doing. All of it is
-// read from the same rows the runway always counted, so a figure on the new
-// screen and the same figure elsewhere cannot disagree.
+// The timeline's arithmetic: safe to spend, the cash line and its low point,
+// Coming up's order, and how a savings goal is doing. All of it is read off
+// one forecast (moneyForecast, the one rule: finance-rule.test.ts), so a
+// figure on the screen and the same figure elsewhere cannot disagree.
 
 /** Monday 21 September 2026, noon: the day a view hands in (noonOf). */
 const NOW = new Date(2026, 8, 21, 12, 0)
@@ -53,47 +54,56 @@ const payday = (id: string, amount: number, due: string, over: Partial<Task> = {
   task(id, { bill: { kind: 'income' }, estimateCost: amount, recurrence: { freq: 'biweekly' }, dueAt: due, ...over })
 const setAside = (id: string, amount: number, due: string, over: Partial<Task> = {}) =>
   task(id, { bill: { kind: 'saving' }, estimateCost: amount, recurrence: { freq: 'monthly' }, dueAt: due, ...over })
+/** A bill that does not come round again. */
+const once = (id: string, amount: number, due: string) => bill(id, amount, due, { recurrence: undefined })
 const account = (id: string, type: Account['type'], balances: [string, number][] = []): Account =>
   balances.reduce<Account>((a, [on, amount]) => withBalance(a, amount, on), { kind: 'account', id, name: id, type, balances: [], createdAt: STAMP, updatedAt: STAMP })
 
 const checking = account('chk', 'checking', [['2026-09-20', 2000]])
 
-describe('safe to spend until payday', () => {
+describe('safe to spend', () => {
+  // checked in on Sunday the 20th; it is Monday the 21st
   const rows = [
-    bill('phone', 60, day(9, 10)), // overdue: owed now
+    bill('phone', 60, day(9, 10)), // due before the check-in: the balance has it
     bill('rent', 1200, day(9, 25)),
     setAside('fund', 100, day(9, 24)),
     payday('pay', 1840, day(10, 2)),
-    bill('electric', 150, day(10, 2)), // due ON payday: that payday's
-    bill('internet', 80, day(10, 5)), // after it
+    bill('electric', 150, day(10, 2)), // due ON payday: the two net on the day
+    bill('internet', 80, day(10, 5)),
   ]
+  const say = { day: dayLabel, short: shortDay, payday: (r: { task: Task }) => r.task.title }
 
-  it('is what the accounts hold less every bill and set-aside before the next payday', () => {
+  it('is the lowest the line goes in the next 30 days, and says the day and what it counted', () => {
     const s = safeToSpend([checking], rows, NOW)
-    expect(s.amount).toBe(2000 - 60 - 1200 - 100)
-    expect(s.payday?.task.id).toBe('pay')
-    expect(s.through).toBe('2026-10-01')
-    expect([s.bills, s.setAsides, s.owed]).toEqual([2, 1, 1360])
-    expect(afterLine(s)).toBe('after 2 bills and a set-aside')
+    // 2,000 less the fund and the rent; the phone is in the balance, and payday comes after
+    expect(s.amount).toBe(2000 - 100 - 1200)
+    expect(s.low).toBe('2026-09-25')
+    expect(s.before?.task.id).toBe('pay')
+    expect(s.through).toBe('2026-10-21')
+    // next month's phone comes round on the 10th, and the pay again on the 16th
+    expect([s.bills, s.paydays, s.setAsides]).toEqual([4, 2, 1])
+    expect(safeLine(s, '2026-09-21', say)).toBe('Lowest on Fri, Sep 25, before pay · counts 4 bills, 2 paydays and 1 set-aside through Oct 21')
   })
 
-  it('runs to the payday after today: one due today, or late, is in the balance or not here yet', () => {
+  it('adds a payday due today, or late since the check-in, as it takes off a bill', () => {
     const today = payday('today', 1840, day(9, 21))
-    const late = payday('late', 900, day(9, 18))
+    const late = payday('late', 900, day(9, 18)) // before the check-in: in the balance already
     const s = safeToSpend([checking], [...rows, today, late], NOW)
-    expect(s.payday?.task.id).toBe('pay')
-    // and neither is added to what is there
-    expect(s.amount).toBe(640)
+    // today's is here now, so the fund and the rent come out of more than there was
+    expect(s.amount).toBe(2000 + 1840 - 100 - 1200)
+    expect(s.low).toBe('2026-09-25')
+    // and both come round again: today's on the 5th and 19th, the late one's on the 2nd and 16th
+    expect(s.paydays).toBe(2 + 3 + 2)
   })
 
-  it('covers the next 30 days when no payday lands within 45', () => {
+  it('looks 30 days ahead, and names no payday when none comes after the low point', () => {
     const far = payday('far', 1840, day(11, 20))
-    expect(PAYDAY_HORIZON_DAYS).toBe(45)
-    const s = safeToSpend([checking], [bill('rent', 1200, day(9, 25)), bill('insurance', 300, day(10, 21)), bill('later', 999, day(10, 22)), far], NOW)
-    expect(s.payday).toBeNull()
+    expect(TIMELINE_DAYS).toBe(30)
+    const s = safeToSpend([checking], [once('rent', 1200, day(9, 25)), once('insurance', 300, day(10, 21)), once('later', 999, day(10, 22)), far], NOW)
+    expect(s.before).toBeNull()
     expect(s.through).toBe('2026-10-21')
     expect(s.amount).toBe(2000 - 1200 - 300)
-    expect(afterLine(s)).toBe('after 2 bills')
+    expect(safeLine(s, '2026-09-21', say)).toBe('Lowest on Wed, Oct 21 · counts 2 bills through Oct 21')
   })
 
   it('counts checking and cash, never savings, and is as old as their oldest check-in', () => {
@@ -104,7 +114,7 @@ describe('safe to spend until payday', () => {
     expect(s.spendable).toBe(2040)
     expect(s.asOf).toBe('2026-09-19')
     expect(s.unchecked).toBe(1)
-    expect(afterLine(s)).toBe('nothing due before then')
+    expect(safeLine(s, '2026-09-21', say)).toBe('Nothing falls due through Oct 21')
     // the accounts total still has the savings in it
     expect(moneyTotals(accounts).liquid).toBe(2540)
     expect(s.asOf).toBe(moneyTotals(accounts).spendableAsOf)
@@ -143,16 +153,21 @@ describe('the cash line', () => {
     expect(line.start).toBe(2000)
     expect(line.from).toBe('2026-09-21')
     expect(line.to).toBe('2026-10-21')
-    expect(line.days.map(d => d.balance)).toEqual([800, 1800, -300, 700])
+    // the 16th has both paydays: pay2's own, and pay's again a fortnight on
+    expect(line.days.map(d => d.balance)).toEqual([800, 1800, -300, 1700])
     expect(line.low).toEqual({ day: '2026-10-03', balance: -300 })
     expect(line.high).toBe(2000)
     // the shortfall in firstShortfall's own words
     expect(line.short).toEqual(firstShortfall(cashRunway([checking], rows, 30, NOW)))
+    // and safe to spend is its low point
+    expect(safeToSpend([checking], rows, NOW).amount).toBe(line.low.balance)
   })
 
-  it('finds a lower point once it looks 60 days ahead', () => {
+  it('finds a lower point once it looks 60 days ahead, with every repeat that lands in it', () => {
     const line = cashLine([checking], rows, 60, NOW)!
-    expect(line.low).toEqual({ day: '2026-11-05', balance: -800 })
+    // the rent again on the 25th, the car again on the 3rd, then the insurance
+    expect(line.low).toEqual({ day: '2026-11-05', balance: -1100 })
+    expect(line.days.map(d => d.day)).toEqual(['2026-09-25', '2026-10-02', '2026-10-03', '2026-10-16', '2026-10-25', '2026-10-30', '2026-11-03', '2026-11-05', '2026-11-13'])
   })
 
   it('lies flat at today when nothing takes it lower, and is not drawn with no balance', () => {
@@ -162,8 +177,9 @@ describe('the cash line', () => {
 })
 
 describe('coming up', () => {
-  it('puts what is overdue first, then goes by day, money in before money out', () => {
-    const rows = comingUp(
+  it('puts what is overdue first, then goes by day, money in before money out, what repeats with it', () => {
+    const { rows, undated } = comingUp(
+      [],
       [
         bill('rent', 1200, day(9, 25)),
         payday('pay', 1840, day(9, 25)),
@@ -179,12 +195,19 @@ describe('coming up', () => {
       ],
       NOW,
     )
-    expect(rows.map(r => r.task.id)).toEqual(['late', 'later', 'fund', 'water', 'pay', 'rent'])
-    expect(rows.map(r => r.overdue)).toEqual([true, true, false, false, false, false])
+    expect(rows.map(r => r.task.id)).toEqual(['late', 'later', 'fund', 'water', 'pay', 'rent', 'pay', 'late', 'later'])
+    expect(rows.map(r => r.overdue)).toEqual([true, true, false, false, false, false, false, false, false])
+    // what the repeats bring is expected, not a task yet: the pay a fortnight on, the late bills next month
+    expect(rows.slice(6).map(r => [r.task.id, r.due, r.projected])).toEqual([
+      ['pay', '2026-10-09', true],
+      ['late', '2026-10-12', true],
+      ['later', '2026-10-15', true],
+    ])
     // an overdue one is owed today, and remembers when it was due
     expect(rows[0]).toMatchObject({ day: '2026-09-21', due: '2026-09-12' })
     expect(rows.find(r => r.task.id === 'water')?.amount).toBeUndefined()
     expect(rows.find(r => r.task.id === 'fund')).toMatchObject({ saving: true, income: false })
+    expect(undated).toEqual([])
   })
 })
 
@@ -192,7 +215,7 @@ describe('what is overdue, by the one rule', () => {
   it('is a day that is over: a bill due today stays today’s, its time gone by or not (shared/due.mts)', () => {
     const morning = bill('morning', 20, new Date(2026, 8, 21, 9, 0).toISOString())
     const yesterday = bill('yesterday', 20, new Date(2026, 8, 20, 23, 0).toISOString())
-    const rows = comingUp([morning, yesterday], NOW)
+    const rows = comingUp([], [morning, yesterday], NOW).rows.filter(r => !r.projected)
     expect(rows.map(r => [r.task.id, r.overdue, r.day])).toEqual([
       ['yesterday', true, '2026-09-21'],
       ['morning', false, '2026-09-21'],

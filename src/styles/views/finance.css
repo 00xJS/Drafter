@@ -89,10 +89,10 @@
 }
 
 /* ---------- the money timeline ----------
-   Finance opens on one screen: safe to spend until payday, the next 30 days
-   as a line, what falls due, the accounts and the goals. Every colour here is
-   a token, so it reads the same in the light theme and the dark; a phone's
-   rules sit under the width and pointer guards at the end. */
+   Finance opens on one screen: safe to spend, the next 30 days as a line,
+   what falls due, the accounts and the goals. Every colour here is a token,
+   so it reads the same in the light theme and the dark; a phone's rules sit
+   under the width and pointer guards at the end. */
 .finance-seg {
   margin: 0 0 14px;
 }
@@ -140,6 +140,13 @@
   margin: 0;
   color: var(--text-2);
   font-size: 0.9375rem;
+}
+/* what has no date, and so is not in the figure above it */
+.fin-hero-undated {
+  margin: 4px 0 0;
+  color: var(--warn-text);
+  font-size: 0.8125rem;
+  font-weight: 600;
 }
 .fin-hero-asof {
   display: flex;
@@ -383,6 +390,59 @@
 .bill-amount.none {
   color: var(--muted);
   font-weight: 400;
+}
+/* What a repeat brings is expected, not a task: no card of its own, a dashed
+   edge, and its name and amount a step back in ink (never below 4.5:1). */
+.fin-row.projected {
+  border-style: dashed;
+  background: transparent;
+}
+.fin-row.projected .fin-date {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+.fin-row.projected .bill-copy strong,
+.fin-row.projected .bill-amount:not(.in):not(.kept) {
+  color: var(--text-2);
+  font-weight: 600;
+}
+.fin-row.projected .bill-main {
+  min-height: 48px;
+}
+/* Needs a date: first in Coming up, each with the field that gives it one */
+.fin-undated {
+  margin-bottom: 12px;
+}
+.fin-undated-head {
+  margin: 0 0 6px;
+  color: var(--warn-text);
+  font-size: calc(0.75rem * var(--type-scale));
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.fin-row.undated {
+  border-style: dashed;
+  border-color: var(--border-strong);
+}
+/* its field, with what it is for beside it: an empty date field shows
+   nothing on an iPhone, and a greyed-out today on a Mac */
+.fin-undated-date {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  margin-right: 8px;
+  color: var(--text-2);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+/* a typed field is 16px or a phone zooms (16-zoom-guard.css) */
+.fin-date-input {
+  width: 10rem;
+  min-height: 40px;
+  font-size: max(16px, 1rem);
 }
 
 .fin-tiles {
@@ -787,6 +847,25 @@
    turn on as Dynamic Type grows, not only on a narrower screen: the four
    buttons go two by two, and a row puts its amount under the name, which
    keeps the name instead of cutting it to a letter or two. */
+/* A row with no date puts its field on a line of its own where the name and
+   the field would not both fit beside the amount: a phone, or a narrow column. */
+@container fin (max-width: 30rem) {
+  .fin-row.undated {
+    flex-wrap: wrap;
+  }
+  .fin-row.undated .bill-main {
+    flex-basis: 100%;
+  }
+  .fin-row.undated .fin-undated-date {
+    flex: 1 1 100%;
+    margin: 0 10px 10px;
+  }
+  .fin-row.undated .fin-date-input {
+    flex: 1 1 auto;
+    width: auto;
+    min-width: 0;
+  }
+}
 @container fin (max-width: 21rem) {
   .fin-actions {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -817,7 +896,8 @@
   .fin-tile,
   .fin-goal,
   .tpl,
-  .fin-autopay {
+  .fin-autopay,
+  .fin-date-input {
     min-height: 44px;
   }
   .goal-emoji-pick {

@@ -73,7 +73,8 @@ describe('a set-aside is money kept', () => {
       ['2026-09-25', 700],
       ['2026-09-26', 2700],
     ])
-    expect(run[0].rows).toEqual([{ title: 'Emergency fund', amount: 100, income: false, saving: true }])
+    expect(run[0].rows).toEqual([expect.objectContaining({ title: 'Emergency fund', amount: 100, income: false, saving: true })])
+    expect(run[0].rows[0].projected).toBeUndefined()
   })
 
   it('is left out of what the Stats lens says was paid, and so is a payday', () => {

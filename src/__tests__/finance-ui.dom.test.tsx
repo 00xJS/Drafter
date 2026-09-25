@@ -7,9 +7,9 @@ import { withBalance } from '../finance'
 import type { Account, Task } from '../types'
 
 // Finance as it is drawn — by the React Compiler, as every DOM test runs it:
-// the timeline on its first run and filled in, + Bill's templates, Check in,
-// + Goal, the weekly check-in, and the hand-off that opens Check in from the
-// check-in's own task.
+// the timeline on its first run and filled in, money with no date, + Bill's
+// templates, Check in, + Goal, the weekly check-in, and the hand-off that
+// opens Check in from the check-in's own task.
 
 /** Wednesday 23 September 2026, noon. */
 const NOW = new Date(2026, 8, 23, 12, 0)
@@ -96,28 +96,62 @@ describe('the timeline, on its first run', () => {
 })
 
 describe('the timeline, filled in', () => {
-  it('says what is safe to spend until the next payday, and what came off it', () => {
+  it('says what is safe to spend: the lowest the next 30 days go, the day, and what it counted', () => {
     render(<Finance {...props()} />)
-    const hero = screen.getByRole('region', { name: 'Safe to spend until payday' })
-    // 1,420.18 in checking, less the overdue internet and Netflix before Friday's pay
+    const hero = screen.getByRole('region', { name: 'Safe to spend' })
+    // 1,420.18 in checking, less the internet due since the check-in and Thursday's Netflix, before Friday's pay
     expect(hero.textContent).toContain('$1,324.70')
-    expect(hero.textContent).toContain('Fri, Sep 25 · after 2 bills ($95.48)')
+    expect(hero.textContent).toContain('Lowest on Thu, Sep 24, before Joseph’s pay · counts 4 bills, 4 paydays and 2 set-asides through Oct 23')
+    expect(hero.className).not.toContain('short')
     // as old as the checking it counts: the card's older check-in (Sep 14) is not in the figure
     expect(hero.textContent).toContain('Balances as of Sep 21')
+    expect(hero.textContent).not.toMatch(/no date/)
+  })
+
+  it('says so, in the shortfall ink, when the lowest day is below zero', () => {
+    render(<Finance {...props({ accounts: [account('chk', 'Joint checking', 'checking', ['2026-09-21', 50])] })} />)
+    const hero = screen.getByRole('region', { name: 'Safe to spend' })
+    expect(hero.className).toContain('short')
+    // 50 less the internet since the check-in and Thursday's Netflix, before Friday's pay
+    expect(hero.textContent).toContain('-$45.48')
+    expect(hero.textContent).toContain('Lowest on Thu, Sep 24, before Joseph’s pay')
+    // and the line says when it first goes under, in the words it always has: today, with the internet out
+    expect(screen.getByText(/^On Wed, Sep 23 the money you can actually spend goes to -\$29\.99 — counting only what is written down\.$/)).toBeTruthy()
   })
 
   it('lists what is due, overdue first, paydays by whose they are and in with a plus', () => {
     render(<Finance {...props()} />)
     const coming = screen.getByRole('region', { name: 'Coming up' })
-    const names = within(coming)
-      .getAllByRole('listitem')
-      .map(li => li.querySelector('.bill-copy strong')?.textContent?.replace(/^\S+\s/, ''))
-    expect(names).toEqual(['Internet', 'Netflix', 'Joseph’s pay', 'Emergency fund', 'Rent', 'Maria’s pay'])
-    const first = within(coming).getAllByRole('listitem')[0]
+    const items = within(coming).getAllByRole('listitem')
+    const real = items.filter(li => !li.className.includes('projected'))
+    const names = (lis: HTMLElement[]) => lis.map(li => li.querySelector('.bill-copy strong')?.textContent?.replace(/^\S+\s/, ''))
+    expect(names(real)).toEqual(['Internet', 'Netflix', 'Joseph’s pay', 'Emergency fund', 'Rent', 'Maria’s pay'])
+    const first = items[0]
     expect(first.className).toContain('overdue')
     expect(first.textContent).toContain('Overdue')
     expect(first.textContent).toContain('Autopay')
-    expect(within(coming).getAllByRole('listitem')[2].textContent).toContain('+$2,450.00')
+    expect(items[2].textContent).toContain('+$2,450.00')
+  })
+
+  it('lists what the repeats bring as expected, lighter and with nothing to tick', () => {
+    render(<Finance {...props()} />)
+    const coming = screen.getByRole('region', { name: 'Coming up' })
+    const expected = within(coming)
+      .getAllByRole('listitem')
+      .filter(li => li.className.includes('projected'))
+    // Joseph's pay every fortnight, the fund's next set-aside, next month's internet
+    expect(expected.map(li => [li.querySelector('.fin-date')?.textContent, li.querySelector('.bill-copy strong')?.textContent?.replace(/^\S+\s/, '')])).toEqual([
+      ['Fri 9', 'Joseph’s pay'],
+      ['Sat 10', 'Emergency fund'],
+      ['Thu 22', 'Internet'],
+      ['Fri 23', 'Joseph’s pay'],
+    ])
+    for (const li of expected) {
+      expect(li.textContent).toContain('Expected')
+      expect(within(li).queryByRole('button', { name: /^Mark / })).toBeNull()
+    }
+    // only the open one can be marked received
+    expect(screen.getAllByRole('button', { name: 'Mark Joseph’s pay received' })).toHaveLength(1)
   })
 
   it('marks a bill paid the way it always has, and opens a row in the editor', () => {
@@ -180,6 +214,42 @@ describe('the timeline, filled in', () => {
     expect(screen.getAllByTitle('Rename')).toHaveLength(2)
     expect(screen.getAllByRole('button', { name: 'Close' })).toHaveLength(2)
     expect(screen.getAllByRole('button', { name: 'Delete' })).toHaveLength(2)
+  })
+})
+
+describe('money with no date', () => {
+  const bonus = task('bonus', { title: 'Payday', bill: { kind: 'income', forMemberId: MARIA }, estimateCost: 500, recurrence: { freq: 'biweekly' } })
+  const gym = task('gym', { title: 'Gym', bill: { kind: 'subscription' }, estimateCost: 30, recurrence: { freq: 'monthly' } })
+
+  it('comes first under Needs a date, is left out of safe to spend, and the figure says so', () => {
+    render(<Finance {...props({ tasks: [...rows, gym, bonus] })} />)
+    const coming = screen.getByRole('region', { name: 'Coming up' })
+    const needs = within(coming).getByRole('group', { name: 'Needs a date' })
+    expect(coming.firstElementChild?.nextElementSibling).toBe(needs)
+    const items = within(needs).getAllByRole('listitem')
+    expect(items.map(li => li.querySelector('.bill-copy strong')?.textContent?.replace(/^\S+\s/, ''))).toEqual(['Maria’s pay', 'Gym'])
+    expect(items[0].textContent).toContain('+$500.00')
+    expect(items[0].textContent).toContain('Not counted')
+    const hero = screen.getByRole('region', { name: 'Safe to spend' })
+    expect(hero.textContent).toContain('$1,324.70')
+    expect(hero.textContent).toContain('1 bill and 1 payday have no date, so they aren’t counted yet.')
+  })
+
+  it('takes a date where it is listed, and saves it as the day with no time', () => {
+    const p = props({ tasks: [...rows, bonus] })
+    render(<Finance {...p} />)
+    const field = screen.getByLabelText('Maria’s pay: next date') as HTMLInputElement
+    expect(field.type).toBe('date')
+    expect(field.className).toContain('fin-date-input')
+    // a year typed a digit at a time passes through years nobody means
+    fireEvent.change(field, { target: { value: '0002-09-30' } })
+    expect(p.onSaveTask).not.toHaveBeenCalled()
+    fireEvent.change(field, { target: { value: '2026-09-30' } })
+    expect(p.onSaveTask).toHaveBeenCalledTimes(1)
+    const saved = vi.mocked(p.onSaveTask).mock.calls[0][0]
+    expect(saved).toMatchObject({ id: 'bonus', title: 'Payday', estimateCost: 500, bill: { kind: 'income', forMemberId: MARIA } })
+    expect(saved.dueAt).toBe(new Date(2026, 8, 30).toISOString())
+    expect(Date.parse(saved.updatedAt)).toBeGreaterThan(Date.parse(bonus.updatedAt))
   })
 })
 

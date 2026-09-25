@@ -145,27 +145,38 @@ describe('what the household has', () => {
   })
 })
 
-describe('the runway is a floor, not a forecast', () => {
+describe('the runway counts what is written down, every time it lands', () => {
   const accounts = [withBalance(account({ id: 'chk' }), 900, '2026-09-20')]
 
   it('walks the money down day by day and names the day it runs out', () => {
     const rows = cashRunway(accounts, [outgoing('rent', 1200, '2026-09-25T09:00:00.000Z'), wage('pay', 1840, 'biweekly', '2026-09-30T09:00:00.000Z')], 60, NOW)
-    expect(rows.map(r => r.day)).toEqual(['2026-09-25', '2026-09-30'])
+    // the wage every fortnight and the rent every month, as far as it looks
+    expect(rows.map(r => r.day)).toEqual(['2026-09-25', '2026-09-30', '2026-10-14', '2026-10-25', '2026-10-28', '2026-11-11'])
     expect(rows[0].balance).toBe(-300)
     expect(rows[1].balance).toBe(1540)
+    expect(rows.at(-1)?.balance).toBe(5860)
     expect(firstShortfall(rows)).toEqual({ day: '2026-09-25', balance: -300 })
   })
 
-  it('owes an overdue bill today rather than in the past', () => {
-    const rows = cashRunway(accounts, [outgoing('late', 100, '2026-09-01T09:00:00.000Z')], 60, NOW)
+  it('owes an overdue bill today when it fell due since the check-in, and leaves one due before it in the balance', () => {
+    const late = outgoing('late', 100, '2026-09-01T09:00:00.000Z')
+    const rows = cashRunway([withBalance(account({ id: 'chk' }), 900, '2026-08-31')], [late], 60, NOW)
     expect(rows[0].day).toBe('2026-09-21')
     expect(rows[0].balance).toBe(800)
+    // checked in after it fell due: the balance has it, and next month's is what comes off
+    expect(cashRunway(accounts, [late], 60, NOW).map(r => [r.day, r.balance])).toEqual([
+      ['2026-10-01', 800],
+      ['2026-11-01', 700],
+    ])
   })
 
-  it('counts nothing that is already done, and nothing past the window', () => {
+  it('counts one already done when it is dated after the check-in, and nothing past the window', () => {
     const done = money({ id: 'paid', bill: { kind: 'bill' }, estimateCost: 50, status: 'done', dueAt: '2026-09-25T09:00:00.000Z' })
     const far = outgoing('later', 50, '2027-09-25T09:00:00.000Z')
-    expect(cashRunway(accounts, [done, far], 60, NOW)).toEqual([])
+    // ticked off early, and the balance typed in before it went: it comes off on its own day
+    expect(cashRunway(accounts, [done, far], 60, NOW).map(r => [r.day, r.balance])).toEqual([['2026-09-25', 850]])
+    // dated before the check-in, the balance already has it
+    expect(cashRunway(accounts, [{ ...done, dueAt: '2026-09-19T09:00:00.000Z' }, far], 60, NOW)).toEqual([])
     expect(firstShortfall([])).toBeNull()
   })
 })

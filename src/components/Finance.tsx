@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Segmented } from './stats/Segmented'
 import { formatMoney, isPayday } from '../bills'
-import { balanceOn, cashRunway, checkInDone, checkInTask, countable, firstShortfall, isLiability, isSpendable, latestBalance, moneyTotals, nextSlot, openCheckIn, shortfallLine, withBalance } from '../finance'
-import { newerStamp } from '../itemops'
+import { balanceOn, checkInDone, checkInTask, countable, isLiability, isSpendable, latestBalance, moneyForecast, moneyTotals, nextSlot, openCheckIn, shortfallLine, withBalance } from '../finance'
+import { localMidnightIso, newerStamp } from '../itemops'
 import { ACCOUNT_TYPES, ACCOUNT_TYPE_META, OPEN_STATUSES, RECURRENCE_META, type Account, type AccountType, type Task } from '../types'
 import { dateKey, uid } from '../utils'
 import { shiftDayKey } from '../journal'
@@ -12,7 +12,7 @@ import { ConfirmButton } from './ConfirmButton'
 import { BillSheet } from './finance/BillSheet'
 import { CheckInSheet, type CheckInChange } from './finance/CheckInSheet'
 import { GoalSheet } from './finance/GoalSheet'
-import { WEEKDAYS, dayLabel } from './finance/labels'
+import { WEEKDAYS, dayLabel, moneyName } from './finance/labels'
 import { Timeline, type CheckInFocus } from './finance/Timeline'
 
 // Finance (v3.27): what Bills was, plus the two things it could not answer.
@@ -23,14 +23,16 @@ import { Timeline, type CheckInFocus } from './finance/Timeline'
 // round (bills.ts), and an account is a name and the balances you have typed.
 //
 // Drafter does not connect to a bank and never will. Everything below is
-// arithmetic over what you wrote down — which is also why the runway is a
-// floor rather than a forecast: it counts the one open occurrence of each
-// series, so it can only turn out better than it says.
+// arithmetic over what you wrote down, by one rule (finance.ts): the balance
+// checked in is the truth on its day, and every bill, payday and set-aside
+// dated after it counts, money in and out alike, each repeat every time it
+// lands.
 //
 // It opens on the timeline (finance/Timeline.tsx): one screen that answers
-// "are we OK until payday?" with what is safe to spend, the next 30 days as a
-// line, what falls due, the accounts and the savings goals. The month of bills,
-// the paydays and the accounts as they always were are the segments beside it.
+// "how much can we spend and still cover what is coming?" with what is safe to
+// spend, the next 30 days as a line, what falls due, the accounts and the
+// savings goals. The month of bills, the paydays and the accounts as they
+// always were are the segments beside it.
 
 type Segment = 'timeline' | 'bills' | 'paydays' | 'accounts'
 const SEGMENTS: { key: Segment; label: string }[] = [
@@ -63,7 +65,7 @@ interface Props {
   onMarkPaid(t: Task): void
   /** A bill or a goal from Finance's own forms, or the weekly check-in turned on: written, with a toast and its Undo. */
   onAdd(t: Task, message: string): void
-  /** The weekly check-in moved to another day or time. */
+  /** The weekly check-in moved to another day or time, or money with no date given one. */
   onSaveTask(t: Task): void
   /** The weekly check-in turned off: to the Trash, with an Undo. */
   onRemoveTask(t: Task): void
@@ -212,8 +214,10 @@ export function Finance(props: Props) {
     () => tasks.filter(t => isPayday(t) && OPEN_STATUSES.includes(t.status)).sort((a, b) => (a.dueAt ?? '9999').localeCompare(b.dueAt ?? '9999')),
     [tasks],
   )
-  const runway = useMemo(() => cashRunway(accounts, tasks, 60, at), [accounts, tasks, at])
-  const short = useMemo(() => firstShortfall(runway), [runway])
+  // the 60 days under Accounts: the same forecast the timeline reads, looking further
+  const plan = useMemo(() => moneyForecast(accounts, tasks, 60, at), [accounts, tasks, at])
+  const runway = plan.days
+  const short = plan.short
   const live = useMemo(() => countable(accounts), [accounts])
   const totals = useMemo(() => moneyTotals(accounts), [accounts])
 
@@ -224,6 +228,11 @@ export function Finance(props: Props) {
   }
   // a payday is the household's picture as much as a bill is: shared unless kept back
   const newPayday = () => onNew({ bill: { kind: 'income' }, recurrence: { freq: 'biweekly' }, title: 'Payday', ...(inHousehold ? { shared: true } : {}) })
+  /** Needs a date: the day typed in, as + Bill writes one (local midnight, a day with no time). */
+  const dateMoney = (t: Task, day: string) => {
+    const dueAt = localMidnightIso(day)
+    if (dueAt) onSaveTask({ ...t, dueAt, updatedAt: newerStamp(t.updatedAt) })
+  }
 
   /** Check in weekly: on at a slot, moved to another, or off. The slot is the open check-in's own due time. */
   const setWeekly = (slot: { weekday: number; time: string } | null) => {
@@ -254,6 +263,7 @@ export function Finance(props: Props) {
           onAddBill={() => setSheet({ kind: 'bill' })}
           onAddPayday={newPayday}
           onAddGoal={() => setSheet({ kind: 'goal' })}
+          onDate={dateMoney}
           onCheckIn={focus => setSheet({ kind: 'checkin', focus })}
           onCheckInWeekly={setWeekly}
         />
@@ -272,8 +282,8 @@ export function Finance(props: Props) {
           </div>
           {paydays.length === 0 ? (
             <p className="empty">
-              Add each person’s pay — what it is, who pays it, how often and when the next one lands. A payday sits on the calendar like a bill, and the timeline
-              starts saying what is safe to spend until it.
+              Add each person’s pay — how much, how often and when the next one lands. A payday sits on the calendar like a bill, and the timeline counts every
+              one of them on its day, the way it counts the bills.
             </p>
           ) : (
             <ul className="bill-list">
@@ -336,8 +346,8 @@ export function Finance(props: Props) {
                 <>
                   <h3 className="bills-head">Next 60 days</h3>
                   <p className="field-hint">
-                    Spendable cash after each day’s bills, paydays and set-asides. Only what is written down is counted, and a repeating payment shows its next
-                    occurrence alone — so this is the floor, not the forecast.
+                    Checking and cash after each day’s bills, paydays and set-asides, from the balance you checked in. Only what is written down is counted, and a
+                    repeating one every time it comes round, money in and out alike.
                   </p>
                   {short && <p className="warn finance-short">{shortfallLine(short, dayLabel)}</p>}
                   <ul className="bill-list runway">
@@ -345,7 +355,9 @@ export function Finance(props: Props) {
                       <li key={d.day} className={d.balance < 0 ? 'bill-row overdue' : 'bill-row'}>
                         <span className="bill-copy">
                           <strong>{dayLabel(d.day)}</strong>
-                          <small>{d.rows.map(r => `${r.income ? '+' : '−'}${formatMoney(r.amount)} ${r.title}${r.saving ? ' (to savings)' : ''}`).join(' · ')}</small>
+                          <small>
+                            {d.rows.map(r => `${r.income ? '+' : '−'}${formatMoney(r.amount)} ${moneyName(r.task, nameOf(r.task.bill.forMemberId))}${r.saving ? ' (to savings)' : ''}`).join(' · ')}
+                          </small>
                         </span>
                         <span className={d.balance < 0 ? 'bill-amount owed' : 'bill-amount'}>{formatMoney(d.balance)}</span>
                       </li>
