@@ -199,9 +199,59 @@ export function onWeatherCached(cb: () => void, target: EventTarget | undefined 
  * request beyond the briefing's own.
  */
 export function cachedForecast(now = Date.now()): Forecast | null {
-  const c = readCache()
+  return todaysForecast(readCache(), now)
+}
+
+/** A cache's forecast when it is for `now`'s local day and weather is on; null otherwise. */
+export function todaysForecast(c: WeatherCache, now: number): Forecast | null {
   if (!c.enabled || !c.forecast || c.fetchedAt === undefined || !Number.isFinite(c.fetchedAt)) return null
   return new Date(c.fetchedAt).toDateString() === new Date(now).toDateString() ? c.forecast : null
+}
+
+/**
+ * The cache as it is stored, for a view that follows it (onWeatherCached):
+ * the same string for as long as nothing is written, so a view reading it on
+ * every render redraws only when the sky or the choice changes. '' with none.
+ */
+export function storedWeather(): string {
+  try {
+    return typeof localStorage === 'undefined' ? '' : (localStorage.getItem(WEATHER_KEY) ?? '')
+  } catch {
+    return ''
+  }
+}
+
+/** storedWeather's string read as a cache: off when there is nothing, or nothing readable. */
+export function parseWeather(raw: string): WeatherCache {
+  try {
+    const c = raw ? (JSON.parse(raw) as Partial<WeatherCache>) : null
+    return c && typeof c === 'object' ? { ...c, enabled: c.enabled === true } : { enabled: false }
+  } catch {
+    return { enabled: false }
+  }
+}
+
+/**
+ * The sky in a few words, after a temperature: "84° and sunny", "61° with
+ * rain". Sunny by day and clear at night; the unit is the forecast's own and
+ * left off, as a phone's lock screen does. The hour is the reader's.
+ */
+export function skyPhrase(f: Pick<Forecast, 'tempC' | 'code'>, hour: number): string {
+  const day = hour >= 6 && hour < 19
+  const temp = `${f.tempC}°`
+  const { code } = f
+  if (code === 0) return `${temp} and ${day ? 'sunny' : 'clear'}`
+  if (code === 1) return `${temp} and ${day ? 'mostly sunny' : 'mostly clear'}`
+  if (code === 2) return `${temp} and partly cloudy`
+  if (code === 3) return `${temp} and overcast`
+  if (code === 45 || code === 48) return `${temp} and foggy`
+  if (code >= 51 && code <= 57) return `${temp} with drizzle`
+  if (code >= 61 && code <= 67) return `${temp} with rain`
+  if (code >= 71 && code <= 77) return `${temp} with snow`
+  if (code >= 80 && code <= 82) return `${temp} with showers`
+  if (code === 85 || code === 86) return `${temp} with snow showers`
+  if (code >= 95 && code <= 99) return `${temp} with thunder`
+  return temp
 }
 
 /**

@@ -1,12 +1,11 @@
 import { useEffect, useState } from 'react'
-import { CalendarEvent, Habit, MEAL_SLOT_META, WORK_MODE_META } from '../types'
+import { CalendarEvent, Habit, WORK_MODE_META } from '../types'
 import { eventDayKeys } from '../calendarstate'
 import { isDoneOn, isDueOn } from '../habits'
 import { clock, dateKey, fmtTime } from '../utils'
 import { CITIES, CITY_REGIONS, Forecast, WeatherCache, cityById, describeCode, disableWeather, readCache, requestLocation, setCity, watchWeather } from '../weather'
-import { mealLabel, tonightDinner } from '../kitchen'
 
-/** Same 17:00 line Today uses to move the journal card to the evening. */
+/** Home's greeting, by the hour: the same 17:00 line Today uses to move the journal card to the evening. */
 export function greeting(hour: number, name?: string): string {
   const base = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'
   // first name only — "Good evening, Joseph", never the full account name;
@@ -69,19 +68,6 @@ export function briefingFacts(events: CalendarEvent[], habits: Habit[], now: Dat
   return out
 }
 
-/** The day's one action on the strip: plan it in the morning, close it at night. */
-export interface BriefingCta {
-  label: 'Plan my day' | 'Shut down' | 'Day closed'
-  /** Absent, the tile is a statement rather than a button. */
-  onClick?(): void
-}
-
-const CTA_META: Record<BriefingCta['label'], { glyph: string; sub: string }> = {
-  'Plan my day': { glyph: '☀️', sub: 'Today’s three on Home' },
-  'Shut down': { glyph: '🌙', sub: 'Close this day' },
-  'Day closed': { glyph: '✓', sub: 'See you tomorrow' },
-}
-
 /** The picker's value for a cache: off, the device, or a city id. */
 export function weatherChoice(cache: WeatherCache): string {
   if (!cache.enabled) return ''
@@ -89,40 +75,35 @@ export function weatherChoice(cache: WeatherCache): string {
 }
 
 /**
- * "Your day" in one quiet strip at the top of Today: a greeting, then a tile
- * for each fact that exists — weather, work mode, events, habits, dinner. The
- * date is already in the header above, so it is not repeated here. Weather is
- * opt-in through one picker: Off, the device's location, or a major city —
- * so nobody has to share where they are to see the sky. Nothing is fetched and
- * no permission prompt appears until a choice is made, and the cached forecast
- * seeds the first paint so the tile does not pop in a beat after the rest.
+ * "Your day": the day's facts the strip can state without asking anything —
+ * the sky's range, whose work day is whose, the events and the habits — under
+ * the weather picker. It sat at the top of Today with the greeting, the day's
+ * action and tonight's dinner until Home's top section (2026-09-25) took
+ * those: the greeting says hello and the sky now, the focus card carries Plan
+ * my day, and the Dinner tile says what is for dinner. What is left here is
+ * what they do not say.
+ *
+ * Weather is opt-in through one picker: Off, the device's location, or a
+ * major city — so nobody has to share where they are to see the sky. Nothing
+ * is fetched and no permission prompt appears until a choice is made, and
+ * the cached forecast seeds the first paint so the tile does not pop in a
+ * beat after the rest. This card is what fetches it: the greeting reads what
+ * it keeps (useTodaysSky), so the picker here is Home's one weather switch.
  */
 export function BriefingCard({
   events,
   habits,
-  dinner,
   now,
-  name,
-  cta,
   myId,
   nameOf,
 }: {
   events: CalendarEvent[]
   habits: Habit[]
-  dinner: ReturnType<typeof tonightDinner>
   now: Date
   /** Whose work day the work tile is. Without it the first work day of the day is taken, as before v3.24. */
   myId?: string | null
   /** A household member's display name, for the tiles that say whose work day they are. */
   nameOf?: (id: string | undefined) => string | null
-  /** Who to greet; the first name is used. Absent, the greeting stands alone. */
-  name?: string
-  /**
-   * Plan my day / Shut down / Day closed, as the strip's first tile. A tile and
-   * not a header button: at 375pt the header already holds the greeting and
-   * the weather picker, and has no room for a third thing.
-   */
-  cta?: BriefingCta
 }) {
   const [cache, setCache] = useState<WeatherCache>(() => readCache())
   // Only an enabled cache seeds the tile: a forecast left under enabled:false
@@ -194,25 +175,13 @@ export function BriefingCard({
   // not for "San Francisco, CA" as well — a third line there makes the weather
   // tile taller than its neighbour and the strip stops being quiet.
   const place = cityById(cache.city)?.name ?? 'Your location'
-  const hasTiles = !!(cta || forecast || facts.work || facts.theirWork?.length || facts.events || facts.habits || dinner)
-  const ctaMeta = cta ? CTA_META[cta.label] : null
-  const ctaBody = cta && ctaMeta && (
-    <>
-      <span className="briefing-glyph" aria-hidden>
-        {ctaMeta.glyph}
-      </span>
-      <span className="briefing-text">
-        <span className="briefing-main">{cta.label}</span>
-        <span className="briefing-sub">{ctaMeta.sub}</span>
-      </span>
-    </>
-  )
+  const hasTiles = !!(forecast || facts.work || facts.theirWork?.length || facts.events || facts.habits)
 
   return (
     <section className="chart-card briefing" aria-label="Your day">
       <header className="chart-head">
         <div>
-          <h3>{greeting(now.getHours(), name)}</h3>
+          <h3>Your day</h3>
         </div>
         <select
           className="briefing-weather-pick"
@@ -244,30 +213,17 @@ export function BriefingCard({
       )}
       {hasTiles && (
         <ul className="briefing-tiles">
-          {cta && (
-            <li className={`briefing-tile briefing-cta${cta.label === 'Day closed' ? ' closed' : ''}`}>
-              {cta.onClick ? (
-                <button type="button" className="briefing-cta-btn" onClick={cta.onClick}>
-                  {ctaBody}
-                </button>
-              ) : (
-                <span className="briefing-cta-btn">{ctaBody}</span>
-              )}
-            </li>
-          )}
+          {/* the day's range and its rain: the greeting says the sky now */}
           {forecast && weather && (
-            <li className="briefing-tile" title={place}>
+            <li className="briefing-tile" title={`${place} · ${forecast.tempC}${forecast.unit} · ${weather.label}`}>
               <span className="briefing-glyph" aria-hidden>
                 {weather.glyph}
               </span>
               <span className="briefing-text">
                 <span className="briefing-main">
-                  {forecast.tempC}
-                  {forecast.unit} · {weather.label}
+                  H {forecast.hiC}° · L {forecast.loC}°
                 </span>
-                <span className="briefing-sub">
-                  H {forecast.hiC}° L {forecast.loC}° · {forecast.rainPct}% rain
-                </span>
+                <span className="briefing-sub">{forecast.rainPct}% chance of rain</span>
               </span>
             </li>
           )}
@@ -312,17 +268,6 @@ export function BriefingCard({
                   {facts.habits.done} of {facts.habits.due} habit{facts.habits.due === 1 ? '' : 's'} done
                 </span>
                 <span className="briefing-sub">{facts.habits.done === facts.habits.due ? 'all ticked' : 'due today'}</span>
-              </span>
-            </li>
-          )}
-          {dinner && (
-            <li className="briefing-tile">
-              <span className="briefing-glyph" aria-hidden>
-                {dinner.meal.out ? '🥡' : dinner.recipe?.emoji || '🍽️'}
-              </span>
-              <span className="briefing-text">
-                <span className="briefing-main">{mealLabel(dinner.meal)}</span>
-                <span className="briefing-sub">{dinner.meal.slot === 'dinner' ? 'Tonight' : MEAL_SLOT_META[dinner.meal.slot].label}</span>
               </span>
             </li>
           )}

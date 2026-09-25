@@ -11,12 +11,12 @@ import {
   pickHighlights,
   previousSpan,
   type Highlight,
-  type HighlightVisual,
   type InsightInput,
   type InsightPeriod,
 } from '../../../shared/insights.mts'
 import { STATS_AREAS, type StatsTab } from '../planner/routes'
-import { AreaCard, DeltaBadge, Ring, Segmented, Sparkline } from '../stats'
+import { AreaCard, DeltaBadge, Segmented } from '../stats'
+import { HighlightVisual } from './HighlightVisual'
 
 const AREA_LABELS = new Map<string, string>(STATS_AREAS.map(a => [a.key, a.label]))
 
@@ -126,26 +126,12 @@ function HighlightCard({ card: c, onOpen }: { card: Highlight; onOpen(): void })
       </span>
       {c.visual && (
         <span className="highlight-visual" aria-hidden="true">
-          <Visual visual={c.visual} label={c.line} />
+          <HighlightVisual visual={c.visual} label={c.line} />
         </span>
       )}
       <span className="area-go" aria-hidden="true">
         ›
       </span>
     </button>
-  )
-}
-
-/** A card's small picture, drawn with the Stats kit in its area's colour. */
-function Visual({ visual: v, label }: { visual: HighlightVisual; label: string }) {
-  if (v.kind === 'spark') return <Sparkline series={v.series} label={label} />
-  if (v.kind === 'ring') return <Ring value={v.value} of={Math.max(1, v.of)} size={48} label={v.label} />
-  const shown = v.parts.filter(p => p.value > 0)
-  return (
-    <span className="split-bar">
-      {shown.map(p => (
-        <span key={p.key} className={`split-${p.key}`} style={{ flexGrow: p.value }} title={`${p.label}: ${p.value}`} />
-      ))}
-    </span>
   )
 }

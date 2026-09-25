@@ -83,10 +83,17 @@ describe("Today's first screen", () => {
     expect(today).toMatch(/onJump=\{onOpenTasks \?\? undefined\}/)
   })
 
-  it('keeps the reporting-only tiles off the phone', () => {
-    // "This week" and the sparkline are ~150px of the 590px first screen
+  it('keeps the reporting-only tile off the phone', () => {
+    // "This week" is ~75px of the 590px first screen
     expect(today).toMatch(/label="This week"[\s\S]{0,120}className="kpi-extra"/)
-    expect(today).toMatch(/className="stat-tile kpi-extra"/)
+  })
+
+  it('leaves how the week is going to This week so far, counted by Insights', () => {
+    // The desktop row's "Done this week" tile counted the last seven days and
+    // drew twelve weeks, beside a card saying "12 tasks done this week" by
+    // Insights' calendar week: two numbers for one question. The card stays.
+    expect(today).not.toMatch(/Done this week|doneByWeek|spark-bar/)
+    expect(today).toMatch(/<WeekSoFar\b/)
   })
 
   it('offers the bulk defer next to the counter that motivates it', () => {

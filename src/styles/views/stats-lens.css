@@ -6,15 +6,6 @@
    themselves; the partial each came from is named above it. */
 
 /* ---------- from 18-stats-lens.css ---------- */
-.ink-tasks {
-  --area-ink: var(--tone-blue);
-}
-.ink-money {
-  --area-ink: var(--tone-green);
-}
-.ink-habits {
-  --area-ink: var(--tone-mint);
-}
 .area-list {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
@@ -370,27 +361,6 @@
 /* "86%" and "5/7" inside a 48px ring */
 .highlight-visual .ring-label {
   font-size: 0.75rem;
-}
-/* the Kitchen's three ways, as its calendar and its shares draw them */
-.split-bar {
-  display: flex;
-  gap: 2px;
-  width: 72px;
-  height: 12px;
-  border-radius: 4px;
-  overflow: hidden;
-}
-.split-bar > span {
-  min-width: 4px;
-}
-.split-cooked {
-  background: var(--viz-series-1);
-}
-.split-out {
-  background: var(--cal-meal-out);
-}
-.split-bought {
-  background: var(--cal-meal-bought);
 }
 .highlights-empty .stats-note {
   margin-top: 6px;

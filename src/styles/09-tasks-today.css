@@ -189,6 +189,7 @@
 }
 /* the tap-equivalent of the swipe — the gesture alone is not discoverable */
 .swipe-handle {
+  position: relative;
   flex: none;
   border: 0;
   background: transparent;
@@ -198,6 +199,13 @@
   padding: 6px 4px;
   border-radius: 8px;
   opacity: 0;
+}
+/* a 44pt target round the small ⋯, drawn as it was: reaching left, into the
+   gap before the due badge, and only as far right as the row's own padding */
+.swipe-handle::after {
+  content: '';
+  position: absolute;
+  inset: -9px -4px -9px -18px;
 }
 .trow.swipe-row:hover .swipe-handle,
 .trow.swipe-row.tray-open .swipe-handle,

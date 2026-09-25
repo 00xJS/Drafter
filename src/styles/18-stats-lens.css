@@ -67,6 +67,18 @@
 .ink-journal {
   --area-ink: var(--tone-amber);
 }
+/* Tasks, Money and Habits too, here with the rest rather than in the lens's
+   own sheet: Home's week strip and its "This week so far" draw in them
+   before the lens has ever been opened */
+.ink-tasks {
+  --area-ink: var(--tone-blue);
+}
+.ink-money {
+  --area-ink: var(--tone-green);
+}
+.ink-habits {
+  --area-ink: var(--tone-mint);
+}
 :is(.ink-tasks, .ink-money, .ink-people, .people-stats, .ink-places, .place-stats, .ink-kitchen, .kitchen-stats, .ink-year, .ink-wardrobe, .wardrobe-stats, .ink-habits, .ink-journal) {
   --area-ink-hot: color-mix(in srgb, var(--area-ink) 72%, var(--text));
 }
@@ -173,6 +185,32 @@
 
 .spark-area {
   opacity: 0.16;
+}
+
+/* ---------- the Kitchen's three ways, as one bar ----------
+   A highlight's small picture (HighlightVisual): on Insights' cards, and on
+   Home's "This week so far" before the lens's own sheet has loaded. */
+
+/* the Kitchen's three ways, as its calendar and its shares draw them */
+.split-bar {
+  display: flex;
+  gap: 2px;
+  width: 72px;
+  height: 12px;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.split-bar > span {
+  min-width: 4px;
+}
+.split-cooked {
+  background: var(--viz-series-1);
+}
+.split-out {
+  background: var(--cal-meal-out);
+}
+.split-bought {
+  background: var(--cal-meal-bought);
 }
 
 /* ---------- Ring ---------- */

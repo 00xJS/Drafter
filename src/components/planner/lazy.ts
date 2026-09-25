@@ -77,6 +77,10 @@ export const ChatScreen = preloadable(() => import('./ChatScreen').then(m => m.C
 export const AdminScreen = preloadable(() => import('./AdminScreen').then(m => m.AdminScreen), 'AdminScreen')
 // Today's wardrobe card, drawn only when the wardrobe can dress you (Today.tsx)
 export const WardrobeCard = preloadable(() => withSheet(import('../wardrobe/WardrobeCard'), import('../../styles/views/wardrobe-today.css')).then(m => m.WardrobeCard), 'WardrobeCard')
+// Home's "This week so far": the week's first Insights highlight, picked by
+// Insights' own rules (shared/insights.mts), which the launch never parses —
+// the card takes its place a moment after the rest of Home
+export const WeekSoFar = preloadable(() => import('../home/WeekSoFar').then(m => m.WeekSoFar), 'WeekSoFar')
 
 /** The views the lazy screens draw: handed down in the planner's context, as `p.views`, so a screen's chunk names none of them. */
 export const SCREEN_VIEWS = { Admin, Board, Calendar, Chat, EventEditor, Finance, JournalView, Kitchen, NotesView, People, PeopleStats, Places, PlacesStats, Review, Settings, StatsLens, TaskEditor, TasksTable, Wardrobe }
@@ -109,6 +113,7 @@ export const PRELOAD_ORDER = [
   Settings,
   SettingsScreen,
   WardrobeCard,
+  WeekSoFar,
   NoticesSheet,
   PlanDaySheet,
   ShutdownSheet,

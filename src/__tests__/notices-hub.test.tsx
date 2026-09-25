@@ -232,9 +232,11 @@ describe('the bell on Home', () => {
       />,
     )
 
-  it('sits on the title line beside Review, named with its count', () => {
+  it('sits on the greeting beside Review, named with its count', () => {
     const html = renderToday({ notices: [notice(), notice({ id: 'n2', readAt: iso(NOW) })], onOpenNotices: noop })
-    const head = html.slice(html.indexOf('class="today-head"'), html.indexOf('</header>'))
+    // the greeting is Home's header now (2026-09-25): the bell rides on it, as it rode on the title line
+    const head = html.slice(html.indexOf('class="today-head home-hero"'), html.indexOf('</header>'))
+    expect(head).toMatch(/<h2>Good (morning|afternoon|evening)<\/h2>/)
     expect(head).toContain('aria-label="Notifications, 1 unread"')
     expect(head).toMatch(/class="today-bell-count" aria-hidden="true">1</)
     expect(head.indexOf('today-bell')).toBeLessThan(head.indexOf('>Review<'))

@@ -11,7 +11,7 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 8px 6px;
+  padding: 0 6px;
   border-radius: 10px;
 }
 .habit-row:hover {
@@ -29,6 +29,7 @@
 }
 /* the tick: an outlined ring in the habit's colour that fills when done today */
 .habit-tick {
+  position: relative;
   flex: none;
   width: 26px;
   height: 26px;
@@ -49,9 +50,18 @@
 .habit-tick:active {
   transform: scale(0.88);
 }
+/* a 44pt target round the 26px ring, drawn as it was: measured from inside
+   its 2px border, 22px across, so 11px out on every side */
+.habit-tick::before {
+  content: '';
+  position: absolute;
+  inset: -11px;
+}
 .habit-name {
   flex: 1;
   min-width: 0;
+  /* the row's height: a 44pt target, which the row's padding used to make up */
+  min-height: 44px;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -62,8 +72,16 @@
   padding: 0;
   font: inherit;
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* the name ellipsises; the emoji before it keeps its width */
+.habit-name-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.habit-name > .habit-emoji {
+  flex: none;
 }
 .habit-name:hover,
 .habit-row.rest .habit-name:hover {
@@ -338,8 +356,13 @@
   flex-direction: column;
   gap: 1px;
   min-width: 0;
+  /* never wider than its tile: on the phone the tile is a centred column,
+     where a line of text takes its own width unless something stops it, and
+     the ellipsis below never engaged */
+  max-width: 100%;
 }
 .briefing-main {
+  max-width: 100%;
   color: var(--text);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
@@ -389,12 +412,6 @@
   .briefing-tile > .briefing-text {
     align-items: center;
   }
-  /* the CTA's own button fills its tile and carries its own text-align, so
-     centring the tile around it is not enough */
-  .briefing-cta-btn {
-    justify-content: center;
-    text-align: center;
-  }
 }
 
 /* ==========================================================================
@@ -403,42 +420,6 @@
    later move into a partial of its own is a cut and paste. Phone rules sit
    behind (max-width: 640px); touch floors behind (pointer: coarse).
    ========================================================================== */
-
-/* --- the strip's action tile (B5): a tile that is a button --- */
-.briefing-cta {
-  padding: 0;
-  border-color: var(--accent-ring);
-  background: var(--accent-soft);
-}
-.briefing-cta.closed {
-  border-color: var(--hairline);
-  background: var(--surface-2);
-}
-.briefing-cta-btn {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  min-width: 0;
-  padding: 6px 10px;
-  border: 0;
-  border-radius: inherit;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  -webkit-tap-highlight-color: transparent;
-}
-button.briefing-cta-btn {
-  cursor: pointer;
-}
-.briefing-cta:not(.closed) .briefing-main {
-  color: var(--accent-text);
-}
-button.briefing-cta-btn:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
-}
 
 /* --- today's focus (B4) --- */
 .focus-card {
@@ -460,9 +441,6 @@ button.briefing-cta-btn:focus-visible {
   color: var(--accent-text);
   font-size: 0.6875rem;
   padding: 1px 7px;
-}
-.week-top3 .focus-badge {
-  margin-top: 3px;
 }
 
 /* --- lunch & dinner ideas (B4) --- */
@@ -713,7 +691,6 @@ span.routine-name:hover {
 
 /* every one of these is a tap that changes the plan: the 44pt floor */
 @media (pointer: coarse) {
-  .briefing-cta-btn,
   .meal-idea,
   .plan-cand,
   .plan-keep {

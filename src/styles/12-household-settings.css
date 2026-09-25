@@ -237,12 +237,6 @@
   }
 }
 
-.stat-aside {
-  font-size: 0.8125rem;
-  font-weight: 400;
-  color: var(--muted);
-}
-
 /* Settings is a screen (PushedScreen), not a dialog, so what was written here
    twice for a modal — a 760px panel, a fixed height, a body that scrolled
    inside it — is gone. The page scrolls, as every other screen's does.

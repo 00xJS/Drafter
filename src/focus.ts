@@ -1,10 +1,11 @@
 import { CalendarEntry, CalendarEvent, OPEN_STATUSES, Project, Review, Task } from './types'
 import { shiftDayKey } from './journal'
-import { nextUp, shiftRange, weekRange } from './review'
+import { nextUp } from './review'
 import { compareTasks, hasDueTime } from './taskutils'
 import { clock, dateKey } from './utils'
 import { localMidnightIso, newerStamp } from '../shared/domain.mts'
 import { isFocusFor } from '../shared/today.mts'
+import { goalsOf, weekGoalsRecord } from './weekgoals'
 
 // Today's focus, Plan my day and Shut down: the rules behind the sheets, kept
 // pure so the sheets only render them. Nothing here saves anything — each plan
@@ -40,15 +41,11 @@ export interface FocusCandidate {
   reason: string
 }
 
-/** The week's Top 3 lines not yet ticked, found exactly where Today's "This week's 3" finds them. */
+/** The week's Top 3 lines not yet ticked, found exactly where Home's "This week's 3" finds them (src/weekgoals.ts). */
 function weekTopTitles(reviews: Review[], now: Date): string[] {
-  const thisWeek = weekRange(now)
-  const prevKey = shiftRange(thisWeek, -1).key
-  const weeks = reviews.filter(r => r.period === 'week' && !r.deletedAt)
-  // written during last week's review as "for next week"
-  const review = weeks.find(r => r.key === prevKey) ?? weeks.find(r => r.key === thisWeek.key)
-  const top = (review?.top ?? []).map(t => t.trim()).filter(Boolean).slice(0, 3)
-  return top.filter((_, i) => !review?.topDone?.[i])
+  return goalsOf(weekGoalsRecord(reviews, now))
+    .filter(g => !g.done)
+    .map(g => g.text)
 }
 
 /**

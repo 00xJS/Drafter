@@ -29,6 +29,7 @@ export function HomeScreen({ p }: { p: PlannerCtx }) {
   const { planWith, wentTo, planAt, planOccasion, sawThem, planForEvent, snooze } = p
   const { openSheet, deferFromFocus, planMealIdea } = p
   const { syncAlarm, dismissSyncAlarm, setAdminOpen, calendarSignIn, dismissCalendarSignIn, openSettings } = p
+  const { inHousehold, openCalendarDay, openKitchenDay, openInsights, setEventEditor } = p
   return (
     <Today
           tasks={store.tasks}
@@ -127,6 +128,18 @@ export function HomeScreen({ p }: { p: PlannerCtx }) {
           // the notification hub (v3.32): the bell counts, the sheet lists
           notices={store.notices}
           onOpenNotices={() => openSheet({ kind: 'notices' })}
+          // Home's top section (2026-09-25): who tonight's dinner is for, and
+          // where the week strip, the tiles and the week's highlight lead
+          inHousehold={inHousehold}
+          onOpenDay={openCalendarDay}
+          onOpenKitchenDay={openKitchenDay}
+          onOpenEvent={ev => {
+            // one of ours opens in its editor; a calendar you follow, on its day
+            const entry = ev.localId ? store.events.find(e => e.id === ev.localId) : undefined
+            if (entry) setEventEditor({ entry, startIso: entry.start })
+            else openCalendarDay(localDayKey(new Date(ev.start)))
+          }}
+          onOpenInsightsWeek={() => openInsights('week', null)}
     />
   )
 }

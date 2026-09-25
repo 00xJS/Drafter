@@ -1,0 +1,490 @@
+/* ---------- Home's top section (2026-09-25) ----------
+
+   The greeting, this week's 3, the week, today's focus, Dinner and Up next,
+   and the week so far (src/components/home, Today.tsx). A partial of its
+   own, so Home's look is in one place and nothing here leans on the order of
+   anyone else's. Every colour is a theme token (01-base.css); phone rules sit
+   behind (max-width: 640px) and touch floors behind (pointer: coarse); the
+   native shell, imported last, still has the last word — its 34pt large
+   title is the greeting's size in the app. */
+
+/* --- the greeting: hello, the date and the sky, the bell and Review --- */
+.today-head.home-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    'title actions'
+    'sub actions';
+  align-items: center;
+  column-gap: 12px;
+  row-gap: 2px;
+}
+.home-hero > h2 {
+  grid-area: title;
+  margin: 0;
+  font-size: 1.75rem;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
+}
+.home-hero > .chart-sub {
+  grid-area: sub;
+  margin: 0;
+  font-size: 0.9375rem;
+  line-height: 1.35;
+}
+/* the date and the sky each hold together, so a line breaks between them;
+   one wider than the line (the largest Dynamic Type) still wraps inside */
+.home-hero-date,
+.home-hero-sky {
+  display: inline-block;
+  max-width: 100%;
+}
+.home-hero > .today-head-actions {
+  grid-area: actions;
+}
+@media (max-width: 640px) {
+  /* The greeting takes the whole line. At 375pt a 34pt "Good morning, Joe"
+     and the two buttons cannot share one: the bell and Review sit beside the
+     date instead, which takes two short lines when the sky is on. */
+  .today-head.home-hero {
+    grid-template-areas:
+      'title title'
+      'sub actions';
+    row-gap: 6px;
+  }
+}
+
+/* --- the cards of the top section: one soft family --- */
+.home-goals,
+.today .focus-card,
+.home-so-far {
+  border-radius: var(--radius-lg);
+}
+/* the day's action and Edit: words in the accent, as a link reads, and no
+   wider than the words (the native shell pads every .btn for a whole label) */
+.today .btn.home-link {
+  flex: none;
+  padding-inline: 10px;
+  color: var(--accent-text);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+.home-link.closed {
+  flex: none;
+  align-self: center;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+/* --- this week's 3 --- */
+/* the week's goals are the page's head, so they carry the accent edge the
+   focus card used to; ticked off, the edge turns to done */
+.home-goals {
+  position: relative;
+  border-color: var(--accent-ring);
+}
+.home-goals.all-done {
+  border-color: color-mix(in srgb, var(--ok) 45%, var(--border));
+}
+.goals-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 12px;
+  margin-bottom: 4px;
+}
+.goals-words h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+.goals-words .chart-sub {
+  font-size: 0.8125rem;
+}
+.goals-cheer {
+  color: var(--ok);
+  font-weight: 600;
+}
+.goals-ring {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+}
+.goals-ring > svg,
+.goals-ring-count {
+  grid-area: 1 / 1;
+}
+.goals-ring-count {
+  /* it grows with the text, to what the ring's hole can hold */
+  font-size: min(0.8125rem, 15px);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.goals-ring-track {
+  stroke: var(--viz-empty);
+  opacity: var(--viz-empty-opacity);
+}
+.goals-ring-arc {
+  stroke: var(--ok);
+  transition: stroke-dasharray 0.3s ease;
+}
+/* A goal is a line to tick, and the line is the target: no rule between
+   them, and no padding round it, since the label inside is 44pt already
+   (outranking the native shell's padded rows, which come later) */
+.home-goals .goals-list > li.trow {
+  gap: 8px;
+  min-height: 0;
+  padding: 0 4px;
+  border-bottom: 0;
+}
+.goals-tick {
+  display: flex;
+  flex: 1;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  min-height: 36px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.goals-words-line {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.goals-tick .dash-title {
+  display: inline;
+  font-weight: 500;
+  white-space: normal;
+}
+.goals-words-line > .badge {
+  display: inline-block;
+}
+.goals-list .tcheck {
+  accent-color: var(--ok);
+}
+.goals-list .trow.done .dash-title {
+  text-decoration: line-through;
+  color: var(--muted);
+}
+.btn.goals-task {
+  flex: none;
+  padding-inline: 8px;
+  font-size: 0.8125rem;
+  color: var(--accent-text);
+}
+.goals-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 6px;
+}
+.goals-input {
+  width: 100%;
+  min-width: 0;
+  /* 16px, the size a focused field never zooms the page from (16-zoom-guard.css) */
+  font-size: max(16px, 1rem);
+}
+.goals-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin: 6px 0 0;
+}
+.goals-plan {
+  margin-right: auto;
+}
+
+/* The cheer: a burst of bits out of the ring, over in 0.4s. Reduce Motion
+   draws none (Home asks before it starts one), and the catch-all in
+   01-base.css would finish it at once besides; the words say it either way. */
+.goals-burst {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.goals-burst > i {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 7px;
+  height: 7px;
+  margin: -3.5px 0 0 -3.5px;
+  border-radius: 2px;
+  background: var(--accent);
+  animation: goals-burst 0.4s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+.goals-burst > i:nth-child(4n + 2) {
+  background: var(--ok);
+}
+.goals-burst > i:nth-child(4n + 3) {
+  background: var(--tone-blue);
+}
+.goals-burst > i:nth-child(4n + 4) {
+  background: var(--tone-violet);
+}
+@keyframes goals-burst {
+  from {
+    transform: rotate(calc(var(--bit) * 30deg)) translateY(0) scale(0.4);
+    opacity: 1;
+  }
+  to {
+    transform: rotate(calc(var(--bit) * 30deg)) translateY(-44px) scale(1);
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .goals-burst {
+    display: none;
+  }
+}
+
+/* --- the week: seven days, Sunday first, a dot for each kind of thing on one --- */
+.home-week {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+}
+.home-week-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-width: 0;
+  min-height: 58px;
+  padding: 6px 0 8px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  color: var(--text);
+  font: inherit;
+  -webkit-tap-highlight-color: transparent;
+}
+button.home-week-day {
+  cursor: pointer;
+}
+.home-week-day:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.home-week-dow {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--muted);
+}
+.home-week-num {
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+.home-week-day.past .home-week-num {
+  color: var(--text-2);
+}
+.home-week-dots {
+  display: flex;
+  justify-content: center;
+  gap: 3px;
+  height: 5px;
+}
+/* each dot in its area's colour (.ink-tasks, .ink-kitchen); an event in the calendar's own */
+.home-week-dots > i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--area-ink, var(--muted));
+}
+.home-week-dots > i.home-dot-event {
+  background: var(--cal-event-local);
+}
+.home-week-day.today {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.home-week-day.today .home-week-dow,
+.home-week-day.today .home-week-num {
+  color: var(--on-accent);
+}
+.home-week-day.today .home-week-dots > i {
+  background: var(--on-accent);
+}
+
+/* --- Dinner and Up next --- */
+.home-tiles {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.home-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  min-width: 0;
+  min-height: 88px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  -webkit-tap-highlight-color: transparent;
+}
+button.home-tile {
+  cursor: pointer;
+}
+button.home-tile:hover {
+  border-color: var(--accent-ring);
+}
+.home-tile:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.home-tile-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.home-tile-mark {
+  display: inline-flex;
+  font-size: 0.875rem;
+  line-height: 1;
+  color: var(--accent-text);
+}
+.home-tile-value {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 1.125rem;
+  font-weight: 700;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+.home-tile-sub {
+  max-width: 100%;
+  font-size: 0.8125rem;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+
+/* --- this week so far: the week's first Insights highlight, in its area's colour --- */
+.home-so-far {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  border-left: 4px solid var(--area-ink, var(--viz-series-1));
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.home-so-far:hover {
+  box-shadow: var(--shadow-md);
+}
+.home-so-far:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.home-so-far-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.home-so-far-head {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.home-so-far-title {
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+.home-so-far-more {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 8px;
+  font-size: 0.8125rem;
+  color: var(--text-2);
+}
+/* DeltaBadge's words, as the Highlights set them (their sheet loads with the lens) */
+.home-so-far-more .delta-line {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 4px;
+}
+.home-so-far-more .delta-badge {
+  padding: 1px 7px;
+}
+.home-so-far-visual {
+  display: flex;
+  flex: none;
+  align-items: center;
+}
+.home-so-far-visual .sparkline {
+  width: 88px;
+}
+.home-so-far-visual .split-bar {
+  width: 64px;
+}
+.home-so-far-visual .ring-label {
+  font-size: 0.75rem;
+}
+
+/* --- today's focus, as the top section draws it --- */
+/* the accent edge is the week's 3's now: the focus card is a plain card
+   again, its title the size of the week's 3's */
+.today .focus-card {
+  border-color: var(--border);
+}
+.today .focus-card > .chart-head h3 {
+  font-size: 1rem;
+}
+.today .focus-card.empty > .chart-head {
+  margin-bottom: 0;
+}
+/* a focus row with nothing to add under its title — no time block, no
+   status — is one line, not a title over an empty second line */
+.today .focus-card .dash-meta:empty {
+  display: none;
+}
+
+/* every one of these is a tap that changes or opens something: the 44pt floor */
+@media (pointer: coarse) {
+  .today .btn.home-link,
+  .btn.goals-task,
+  .goals-tick,
+  .goals-input,
+  .goals-foot > .btn {
+    min-height: 44px;
+  }
+}
