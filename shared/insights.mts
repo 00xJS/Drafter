@@ -12,12 +12,11 @@
 //   journal's streak journalStreaks', habits habitsKept's and the clothes
 //   wearIndex's. None is spelled again here: eight Stats figures once
 //   disagreed with the rest of the app because each had been.
-// - Whose log counts is `whose`. Mine is the viewer's own: their work
-//   (isMineTask), their visits and outings (ownVisit), the meals shared with
-//   the household and their own. Both of us is every member's, among the
-//   records this device — or on the server, this member — can already read,
-//   and never anything more. The personal kinds, the journal, habits and the
-//   wardrobe, are the viewer's own in either.
+// - Whose records count is one rule, with no switch (scopeRecords). Tasks,
+//   money and meals are the household's: every one this device — or on the
+//   server, this member (readableRow) — can already read, and never anything
+//   more. Who you saw and where you went are your own log (ownVisit, v3.24),
+//   and the journal, habits and clothes are yours alone.
 // - A period is a calendar week (Sunday first, as the app's weeks are), month
 //   or year, on the reader's calendar. One still going is compared with the
 //   same days of the one before, so a Monday is never "↓15 on last week".
@@ -25,14 +24,13 @@
 //   and the page says so.
 
 import type { CalendarEntry, Garment, Habit, JournalEntry, Meal, Person, Place, Recipe, Task, Wear } from '../src/types.ts'
-import { isMineTask } from './domain.mts'
 import { journalStreaks, moodAverage, shiftDayKey, writtenDays } from './journal.mts'
 import { cookedRecipeIds } from './kitchen.mts'
 import { mealWays, savedPlaces } from './mealways.mts'
 import { formatMoney } from './money.mts'
 import { payments } from './payments.mts'
 import { seenTasks, visitDays, visitsFor } from './people.mts'
-import { mealCountsFor, outingsAt } from './places.mts'
+import { outingsAt } from './places.mts'
 import { habitsKept, inRange, workDone } from './review.mts'
 import { dayStreaks, daysBetween, type Streaks } from './stats.mts'
 import { neverWorn, wearIndex } from './wardrobe.mts'
@@ -56,16 +54,6 @@ const andList = (names: readonly string[]): string => (names.length < 2 ? names.
 /** The areas a highlight opens, in the order the chips draw them (STATS_AREAS in src/components/planner/routes.ts). */
 export type InsightArea = 'tasks' | 'money' | 'people' | 'places' | 'kitchen' | 'wardrobe' | 'habits' | 'journal'
 export const INSIGHT_AREAS: readonly InsightArea[] = ['tasks', 'money', 'people', 'places', 'kitchen', 'wardrobe', 'habits', 'journal']
-
-/**
- * The areas that are each member's own whoever is asking: what you write,
- * keep up and wear. Both of us never counts another member's, and the device
- * never holds one to count (PERSONAL_KINDS, shared/kinds.mts).
- */
-export const PERSONAL_AREAS: ReadonlySet<InsightArea> = new Set<InsightArea>(['journal', 'habits', 'wardrobe'])
-
-/** Whose log the shared areas count: yours, or every member's in the household. */
-export type Whose = 'mine' | 'both'
 
 // ---- periods ---------------------------------------------------------------------
 
@@ -258,24 +246,29 @@ export interface InsightInput {
   habits?: readonly Habit[]
   garments?: readonly Garment[]
   wears?: readonly Wear[]
-  /** The viewer. Null in local mode, where every record is this device's own. */
+  /**
+   * The viewer: whose log of visits and outings counts, and whose journal,
+   * habits and clothes. Null in local mode, where every record is this
+   * device's own.
+   */
   myId: string | null
-  whose: Whose
   now: Date
   /** Today on the reader's calendar. */
   today: string
   dayKeyOf: DayKeyOf
 }
 
-/** The records each area counts, narrowed to whose log they are. */
+/**
+ * The records each area counts. Who you saw and where you went are not
+ * narrowed here: the visit rules are handed every task, and `myId` with it,
+ * and keep the viewer's own log themselves (ownVisit, v3.24).
+ */
 export interface Scoped {
-  /** The work the viewer's (isMineTask) under Mine; every task under Both. Finished work, what is open and money paid are counted from these. */
+  /** The household's work: every task the reader can read. Finished work, what is open and money paid are counted from these. */
   work: Task[]
-  /** Whose visits and outings count (ownVisit): the viewer under Mine, everyone under Both. The visit rules are handed every task and narrow it themselves. */
-  visitsOf: string | null
-  /** The meals that are part of the log: shared with the household or the viewer's own under Mine (mealCountsFor), all under Both. */
+  /** The household's meals: every one the reader can read, whoever planned it. */
   meals: Meal[]
-  /** The personal kinds: the viewer's own, under either. */
+  /** The personal kinds: the viewer's own, never another member's. */
   journal: JournalEntry[]
   habits: Habit[]
   garments: Garment[]
@@ -290,17 +283,20 @@ export interface Scoped {
 export const ownRecord = (r: { ownerId?: string } | null | undefined, myId: string | null): boolean => !!r && (!myId || !r.ownerId || r.ownerId === myId)
 
 /**
- * The records each area counts, by whose log is asked for. The one place
- * Mine and Both of us are decided: the Highlights, the areas' own pages and
- * the monthly recap all read what this hands back.
+ * The records each area counts: one scope, with no switch. The Highlights,
+ * the areas' own pages and the monthly recap all read what this hands back.
+ *
+ * Tasks, money and meals are the household's: every one the reader holds,
+ * which is every one they can read. The device is handed nothing else, and
+ * the server hands the recap only what readableRow lets this member read, so
+ * a task or a meal another member kept to themselves is never among them.
+ * The journal, habits and clothes are the viewer's own.
  */
-export function scopeRecords(input: Pick<InsightInput, 'tasks' | 'meals' | 'journal' | 'habits' | 'garments' | 'wears' | 'myId' | 'whose'>): Scoped {
-  const log = input.whose === 'both' ? null : input.myId
+export function scopeRecords(input: Pick<InsightInput, 'tasks' | 'meals' | 'journal' | 'habits' | 'garments' | 'wears' | 'myId'>): Scoped {
   const own = <T extends { ownerId?: string }>(list: readonly T[] | undefined): T[] => (list ?? []).filter(r => ownRecord(r, input.myId))
   return {
-    work: input.tasks.filter(t => isMineTask(t, log)),
-    visitsOf: log,
-    meals: (input.meals ?? []).filter(m => mealCountsFor(m, log)),
+    work: [...input.tasks],
+    meals: [...(input.meals ?? [])],
     journal: own(input.journal),
     habits: own(input.habits),
     garments: own(input.garments),
@@ -399,8 +395,8 @@ export function spanFigures(input: InsightInput, scoped: Scoped, span: PeriodSpa
     payees.set(p.payee, (payees.get(p.payee) ?? 0) + p.amount)
   }
 
-  // who was seen (seenTasks, visitsFor, visitDays), whose log `visitsOf` says
-  const seenLog = seenTasks(input.tasks, input.events ?? [], now, scoped.visitsOf)
+  // who was seen (seenTasks, visitsFor, visitDays): the viewer's own log
+  const seenLog = seenTasks(input.tasks, input.events ?? [], now, input.myId)
   const seen: Tally[] = []
   const anyDay = new Set<string>()
   for (const p of input.people ?? []) {
@@ -411,13 +407,14 @@ export function spanFigures(input: InsightInput, scoped: Scoped, span: PeriodSpa
     if (days.length) seen.push({ id: p.id, name: p.name, n: days.length })
   }
 
-  // where you went (outingsAt: a done task there, or a meal eaten out there)
+  // where you went (outingsAt: a done task there, or a meal eaten out there),
+  // by the viewer's own log; a meal shared with the household is an outing for both
   const saved = savedPlaces(input.places ?? [])
   const visited: Tally[] = []
   const firsts: Tally[] = []
   let outings = 0
   for (const place of saved.values()) {
-    const all = outingsAt(place.id, input.tasks, input.meals ?? [], now, scoped.visitsOf)
+    const all = outingsAt(place.id, input.tasks, input.meals ?? [], now, input.myId)
     const here = all.filter(o => inRange(o.at, range.start, range.end))
     if (!here.length) continue
     outings += here.length
@@ -480,11 +477,10 @@ export function spanFigures(input: InsightInput, scoped: Scoped, span: PeriodSpa
   }
 }
 
-/** A period's figures, the ones it is compared with, and whose log they count. */
+/** A period's figures, and the ones it is compared with. */
 export interface InsightFigures {
   current: SpanFigures
   previous: SpanFigures
-  whose: Whose
   today: string
 }
 
@@ -494,7 +490,6 @@ export function insightFigures(input: InsightInput, span: PeriodSpan): InsightFi
   return {
     current: spanFigures(input, scoped, span),
     previous: spanFigures(input, scoped, comparedSpan(span, input.today)),
-    whose: input.whose,
     today: input.today,
   }
 }
@@ -524,12 +519,6 @@ export interface Highlight {
   kind: HighlightKind
   /** The area its tap opens. */
   area: InsightArea
-  /**
-   * Whose figure it is, when that needs saying: 'both' counts every member's
-   * log, 'just-you' is a personal figure shown under Both of us, and null is
-   * simply the viewer's own.
-   */
-  who: 'both' | 'just-you' | null
   title: string
   delta?: HighlightDelta
   detail?: string
@@ -575,28 +564,25 @@ function leaders(list: readonly Tally[], mostOften = 'most often'): string | und
  * nothing. The same answer on the device and in the recap for the same records.
  */
 export function pickHighlights(figs: InsightFigures): Highlight[] {
-  const { current: cur, previous: prev, whose, today } = figs
+  const { current: cur, previous: prev, today } = figs
   const span = cur.span
   const phrase = periodPhrase(span, today)
   const than = previousPhrase(span, today)
-  const both = whose === 'both'
   const past = !span.current
   const cards: Omit<Highlight, 'line' | 'id'>[] = []
-  const shared = (area: InsightArea): Highlight['who'] => (both ? (PERSONAL_AREAS.has(area) ? 'just-you' : 'both') : null)
-  const card = (c: Omit<Highlight, 'line' | 'id' | 'who'>) => cards.push({ ...c, who: shared(c.area) })
+  const card = (c: Omit<Highlight, 'line' | 'id'>) => cards.push(c)
 
-  // what got done
+  // what got done: the household's work, and its busiest day
   if (cur.tasks.done > 0) {
     const top = Math.max(...cur.tasks.weekdays)
     const day = cur.tasks.weekdays.indexOf(top)
     const clear = cur.tasks.done >= 3 && top >= 2 && cur.tasks.weekdays.filter(n => n === top).length === 1
-    const whoseBest = both ? 'the busiest' : 'your best'
     card({
       kind: 'tasks-done',
       area: 'tasks',
       title: `${count(cur.tasks.done, 'task')} done ${phrase}`,
       delta: describeDelta(cur.tasks.done - prev.tasks.done, than),
-      detail: !clear ? undefined : span.period === 'week' ? `${WEEKDAYS[day]} was ${both ? 'the busiest day' : 'your best day'}` : `${WEEKDAYS[day]}s ${past ? 'were' : 'are'} ${whoseBest}`,
+      detail: !clear ? undefined : span.period === 'week' ? `${WEEKDAYS[day]} was the busiest day` : `${WEEKDAYS[day]}s ${past ? 'were' : 'are'} the busiest`,
       visual: cur.tasks.series.length > 1 ? { kind: 'spark', series: cur.tasks.series } : undefined,
       score: 55 + lift(cur.tasks.done, prev.tasks.done),
     })
@@ -627,16 +613,10 @@ export function pickHighlights(figs: InsightFigures): Highlight[] {
     })
   }
 
-  // who you saw
+  // who you saw: your own log
   const seen = cur.people.seen
   if (seen.length > 0) {
-    const title = both
-      ? seen.length === 1
-        ? `${seen[0].name} seen between you ${phrase}`
-        : `${count(seen.length, 'person', 'people')} seen between you ${phrase}`
-      : seen.length === 1
-        ? `You saw ${seen[0].name} ${phrase}`
-        : `You saw ${count(seen.length, 'person', 'people')} ${phrase}`
+    const title = seen.length === 1 ? `You saw ${seen[0].name} ${phrase}` : `You saw ${count(seen.length, 'person', 'people')} ${phrase}`
     const days = seen.length === 1 ? `on ${count(seen[0].n, 'day')}` : undefined
     const lead = seen.length > 1 && seen[0].n > seen[1].n ? `most often ${seen[0].name}` : undefined
     card({
@@ -649,7 +629,7 @@ export function pickHighlights(figs: InsightFigures): Highlight[] {
     })
   }
 
-  // where you went
+  // where you went: your own log
   const visited = cur.places.visited
   if (visited.length > 0) {
     const firsts = cur.places.firsts
@@ -658,7 +638,7 @@ export function pickHighlights(figs: InsightFigures): Highlight[] {
     card({
       kind: 'places',
       area: 'places',
-      title: visited.length === 1 ? `${both ? 'Went' : 'You went'} to ${visited[0].name} ${phrase}` : `${both ? 'Went' : 'You went'} to ${count(visited.length, 'place')} ${phrase}`,
+      title: visited.length === 1 ? `You went to ${visited[0].name} ${phrase}` : `You went to ${count(visited.length, 'place')} ${phrase}`,
       delta: describeDelta(visited.length - prev.places.visited.length, than),
       detail: first ?? leaders(visited) ?? (visited.length === 1 ? times(visited[0].n) : undefined),
       score: 48 + Math.min(10, 2 * visited.length) + (firsts.length ? 8 : 0),
@@ -758,13 +738,12 @@ export function pickHighlights(figs: InsightFigures): Highlight[] {
 
 /**
  * A card as one plain line: "19 tasks done this week, ↑7 on last week ·
- * Tuesdays are your best" — headed with whose it is under Both of us, as the
- * card's badge says it, so a screen reader hears it too.
+ * Tuesday was the busiest day". The recap's body, and the card's name for a
+ * screen reader.
  */
-export function highlightLine(c: Pick<Highlight, 'who' | 'title' | 'delta' | 'detail'>): string {
+export function highlightLine(c: Pick<Highlight, 'title' | 'delta' | 'detail'>): string {
   const change = c.delta ? `, ${c.delta.by === 0 ? `the same as ${c.delta.than}` : `${c.delta.text} ${c.delta.than}`}` : ''
-  const whose = c.who === 'both' ? 'Both of us: ' : c.who === 'just-you' ? 'Just you: ' : ''
-  return `${whose}${c.title}${change}${c.detail ? ` · ${c.detail}` : ''}`
+  return `${c.title}${change}${c.detail ? ` · ${c.detail}` : ''}`
 }
 
 /** The recap's body: the first few cards' lines, most interesting first. */

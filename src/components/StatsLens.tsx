@@ -9,7 +9,7 @@ import { outingsAt } from '../places'
 import { DAY_WINDOWS, countDays, distinctDays, monthBuckets, type DayWindow } from '../stats'
 import { inWindow } from '../../shared/stats.mts'
 import { localDayKey } from '../../shared/journal.mts'
-import { PERSONAL_AREAS, describeDelta, scopeRecords, type InsightInput, type InsightPeriod, type Scoped, type Whose } from '../../shared/insights.mts'
+import { describeDelta, scopeRecords, type InsightInput, type InsightPeriod, type Scoped } from '../../shared/insights.mts'
 import { useDayClock } from '../useDayClock'
 import { MOOD_META, MOODS, type CalendarEntry, type Garment, type GroceryList, type Habit, type JournalEntry, type Meal, type Outfit, type Person, type Place, type Recipe, type Task, type Wear } from '../types'
 import type { PersonFilter } from '../people'
@@ -20,7 +20,7 @@ import { wearIndex } from '../../shared/wardrobe.mts'
 import { AreaCard, ChartCard, DeltaBadge, HeatGrid, MonthBars, RankedBars, Ring, StatTile, Stepper, WindowSwitch } from './stats'
 import { Highlights } from './insights/Highlights'
 import { KitchenStats, PeopleStats, PlacesStats, WardrobeStats } from './planner/lazy'
-import type { StatsArea, StatsTab } from './planner/routes'
+import type { StatsTab } from './planner/routes'
 
 /*
  * Insights → Stats, the lens: the one place you never add anything to, and
@@ -32,11 +32,12 @@ import type { StatsArea, StatsTab } from './planner/routes'
  * (useListFilters), so one view, one chunk, one set of numbers wherever you
  * look. The Overview it used to open on is the This year page.
  *
- * Whose log each page counts is decided once, by scopeRecords
- * (shared/insights.mts) — the rule the Highlights and the monthly recap use:
- * under Mine your own work, visits, outings and meals; under Both of us every
- * member's the device can already read, labelled on every page. The journal,
- * habits and clothes are yours under either.
+ * Whose records each page counts is one rule, scopeRecords
+ * (shared/insights.mts), the one the Highlights and the monthly recap use:
+ * tasks, money and meals are the household's, every one the device can read;
+ * who you saw and where you went are your own log, by `myId`; the journal,
+ * habits and clothes are yours alone. There is no switch: in a household the
+ * Highlights say once, in a line, what counts whose.
  *
  * Nothing personal leaves the device, and nothing written in the journal is
  * quoted — the journal's figures are counts and moods only.
@@ -90,11 +91,8 @@ export interface StatsLensProps {
    * journal, habits and clothes are yours alone.
    */
   myId?: string | null
-  /** More than one member shares the planner: Mine · Both of us is offered, and Both is labelled wherever it counts. */
+  /** More than one member shares the planner: the Highlights say, in one line, what counts the household and what is yours. */
   household?: boolean
-  /** Whose log the shared areas count. Mine, unless the household is more than one and this device chose Both. */
-  whose?: Whose
-  onWhose?(w: Whose): void
   /** The Highlights' Week · Month · Year, and which one by its key (null for now). */
   period?: InsightPeriod
   onPeriod?(p: InsightPeriod): void
@@ -144,12 +142,10 @@ export function StatsLens(p: StatsLensProps) {
   const [span, setSpan] = useState<DayWindow>(tab === 'year' ? 365 : 30)
   const [year, setYear] = useState(now.getFullYear())
   const myId = p.myId ?? null
-  // alone there is nobody else's log to count, whatever this device once chose
-  const whose: Whose = p.household && p.whose === 'both' ? 'both' : 'mine'
   const today = dateKey(now)
   const scoped = useMemo(
-    () => scopeRecords({ tasks: p.tasks, meals: p.meals, journal: p.journal, habits: p.habits, garments: p.garments, wears: p.wears, myId, whose }),
-    [p.tasks, p.meals, p.journal, p.habits, p.garments, p.wears, myId, whose],
+    () => scopeRecords({ tasks: p.tasks, meals: p.meals, journal: p.journal, habits: p.habits, garments: p.garments, wears: p.wears, myId }),
+    [p.tasks, p.meals, p.journal, p.habits, p.garments, p.wears, myId],
   )
   const input = useMemo<InsightInput>(
     () => ({
@@ -164,12 +160,11 @@ export function StatsLens(p: StatsLensProps) {
       garments: p.garments,
       wears: p.wears,
       myId,
-      whose,
       now,
       today,
       dayKeyOf: localDayOf,
     }),
-    [p.tasks, p.events, p.people, p.places, p.meals, p.recipes, p.journal, p.habits, p.garments, p.wears, myId, whose, now, today],
+    [p.tasks, p.events, p.people, p.places, p.meals, p.recipes, p.journal, p.habits, p.garments, p.wears, myId, now, today],
   )
   const open = (page: Exclude<StatsTab, 'highlights'>) => {
     scroll.highlights = typeof window === 'undefined' ? 0 : window.scrollY
@@ -181,7 +176,6 @@ export function StatsLens(p: StatsLensProps) {
         <Highlights
           input={input}
           household={!!p.household}
-          onWhose={p.onWhose ?? noop}
           period={p.period ?? 'week'}
           onPeriod={p.onPeriod ?? noop}
           at={p.at ?? null}
@@ -191,21 +185,18 @@ export function StatsLens(p: StatsLensProps) {
       </HighlightsPage>
     )
   const spanWords = span === 'all' ? 'all time' : (LENS_WINDOWS.find(w => w.key === span)?.label.toLowerCase() ?? 'all time')
-  const lens: Lens = { ...p, scoped, whose, span, spanWords, now, year, setYear, onOpen: open }
+  const lens: Lens = { ...p, myId, scoped, span, spanWords, now, year, setYear, onOpen: open }
   return (
     <StatsPage key={tab}>
       <div className={`stats-lens stats-page ink-${tab}`}>
-        {(whose === 'both' || WINDOWED.has(tab)) && (
+        {/* One question at a time: the pages the window governs all read it,
+            so choosing 12 months on Tasks and opening the year keeps what
+            you were asking. Where it would govern nothing it is not drawn. */}
+        {WINDOWED.has(tab) && (
           <div className="stats-bar">
-            {whose === 'both' && <WhoseLine page={tab} />}
-            {/* One question at a time: the pages the window governs all read it,
-                so choosing 12 months on Tasks and opening the year keeps what
-                you were asking. Where it would govern nothing it is not drawn. */}
-            {WINDOWED.has(tab) && (
-              <div className="stats-window">
-                <WindowSwitch value={span} onChange={setSpan} windows={LENS_WINDOWS} />
-              </div>
-            )}
+            <div className="stats-window">
+              <WindowSwitch value={span} onChange={setSpan} windows={LENS_WINDOWS} />
+            </div>
           </div>
         )}
         {tab === 'year' && <YearLens {...lens} />}
@@ -257,31 +248,10 @@ function StatsPage({ children }: { children: ReactNode }) {
   return <>{children}</>
 }
 
-/** Under Both of us, whose figures a page holds, so none can be taken for yours alone. */
-function WhoseLine({ page }: { page: StatsTab }) {
-  const personal = PERSONAL_AREAS.has(page as StatsArea)
-  return (
-    <p className="whose-note">
-      {personal ? (
-        <>
-          <span className="badge whose-badge just-you">Just you</span> Your own, as under Mine: nobody else’s is ever counted here.
-        </>
-      ) : page === 'year' ? (
-        <>
-          <span className="badge whose-badge">Both of us</span> Tasks, money, people, places and meals count everyone in the household; the journal, habits and clothes are yours alone.
-        </>
-      ) : (
-        <>
-          <span className="badge whose-badge">Both of us</span> Every member’s log is counted here, not only yours.
-        </>
-      )}
-    </p>
-  )
-}
-
 type Lens = StatsLensProps & {
+  /** The viewer, or null in local mode: whose log of visits and outings People and Places count. */
+  myId: string | null
   scoped: Scoped
-  whose: Whose
   span: DayWindow
   spanWords: string
   now: Date
@@ -305,10 +275,10 @@ function WindowChange({ now, before, window, unit }: { now: number; before: numb
   return <DeltaBadge by={d.by} text={d.text} than={d.than} />
 }
 
-// ---- People and Places, by whose log --------------------------------------------
+// ---- People and Places, your own log ---------------------------------------------
 
-/** People's own Stats, counting the visits whose log is asked for: yours (v3.24), or every member's under Both of us. */
-function AreaPeople({ people, tasks, events, areas: a, scoped }: Lens) {
+/** People's own Stats, counting your own visits (v3.24), so a person's page here matches Keep → People. */
+function AreaPeople({ people, tasks, events, areas: a, myId }: Lens) {
   return (
     <PeopleStats
       people={people}
@@ -320,15 +290,14 @@ function AreaPeople({ people, tasks, events, areas: a, scoped }: Lens) {
       onOpenPerson={a.onOpenPerson}
       onOpenDay={a.onOpenDay}
       // whom you saw is your own log (v3.24): without it, a household
-      // member's visits counted as yours here and nowhere else. Under Both of
-      // us, null counts everyone's, and the page says so above.
-      myId={scoped.visitsOf}
+      // member's visits counted as yours here and nowhere else
+      myId={myId}
     />
   )
 }
 
-/** Places' own Stats, counting the outings whose log is asked for; a meal shared with the household counts for both either way. */
-function AreaPlaces({ places, people, tasks, meals, areas: a, scoped }: Lens) {
+/** Places' own Stats, counting your own outings, as Keep → Places does; a meal shared with the household is an outing for both. */
+function AreaPlaces({ places, people, tasks, meals, areas: a, myId }: Lens) {
   return (
     <PlacesStats
       places={places}
@@ -341,7 +310,7 @@ function AreaPlaces({ places, people, tasks, meals, areas: a, scoped }: Lens) {
       onPlan={a.onPlanAt}
       onOpenPerson={a.onOpenPerson}
       onOpenDay={a.onOpenDay}
-      myId={scoped.visitsOf}
+      myId={myId}
     />
   )
 }
@@ -349,7 +318,7 @@ function AreaPlaces({ places, people, tasks, meals, areas: a, scoped }: Lens) {
 // ---- This year: what the Overview held ---------------------------------------------
 
 function YearLens(p: Lens) {
-  const { people, places, events, recipes, areas: a, scoped, span, spanWords, now } = p
+  const { people, places, events, recipes, areas: a, myId, scoped, span, spanWords, now } = p
   const tasks = scoped.work
   const year = now.getFullYear()
   const report = useMemo(() => taskReport(tasks, span, now), [tasks, span, now])
@@ -360,7 +329,7 @@ function YearLens(p: Lens) {
   // them — which People narrows per person. Mapping it raw made every day you
   // finished any chore a day you saw someone, and counted tasks in Trash too.
   // getTogethers is the narrowing People's own tiles use, so the two agree.
-  const { seen, all } = useMemo(() => peopleSeen(people, p.tasks, events, now, scoped.visitsOf), [people, p.tasks, events, now, scoped.visitsOf])
+  const { seen, all } = useMemo(() => peopleSeen(people, p.tasks, events, now, myId), [people, p.tasks, events, now, myId])
   const together = useMemo(() => getTogethers(all, seen), [all, seen])
   const jr = useMemo(() => journalReport(scoped.journal, span, year, now), [scoped.journal, span, year, now])
   const hr = useMemo(() => habitReport(scoped.habits, span, now), [scoped.habits, span, now])
@@ -382,10 +351,10 @@ function YearLens(p: Lens) {
   // outingsAt is the app's one rule for having been somewhere: a done task
   // carrying the place, AND a past meal eaten out there — counting a takeaway
   // is what keeps the Kitchen and Places agreeing. Only over places that still
-  // exist, or the ring could read more than its own total. Your own outings
-  // under Mine, as Places → Stats counts them.
+  // exist, or the ring could read more than its own total. Your own outings,
+  // as Places → Stats counts them.
   const livePlaces = useMemo(() => places.filter(pl => !pl.deletedAt), [places])
-  const placesVisited = useMemo(() => livePlaces.filter(pl => outingsAt(pl.id, p.tasks, p.meals, now, scoped.visitsOf).length > 0).length, [livePlaces, p.tasks, p.meals, now, scoped.visitsOf])
+  const placesVisited = useMemo(() => livePlaces.filter(pl => outingsAt(pl.id, p.tasks, p.meals, now, myId).length > 0).length, [livePlaces, p.tasks, p.meals, now, myId])
   // doneMonths, not a recount: the Tasks page's own "Each month" bars are
   // these twelve numbers, and this sparkline is the way into that page
   const done = useMemo(() => doneMonths(tasks, year, now).months, [tasks, year, now])
@@ -627,7 +596,7 @@ function TasksLens(p: Lens) {
 // ---- Money -----------------------------------------------------------------------
 
 function MoneyLens(p: Lens) {
-  const { scoped, areas: a, year, setYear, now, whose } = p
+  const { scoped, areas: a, year, setYear, now } = p
   const tasks = scoped.work
   const money = useMemo(() => moneyReport(tasks, year, now), [tasks, year, now])
   // set against the year before at the same point in it, while this one is still going
@@ -704,11 +673,7 @@ function MoneyLens(p: Lens) {
           <div className="kpi-row">
             {money.dueNow > 0 && <StatTile label="Still to pay" value={String(money.dueNow)} warn sub={money.dueNowTotal > 0 ? `open now · about ${formatMoney(money.dueNowTotal)}` : 'open now · bills not yet ticked'} />}
             {clothes.spent > 0 && (
-              <StatTile
-                label="Clothes"
-                value={formatMoney(clothes.spent)}
-                sub={`${whose === 'both' ? 'yours, ' : ''}${clothes.perWear === undefined ? 'all time · nothing worn yet' : `all time · ${formatMoney(clothes.perWear)} a wear`}`}
-              />
+              <StatTile label="Clothes" value={formatMoney(clothes.spent)} sub={clothes.perWear === undefined ? 'all time · nothing worn yet' : `all time · ${formatMoney(clothes.perWear)} a wear`} />
             )}
           </div>
         </section>

@@ -165,9 +165,9 @@
 }
 
 /* ---------- the Highlights (components/insights/Highlights.tsx) ----------
-   Insights → Stats' first page: the period and whose log at the head, a chip
-   for every area, then a few cards, each a line about the period in its
-   area's colour (the .ink-* classes, 18-stats-lens.css) with a small picture. */
+   Insights → Stats' first page: the period at the head, a chip for every
+   area, then a few cards, each a line about the period in its area's colour
+   (the .ink-* classes, 18-stats-lens.css) with a small picture. */
 .insights-feed {
   display: flex;
   flex-direction: column;
@@ -178,14 +178,6 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
-}
-.highlights-switches {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.highlights-switches > .segmented.seg-track {
-  flex: 1 1 220px;
 }
 .highlights-when {
   display: flex;
@@ -211,27 +203,15 @@
   font-weight: 700;
   letter-spacing: -0.01em;
 }
-/* whose log the figures count, under Both of us: said in words as well as on a badge */
-.whose-note {
+/* in a household, what counts whose: one quiet line, a field's hint
+   (.field-hint), centred under the period's name as wide as the head. It is
+   about the whole page rather than the dates above it, so it keeps the head's
+   own gap instead of a hint's tuck under its field. */
+.insights-scope {
   margin: 0;
-  font-size: 0.8125rem;
-  line-height: 1.45;
-  color: var(--text-2);
-}
-.whose-badge {
-  display: inline-block;
-  background: var(--accent-soft);
-  color: var(--accent-text);
-}
-.whose-badge.just-you {
-  background: var(--surface-3);
-  color: var(--text-2);
-}
-.highlight-area .whose-badge {
-  font-size: 0.625rem;
-  letter-spacing: 0.02em;
-  text-transform: none;
-  padding: 1px 7px;
+  max-width: 520px;
+  text-align: center;
+  text-wrap: balance;
 }
 /* every area a tap away: pills that wrap onto a second line rather than scroll */
 .area-chips {
@@ -331,10 +311,6 @@
   letter-spacing: -0.01em;
   overflow-wrap: anywhere;
 }
-.just-you {
-  color: var(--text-2);
-  font-weight: 600;
-}
 .highlight-more {
   display: flex;
   flex-wrap: wrap;
@@ -394,9 +370,9 @@
 }
 
 /* ---------- a page pushed over the Highlights ----------
-   Its head — whose log, and the window where one governs — sits under the
-   pushed screen's own sticky ‹ Back, so here it scrolls with the page. A page
-   of figures reads down one column, and on a wide screen that column stops at
+   Its head — the window, where one governs — sits under the pushed screen's
+   own sticky ‹ Back, so here it scrolls with the page. A page of figures
+   reads down one column, and on a wide screen that column stops at
    a width a chart's labels and a month's calendar still read at, rather than
    stretching a 12-month chart's ticks to the size of a heading. */
 .stats-page {
@@ -433,8 +409,5 @@
   .highlight-visual .sparkline,
   .split-bar {
     width: 56px;
-  }
-  .highlights-switches > .segmented.seg-track {
-    flex-basis: 100%;
   }
 }

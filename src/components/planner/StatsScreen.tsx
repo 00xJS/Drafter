@@ -29,7 +29,7 @@ import type { AreaProps } from '../StatsLens'
  */
 export function StatsScreen({ p }: { p: PlannerCtx }) {
   const { store, upsert, remove, household, inHousehold, statsTab, goStatsTab, setView, goTasksTab, showToast } = p
-  const { insightsPeriod, setInsightsPeriod, insightsAt, setInsightsAt, whose, setWhose } = p
+  const { insightsPeriod, setInsightsPeriod, insightsAt, setInsightsAt } = p
   const { peopleFilter, setPeopleFilter, placeFilter, setPlaceFilter } = p
   const { openPerson, openPlace, openCalendarDay, openKitchen, openKitchenDay, openWardrobe, setKitchenRecipe, sawThem, planAt } = p
 
@@ -117,13 +117,11 @@ export function StatsScreen({ p }: { p: PlannerCtx }) {
         setView('tasks')
       }}
       areas={areas}
-      // whose log the figures count: the address book is the household's,
-      // who saw whom is this account's own (v3.24), and Both of us — offered
-      // only where there is someone to share with — counts every member's
+      // whose records the figures count: tasks, money and meals are the
+      // household's, who saw whom and where they went is this account's own
+      // (v3.24), and in a household the Highlights say so in a line
       myId={household.myId}
       household={inHousehold}
-      whose={whose}
-      onWhose={setWhose}
       period={insightsPeriod}
       onPeriod={setInsightsPeriod}
       at={insightsAt}

@@ -215,7 +215,7 @@ export function useDeepLinks({
     }
     if (parsed.insights) {
       // The monthly recap's push, or its row: Insights' Highlights on its
-      // month, on Mine as the recap counts only yours. It writes nothing, and
+      // month, which count what the recap counted. It writes nothing, and
       // whatever else it carries is ignored.
       openInsights(parsed.insights.period, parsed.insights.at ?? null)
       return

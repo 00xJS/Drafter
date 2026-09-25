@@ -4,16 +4,17 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import type { PlannerCtx } from '../components/planner/ctx'
 import { InsightsScreen } from '../components/planner/InsightsScreen'
 import { PeopleStats, StatsLens } from '../components/planner/lazy'
-import { INSIGHTS_PERIOD_KEY, INSIGHTS_WHOSE_KEY } from '../components/planner/routes'
+import { INSIGHTS_PERIOD_KEY } from '../components/planner/routes'
 import { useNavigation } from '../components/planner/useNavigation'
 import { NO_PERSON_FILTER } from '../people'
 import { NO_PLACE_FILTER } from '../places'
-import type { JournalEntry, Person, Task } from '../types'
+import type { Garment, Habit, JournalEntry, Person, Task, Wear } from '../types'
 
 // Insights → Stats as it is drawn and pressed: the Highlights, their
-// Week · Month · Year, Mine · Both of us and what it labels, and an area's
-// figures pushed over them and back — with the real navigation, and the
-// lens's real chunks, warmed first as a finger on the tab warms them.
+// Week · Month · Year, the one view a household of two gets and the line that
+// says what counts whose, and an area's figures pushed over them and back —
+// with the real navigation, and the lens's real chunks, warmed first as a
+// finger on the tab warms them.
 
 const STAMP = '2026-01-01T00:00:00.000Z'
 const JOE = 'joe-0000-4000-8000-00000000000a'
@@ -49,10 +50,16 @@ const TASKS: Task[] = [
   done('insurance', '2026-09-23', { ownerId: MARIA }),
 ]
 const PEOPLE = [person('marco', 'Tio Marco'), person('ana', 'Ana'), person('rosa', 'Rosa')]
+const THIS_WEEK = ['2026-09-20', '2026-09-21', '2026-09-22', '2026-09-23', '2026-09-24']
 // Joe's journal, and a run of Maria's the device should never hold, and never counts if it does
-const JOURNAL = [entry('2026-09-23', JOE), ...['2026-09-19', '2026-09-20', '2026-09-21', '2026-09-22', '2026-09-23', '2026-09-24'].map(d => entry(d, MARIA))]
+const JOURNAL = [entry('2026-09-23', JOE), ...['2026-09-19', ...THIS_WEEK].map(d => entry(d, MARIA))]
+// …and her habit and her clothes, kept every day this week: hers alone, as her journal is
+const HABITS: Habit[] = [{ kind: 'habit', id: 'walk', name: 'Walk', done: THIS_WEEK, ownerId: MARIA, createdAt: STAMP, updatedAt: STAMP }]
+const GARMENTS: Garment[] = [{ kind: 'garment', id: 'dress', name: 'Red dress', type: 'top', ownerId: MARIA, createdAt: STAMP, updatedAt: STAMP }]
+const WEARS: Wear[] = THIS_WEEK.map(d => ({ kind: 'wear', id: `wear~${d}~maria`, date: d, garmentIds: ['dress'], ownerId: MARIA, createdAt: STAMP, updatedAt: STAMP }))
 
-const store = {
+/** What Joe's device holds in a household of two: the household's records, and his own. */
+const HOUSEHOLD = {
   tasks: TASKS,
   people: PEOPLE,
   places: [],
@@ -61,19 +68,21 @@ const store = {
   recipes: [],
   groceries: [],
   journal: JOURNAL,
-  habits: [],
-  garments: [],
+  habits: HABITS,
+  garments: GARMENTS,
   outfits: [],
-  wears: [],
+  wears: WEARS,
   projects: [],
   reviews: [],
 }
+/** …and on his own: his records alone. */
+const ALONE = { ...HOUSEHOLD, tasks: TASKS.filter(t => t.ownerId === JOE), journal: JOURNAL.filter(e => e.ownerId === JOE), habits: [], garments: [], wears: [] }
 
 /** The shell as far as Insights goes: the real navigation, the lists' own filters, and the household. */
 function Shell({ inHousehold }: { inHousehold: boolean }) {
   const nav = useNavigation()
   const known: Record<string, unknown> = {
-    store,
+    store: inHousehold ? HOUSEHOLD : ALONE,
     household: { info: null, myId: JOE },
     inHousehold,
     peopleFilter: NO_PERSON_FILTER,
@@ -138,40 +147,47 @@ describe('the Highlights', () => {
   })
 })
 
-describe('Mine · Both of us', () => {
-  it('is not offered to a household of one', () => {
+/** The line a household is told what counts whose by. */
+const SCOPE_LINE = 'Tasks, money and meals count the household; people, places, your journal, habits and clothes are yours.'
+const labels = () => cards().map(c => c.getAttribute('aria-label') ?? '')
+
+describe('one view, with no switch', () => {
+  it('says nothing about whose on its own, as everything counted is yours', () => {
     render(<Shell inHousehold={false} />)
     expect(screen.queryByRole('group', { name: 'Whose log' })).toBeNull()
-    expect(screen.queryByText('Both of us')).toBeNull()
+    expect(screen.queryByText(SCOPE_LINE)).toBeNull()
+    expect(screen.queryByText(/Both of us|Just you/)).toBeNull()
   })
 
-  it('counts your own log under Mine, and never another member’s journal', () => {
+  it('counts Maria’s shared tasks in a household of two, but never her visits, journal, habits or clothes, and draws no switch', () => {
     render(<Shell inHousehold />)
-    const whose = screen.getByRole('group', { name: 'Whose log' })
-    expect(within(whose).getByRole('button', { name: 'Mine' }).getAttribute('aria-pressed')).toBe('true')
+    // no switch, and nothing to choose between
+    expect(screen.queryByRole('group', { name: 'Whose log' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Mine' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Both of us' })).toBeNull()
+    expect(screen.getAllByRole('group').map(g => g.getAttribute('aria-label'))).toEqual(['Period'])
+    // Joe's three chores and Maria's insurance: the household's work, against one last week
+    expect(cardNamed(/^4 tasks done this week, ↑3 on last week · Tuesday was the busiest day\. Open Tasks$/)).toBeTruthy()
+    // whom Joe saw: Tio Marco, never Maria's Ana and Rosa
     expect(cardNamed(/^You saw Tio Marco this week/)).toBeTruthy()
-    expect(cardNamed(/^3 tasks done this week/)).toBeTruthy()
-    // one day of Joe's journal, never Maria's run of six
+    expect(labels().some(l => /Ana|Rosa|people/.test(l))).toBe(false)
+    // one day of Joe's journal, never Maria's run of six; none of her habit or her clothes
     expect(cardNamed(/^Wrote in the journal on 1 day this week/)).toBeTruthy()
-    expect(cards().some(c => /6 days in a row/.test(c.getAttribute('aria-label') ?? ''))).toBe(false)
-    expect(screen.queryByText('Both of us', { selector: '.badge' })).toBeNull()
+    expect(labels().some(l => /Journal \d+ days in a row|Habits|Outfit|Red dress/.test(l))).toBe(false)
+    // no card says whose it is: the one line under the period does, in a field's hint
+    expect(labels().some(l => /^(Both of us|Just you)/.test(l))).toBe(false)
+    expect(screen.queryByText(/Both of us|Just you/)).toBeNull()
+    const line = screen.getByText(SCOPE_LINE)
+    expect(line.className).toBe('field-hint insights-scope')
+    expect(line.querySelector('.badge')).toBeNull()
   })
 
-  it('counts every member’s log under Both of us, labels every card it counts that way, and remembers it', () => {
+  it('pays no heed to the choice the old switch left on a device', () => {
+    localStorage.setItem('drafter:insights-whose', 'both')
     render(<Shell inHousehold />)
-    fireEvent.click(within(screen.getByRole('group', { name: 'Whose log' })).getByRole('button', { name: 'Both of us' }))
-    expect(localStorage.getItem(INSIGHTS_WHOSE_KEY)).toBe('both')
-    // each card's name says whose it is, as its badge does
-    const people = cardNamed(/^Both of us: 3 people seen between you this week/)!
-    expect(within(people).getByText('Both of us')).toBeTruthy()
-    const tasks = cardNamed(/^Both of us: 4 tasks done this week/)!
-    expect(within(tasks).getByText('Both of us')).toBeTruthy()
-    // the journal is still yours alone, and says so
-    const journal = cardNamed(/^Just you: Wrote in the journal on 1 day this week/)!
-    expect(within(journal).getByText('Just you:')).toBeTruthy()
-    expect(within(journal).queryByText('Both of us')).toBeNull()
-    // …and the page says, in words, whose figures these are
-    expect(screen.getByText(/count everyone in the household/)).toBeTruthy()
+    expect(screen.queryByRole('group', { name: 'Whose log' })).toBeNull()
+    expect(cardNamed(/^You saw Tio Marco this week/)).toBeTruthy()
+    expect(cardNamed(/^4 tasks done this week/)).toBeTruthy()
   })
 })
 
@@ -195,28 +211,28 @@ describe('an area’s figures, pushed over the Highlights', () => {
     expect(screen.getByText('Finished')).toBeTruthy()
   })
 
-  it('count People by your own visits under Mine, everyone’s under Both of us, and say so', async () => {
+  it('count People by your own visits in a household too, so a person’s figures match Keep → People', async () => {
     const most = () => within(screen.getByText('Most seen').closest('section')!).queryAllByText(/^(Tio Marco|Ana|Rosa)$/).map(n => n.textContent)
-    const first = render(<Shell inHousehold />)
+    render(<Shell inHousehold />)
     fireEvent.click(within(screen.getByRole('navigation', { name: 'Every figure, by area' })).getByRole('button', { name: 'People' }))
     await screen.findByText('Most seen')
     expect(most()).toEqual(['Tio Marco'])
-    expect(screen.queryByText('Both of us')).toBeNull()
-    first.unmount()
-    localStorage.setItem(INSIGHTS_WHOSE_KEY, 'both')
-    render(<Shell inHousehold />)
-    fireEvent.click(within(screen.getByRole('navigation', { name: 'Every figure, by area' })).getByRole('button', { name: 'People' }))
-    await screen.findByText('Most seen')
-    expect(most().sort()).toEqual(['Ana', 'Rosa', 'Tio Marco'])
-    expect(screen.getByText('Both of us')).toBeTruthy()
-    expect(screen.getByText(/Every member’s log is counted here/)).toBeTruthy()
+    expect(screen.queryByText(/Both of us|Just you/)).toBeNull()
   })
 
-  it('keep the journal your own under Both of us too, and say so', () => {
-    localStorage.setItem(INSIGHTS_WHOSE_KEY, 'both')
+  it('count Tasks as the household’s, with no badge on the page', () => {
+    render(<Shell inHousehold />)
+    fireEvent.click(within(screen.getByRole('navigation', { name: 'Every figure, by area' })).getByRole('button', { name: 'Tasks' }))
+    // the last 30 days: Joe's four chores and Maria's insurance
+    const finished = screen.getByText('Finished').closest('.stat-tile')!
+    expect(within(finished as HTMLElement).getByText('5')).toBeTruthy()
+    expect(screen.queryByText(/Both of us|Just you/)).toBeNull()
+  })
+
+  it('keep the journal your own, and say nothing about it', () => {
     render(<Shell inHousehold />)
     fireEvent.click(within(screen.getByRole('navigation', { name: 'Every figure, by area' })).getByRole('button', { name: 'Journal' }))
-    expect(screen.getByText('Just you')).toBeTruthy()
+    expect(screen.queryByText(/Both of us|Just you/)).toBeNull()
     // one entry, Joe's: Maria's six are not counted
     const entries = screen.getByText('Entries').closest('.stat-tile')!
     expect(within(entries as HTMLElement).getByText('1')).toBeTruthy()
