@@ -562,6 +562,50 @@ describe('the draft itself, in the background function', () => {
   })
 })
 
+// ---- a week's 3 set on Home --------------------------------------------------------
+
+// Home sets this week's 3 by writing the member's review of the week before
+// — `top` and `topDone`, nothing else — and makes that record when there is
+// none, with an id the Review page would give it. A record like that is the
+// week's goals, not a review: Sunday still drafts the week, into it.
+describe('a week’s 3 set on Home', () => {
+  const HOME = '3f2c9a71-5d4e-4b8a-9c1f-5e1b2a7c9d10'
+  const goals = (over: Record<string, unknown> = {}) =>
+    row(OWNER, { kind: 'review', id: HOME, period: 'week', key: '2026-W36', top: ['Book the electrician', 'Date night'], topDone: [true, false], ...over })
+
+  it('leaves the week to Sunday’s draft, written into the same record with the goals and their ticks kept', async () => {
+    settings = [withPush(OWNER)]
+    rows = [doneLastWeek(OWNER, 'fence', 'Fixed the fence'), goals()]
+    expect(await hourly('2026-09-13T06:00:00Z', '2026-09-13T12:00:00Z')).toEqual(['2026-09-13T07:00:00.000Z'])
+    // one record for the week, the one Home made: no second one beside it
+    expect(drafts().map(r => r.data.id)).toEqual([HOME])
+    expect(drafts()[0].data).toMatchObject({ top: ['Book the electrician', 'Date night'], topDone: [true, false], summary: SUMMARY, draftedAt: '2026-09-13T07:00:00.000Z' })
+    // …and the digest after it leads with what the draft wrote
+    expect(lastLines()).toEqual(['Last week: A steady week: the fence is fixed.'])
+  })
+
+  it('does not stand in for a review, even with every goal ticked', async () => {
+    settings = [quiet(OWNER, { timezone: 'UTC' })]
+    rows = [goals({ topDone: [true, true] })]
+    const out = await job([OWNER], '2026-09-13T07:00:00.000Z')
+    expect(out.counts).toMatchObject({ asked: 1, drafted: 1 })
+    expect(drafts()[0].data).toMatchObject({ id: HOME, summary: SUMMARY, topDone: [true, true] })
+  })
+
+  it('set after the draft, asks for nothing more: the week was drafted once', async () => {
+    settings = [withPush(OWNER)]
+    rows = [doneLastWeek(OWNER, 'fence', 'Fixed the fence')]
+    expect(await hourly('2026-09-13T06:00:00Z', '2026-09-13T08:00:00Z')).toEqual(['2026-09-13T07:00:00.000Z'])
+    // on the phone, the goals are set on that same week's record at 07:30
+    const drafted = drafts()[0]
+    drafted.data = { ...drafted.data, top: ['Book the electrician'], topDone: [false], updatedAt: '2026-09-13T07:30:00.000Z' }
+    expect(await hourly('2026-09-13T08:00:00Z', '2026-09-13T12:00:00Z')).toEqual([])
+    expect(drafts()).toHaveLength(1)
+    expect(drafts()[0].data).toMatchObject({ id: OWNER_DRAFT, summary: SUMMARY, top: ['Book the electrician'] })
+    expect(lastLines()).toEqual(['Last week: A steady week: the fence is fixed.'])
+  })
+})
+
 describe('the draft leaves an account disabled in Admin alone', () => {
   // Admin's Disable is a ban of 876,000 hours (admin.mjs); Enable clears it
   const DISABLED = '2126-08-20T08:00:00.000Z'
