@@ -151,3 +151,38 @@ describe('the foot of a saved task', () => {
     expect(document.body.textContent).not.toMatch(/\bin Home\b/)
   })
 })
+
+describe('money in the editor', () => {
+  const payday = (over: Partial<Task> = {}) =>
+    saved({ id: 'pay', title: 'Joe’s pay', description: '', bill: { kind: 'income' }, estimateCost: 2450, recurrence: { freq: 'biweekly' }, shared: true, ...over })
+
+  it('has one amount for a payday, what it takes home, and says what arrived only once one has', () => {
+    open({ task: payday({ dueAt: new Date(2026, 8, 25).toISOString() }) })
+    expect((screen.getByLabelText('Take-home pay') as HTMLInputElement).value).toBe('2450')
+    // never a second figure beside it that reads as before and after tax
+    expect(screen.queryByLabelText('Arrived this time')).toBeNull()
+    expect(screen.queryByText(/Amount paid in|Actually received/)).toBeNull()
+  })
+
+  it('asks a done payday what arrived that time, and shows the take-home pay until something else is typed', () => {
+    const calls = open({ task: payday({ status: 'done', completedAt: new Date(2026, 8, 25, 9).toISOString(), dueAt: new Date(2026, 8, 25).toISOString() }) })
+    const arrived = screen.getByLabelText('Arrived this time') as HTMLInputElement
+    expect(arrived.value).toBe('')
+    expect(arrived.placeholder).toBe('2450')
+    typeInto(arrived, '2391.50')
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect(calls.save.mock.calls[0][0]).toMatchObject({ estimateCost: 2450, actualCost: 2391.5 })
+  })
+
+  it('keeps a bill’s two amounts', () => {
+    open({ task: saved({ id: 'rent', title: 'Rent', bill: { kind: 'bill' }, estimateCost: 1850, dueAt: new Date(2026, 8, 30).toISOString() }) })
+    expect(screen.getByLabelText('Amount due')).toBeTruthy()
+    expect(screen.getByLabelText('Paid')).toBeTruthy()
+  })
+
+  it('keeps a set-aside’s two amounts', () => {
+    open({ task: saved({ id: 'fund', title: 'Fund', bill: { kind: 'saving' }, estimateCost: 100, dueAt: new Date(2026, 8, 30).toISOString() }) })
+    expect(screen.getByLabelText('Set aside each time')).toBeTruthy()
+    expect(screen.getByLabelText('Actually set aside')).toBeTruthy()
+  })
+})

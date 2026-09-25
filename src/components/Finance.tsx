@@ -13,6 +13,7 @@ import { BillSheet } from './finance/BillSheet'
 import { CheckInSheet, type CheckInChange } from './finance/CheckInSheet'
 import { GoalSheet } from './finance/GoalSheet'
 import { WEEKDAYS, dayLabel, moneyName } from './finance/labels'
+import { PaydaySheet } from './finance/PaydaySheet'
 import { Timeline, type CheckInFocus } from './finance/Timeline'
 
 // Finance (v3.27): what Bills was, plus the two things it could not answer.
@@ -42,8 +43,8 @@ const SEGMENTS: { key: Segment; label: string }[] = [
   { key: 'accounts', label: 'Accounts' },
 ]
 
-/** The sheet over Finance, if any: Check in (on one account, or adding one), + Bill's templates, or + Goal. */
-type Sheet = { kind: 'checkin'; focus?: CheckInFocus } | { kind: 'bill' } | { kind: 'goal' }
+/** The sheet over Finance, if any: Check in (on one account, or adding one), + Bill's templates, + Payday or + Goal. */
+type Sheet = { kind: 'checkin'; focus?: CheckInFocus } | { kind: 'bill' } | { kind: 'payday' } | { kind: 'goal' }
 
 const fmtDay = (iso?: string) => (iso ? new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) : '')
 const timeLabel = (hhmm: string) => {
@@ -60,10 +61,10 @@ interface Props {
   /** More than one member: a bill or a goal added here says who can see it. */
   inHousehold?: boolean
   onOpen(t: Task): void
-  /** The task editor on a new payday, or on a bill with more to it than + Bill's short form. */
+  /** The task editor on a bill or a payday with more to it than + Bill's or + Payday's short form. */
   onNew(preset: Partial<Task>): void
   onMarkPaid(t: Task): void
-  /** A bill or a goal from Finance's own forms, or the weekly check-in turned on: written, with a toast and its Undo. */
+  /** A bill, a payday or a goal from Finance's own forms, or the weekly check-in turned on: written, with a toast and its Undo. */
   onAdd(t: Task, message: string): void
   /** The weekly check-in moved to another day or time, or money with no date given one. */
   onSaveTask(t: Task): void
@@ -226,8 +227,7 @@ export function Finance(props: Props) {
     onSaveAccount({ kind: 'account', id: uid(), name: ACCOUNT_TYPE_META[type].label, type, balances: [], createdAt: stamp, updatedAt: stamp })
     setAdding(null)
   }
-  // a payday is the household's picture as much as a bill is: shared unless kept back
-  const newPayday = () => onNew({ bill: { kind: 'income' }, recurrence: { freq: 'biweekly' }, title: 'Payday', ...(inHousehold ? { shared: true } : {}) })
+  const newPayday = () => setSheet({ kind: 'payday' })
   /** Needs a date: the day typed in, as + Bill writes one (local midnight, a day with no time). */
   const dateMoney = (t: Task, day: string) => {
     const dueAt = localMidnightIso(day)
@@ -384,6 +384,22 @@ export function Finance(props: Props) {
       )}
       {sheet?.kind === 'bill' && (
         <BillSheet
+          inHousehold={inHousehold}
+          onClose={() => setSheet(null)}
+          onMore={preset => {
+            setSheet(null)
+            onNew(preset)
+          }}
+          onAdd={t => {
+            onAdd(t, `Added “${t.title}”`)
+            setSheet(null)
+          }}
+        />
+      )}
+      {sheet?.kind === 'payday' && (
+        <PaydaySheet
+          members={members}
+          myId={myId}
           inHousehold={inHousehold}
           onClose={() => setSheet(null)}
           onMore={preset => {

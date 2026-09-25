@@ -135,3 +135,41 @@ export function goalFromForm(g: QuickGoal, o: { id: string; now: string }): Task
     shared: g.shared ?? false,
   }
 }
+
+/** What + Payday's short form is filled in with. */
+export interface QuickPayday {
+  name: string
+  /** Whose pay it is: a household member's id. Left out alone. */
+  whose?: string
+  amount: number
+  /** YYYY-MM-DD: when the next one lands. The form will not add one without it. */
+  due: string
+  freq: RecurrenceFreq
+  /** Who can see it, when there is a household to see it; left out alone. */
+  shared?: boolean
+}
+
+/**
+ * A payday: the bill facet with the sign the other way round (kind 'income'),
+ * the amount paid in as its estimate, landing on the day with no time and
+ * coming round again. What the editor would have saved, as a template's bill
+ * is, so Finance counts it from the day it is added.
+ */
+export function paydayFromForm(p: QuickPayday, o: { id: string; now: string }): Task {
+  return {
+    kind: 'task',
+    id: o.id,
+    title: p.name.trim(),
+    description: '',
+    status: 'todo',
+    priority: 'normal',
+    dueAt: localMidnightIso(p.due) ?? undefined,
+    recurrence: { freq: p.freq },
+    bill: { kind: 'income', ...(p.whose ? { forMemberId: p.whose } : {}) },
+    estimateCost: Math.round(p.amount * 100) / 100,
+    createdAt: o.now,
+    updatedAt: o.now,
+    tags: [],
+    shared: p.shared ?? false,
+  }
+}

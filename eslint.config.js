@@ -120,6 +120,7 @@ export default defineConfig(
       'src/components/finance/CheckInSheet.tsx',
       'src/components/finance/BillSheet.tsx',
       'src/components/finance/GoalSheet.tsx',
+      'src/components/finance/PaydaySheet.tsx',
       'src/components/finance/ShareChoice.tsx',
       'src/components/planner/StatsScreen.tsx',
       'src/calendarstate.ts',

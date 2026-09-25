@@ -8,8 +8,8 @@ import type { Account, Task } from '../types'
 
 // Finance as it is drawn — by the React Compiler, as every DOM test runs it:
 // the timeline on its first run and filled in, money with no date, + Bill's
-// templates, Check in, + Goal, the weekly check-in, and the hand-off that
-// opens Check in from the check-in's own task.
+// templates, + Payday, Check in, + Goal, the weekly check-in, and the hand-off
+// that opens Check in from the check-in's own task.
 
 /** Wednesday 23 September 2026, noon. */
 const NOW = new Date(2026, 8, 23, 12, 0)
@@ -250,6 +250,77 @@ describe('money with no date', () => {
     expect(saved).toMatchObject({ id: 'bonus', title: 'Payday', estimateCost: 500, bill: { kind: 'income', forMemberId: MARIA } })
     expect(saved.dueAt).toBe(new Date(2026, 8, 30).toISOString())
     expect(Date.parse(saved.updatedAt)).toBeGreaterThan(Date.parse(bonus.updatedAt))
+  })
+})
+
+describe('+ Payday', () => {
+  it('will not add a payday without the date of the next one, then adds it whole', () => {
+    const p = props()
+    render(<Finance {...p} />)
+    fireEvent.click(within(screen.getByRole('group', { name: 'Add to Finance' })).getByRole('button', { name: '+ Payday' }))
+    // the reader's own pay, named for them, until someone else is picked
+    const sheet = screen.getByRole('dialog', { name: '💵 Joseph’s pay' })
+    expect(within(sheet).getByRole('button', { name: 'Joseph', pressed: true })).toBeTruthy()
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Maria' }))
+    expect((within(sheet).getByLabelText('Name') as HTMLInputElement).value).toBe('Maria’s pay')
+    expect(within(sheet).getByRole('button', { name: 'Every 2 weeks', pressed: true })).toBeTruthy()
+    fireEvent.change(within(sheet).getByLabelText('Take-home pay'), { target: { value: '1,980' } })
+    const add = within(sheet).getByRole('button', { name: 'Add' }) as HTMLButtonElement
+    expect(add.disabled).toBe(true)
+    fireEvent.click(add)
+    expect(p.onAdd).not.toHaveBeenCalled()
+    expect(within(sheet).getByText(/Finance counts every payday from its date/)).toBeTruthy()
+    const date = within(sheet).getByLabelText('Next payday') as HTMLInputElement
+    expect(date.type).toBe('date')
+    expect(date.required).toBe(true)
+    fireEvent.change(date, { target: { value: '2026-10-02' } })
+    expect(add.disabled).toBe(false)
+    fireEvent.click(add)
+    expect(p.onAdd).toHaveBeenCalledTimes(1)
+    const [payday, message] = vi.mocked(p.onAdd).mock.calls[0]
+    expect(payday).toMatchObject({
+      title: 'Maria’s pay',
+      status: 'todo',
+      estimateCost: 1980,
+      recurrence: { freq: 'biweekly' },
+      bill: { kind: 'income', forMemberId: MARIA },
+      shared: true,
+    })
+    expect(payday.dueAt).toBe(new Date(2026, 9, 2).toISOString())
+    expect(message).toBe('Added “Maria’s pay”')
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('keeps a name typed over, takes weekly or monthly pay, and hands the rest to the full editor', () => {
+    const p = props()
+    render(<Finance {...p} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Paydays' }))
+    fireEvent.click(screen.getByRole('button', { name: '+ Payday' }))
+    const sheet = dialog()
+    fireEvent.change(within(sheet).getByLabelText('Name'), { target: { value: 'Acme wages' } })
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Maria' }))
+    expect((within(sheet).getByLabelText('Name') as HTMLInputElement).value).toBe('Acme wages')
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Monthly' }))
+    fireEvent.change(within(sheet).getByLabelText('Take-home pay'), { target: { value: '4200' } })
+    fireEvent.click(within(sheet).getByRole('button', { name: 'More options…' }))
+    expect(p.onNew).toHaveBeenCalledWith({ title: 'Acme wages', bill: { kind: 'income', forMemberId: MARIA }, recurrence: { freq: 'monthly' }, estimateCost: 4200, shared: true })
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('alone, asks nobody whose it is or who can see it', () => {
+    const p = props({ members: [], myId: null, inHousehold: false })
+    render(<Finance {...p} />)
+    fireEvent.click(within(screen.getByRole('group', { name: 'Add to Finance' })).getByRole('button', { name: '+ Payday' }))
+    const sheet = screen.getByRole('dialog', { name: '💵 Payday' })
+    expect(within(sheet).queryByText('Whose pay')).toBeNull()
+    expect(within(sheet).queryByText('Who can see it')).toBeNull()
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Weekly' }))
+    fireEvent.change(within(sheet).getByLabelText('Take-home pay'), { target: { value: '640' } })
+    fireEvent.change(within(sheet).getByLabelText('Next payday'), { target: { value: '2026-09-25' } })
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Add' }))
+    const [payday] = vi.mocked(p.onAdd).mock.calls[0]
+    expect(payday).toMatchObject({ title: 'Payday', estimateCost: 640, recurrence: { freq: 'weekly' }, bill: { kind: 'income' }, shared: false })
+    expect(payday.bill?.forMemberId).toBeUndefined()
   })
 })
 

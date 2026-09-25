@@ -3,7 +3,7 @@ import { SetForm, TaskForm, money } from '../../taskform'
 import { BILL_KINDS, BILL_KIND_META, Bill } from '../../types'
 
 interface Props {
-  form: Pick<TaskForm, 'bill' | 'estimateCost' | 'actualCost'>
+  form: Pick<TaskForm, 'bill' | 'estimateCost' | 'actualCost' | 'status'>
   set: SetForm
   /** Costs belong to bills; any other task shows them only while it has a value (costsVisible). */
   showCosts: boolean
@@ -18,13 +18,17 @@ interface Props {
  * A payday is the same facet with `kind: 'income'` (v3.27): the same payer,
  * amount, repeat and date, so it lands on the calendar and in the reminders
  * with nothing new behind it. The only field it adds is whose it is, because
- * two people are paid on different days.
+ * two people are paid on different days. Its amount is one figure, the pay
+ * that lands in the account: a second beside it read as before and after tax,
+ * and the household tracks only what it takes home. Once an occurrence is
+ * done it can say what arrived that time, which is the take-home pay unless
+ * something else is typed (withPaidDefault).
  *
  * A set-aside (`kind: 'saving'`) is the facet once more, for money moved into
  * savings on a schedule. What it adds is the goal: how much, and by when.
  */
 export function BillCost({ form, set, showCosts, members = [] }: Props) {
-  const { bill, estimateCost, actualCost } = form
+  const { bill, estimateCost, actualCost, status } = form
   const income = bill?.kind === 'income'
   const saving = bill?.kind === 'saving'
   // the goal's amount as typed: "5,0" on its way to "5,000" is not a number yet
@@ -124,13 +128,21 @@ export function BillCost({ form, set, showCosts, members = [] }: Props) {
       {showCosts && (
         <div className="field-row costs">
           <label className="field">
-            <span>{income ? 'Amount paid in' : saving ? 'Set aside each time' : bill ? 'Amount due' : 'Estimate'}</span>
+            <span>{income ? 'Take-home pay' : saving ? 'Set aside each time' : bill ? 'Amount due' : 'Estimate'}</span>
             <input inputMode="decimal" value={estimateCost} onChange={e => set({ estimateCost: e.target.value })} placeholder="$0" />
           </label>
-          <label className="field">
-            <span>{income ? 'Actually received' : saving ? 'Actually set aside' : bill ? 'Paid' : 'Actual cost'}</span>
-            <input inputMode="decimal" value={actualCost} onChange={e => set({ actualCost: e.target.value })} placeholder="$0" />
-          </label>
+          {(!income || status === 'done') && (
+            <label className="field">
+              <span>{income ? 'Arrived this time' : saving ? 'Actually set aside' : bill ? 'Paid' : 'Actual cost'}</span>
+              <input
+                inputMode="decimal"
+                value={actualCost}
+                onChange={e => set({ actualCost: e.target.value })}
+                // left empty, what arrived is the take-home pay, as a tick records it
+                placeholder={income && estimateCost.trim() ? estimateCost : '$0'}
+              />
+            </label>
+          )}
         </div>
       )}
     </>

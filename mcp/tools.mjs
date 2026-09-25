@@ -580,7 +580,7 @@ export const TOOLS = [
     scope: 'read',
     annotations: READS,
     description:
-      'Fetch one task in full (description, checklist, comments, everything) by id. Its amounts (estimateCost, a bill\'s amount due; actualCost, what was paid) are in US dollars. A bill whose kind is "income" is a payday, money coming in; one whose kind is "saving" is money set aside into savings, which is kept, not spent, and may carry a goal (target, by). Neither is a cost.',
+      'Fetch one task in full (description, checklist, comments, everything) by id. Its amounts (estimateCost, a bill\'s amount due; actualCost, what was paid) are in US dollars. A bill whose kind is "income" is a payday, money coming in: its estimateCost is the take-home pay that lands in the account, never the pre-tax figure. One whose kind is "saving" is money set aside into savings, which is kept, not spent, and may carry a goal (target, by). Neither is a cost.',
     inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
     async run({ id } = {}, { db }) {
       return db.fetchItem(id, 'task')
