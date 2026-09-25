@@ -1336,6 +1336,12 @@
   .fin-chips::-webkit-scrollbar {
     display: none;
   }
+  /* the iOS shell's page has 16pt sides, not 12 (19-native-shell.css) */
+  .native .fin-chips {
+    margin-inline: -16px;
+    padding-inline: 16px;
+    scroll-padding-inline: 16px;
+  }
   .fin-chips > li {
     flex: none;
     scroll-snap-align: start;
