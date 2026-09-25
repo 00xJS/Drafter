@@ -161,7 +161,7 @@ export function idbDel(store: string, key: string): Promise<unknown> {
   return withStore(store, 'readwrite', s => s.delete(key))
 }
 
-/** Every value in a store: the media upload queue reads its pending photos from here. */
+/** Every value in a store: the photo trim, sign-out's count of unsent photos, and the first upload flush on a device read the photos so (src/media.ts). */
 export function idbAll<T>(store: string): Promise<T[]> {
   return withStore<T[]>(store, 'readonly', s => s.getAll())
 }
