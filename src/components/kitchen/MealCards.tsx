@@ -236,7 +236,7 @@ export function MealDayCard({
             {mark}
           </span>
         )}
-        {shown.title}
+        <span className="meal-card-name">{shown.title}</span>
       </p>
       {who && <p className="meal-card-who">{who}</p>}
       {/* who is cooking and cook mode share a line; with nobody to ask, the
