@@ -176,7 +176,10 @@ if (runtimes.length !== 1 || whole.length !== 1) {
 // room for the rest. Raised again from 2176 for the wardrobe's outfit board and
 // Finance's money timeline, about 85 KiB more app code between them: 2178 KiB
 // with both, so the budget sat at the app's own size with no room left.
-const PRECACHE_BUDGET_KIB = 2304
+// Raised again from 2304 for Finance's pay periods, Insights' highlights and
+// Kitchen's day cards and meal picker, about 134 KiB more app code between
+// them (each in a chunk of its own, loaded when opened): 2315 KiB with all three.
+const PRECACHE_BUDGET_KIB = 2432
 const entries = [...sw.matchAll(/\burl:\s*"([^"]+)"|"url":\s*"([^"]+)"/g)].map(m => m[1] ?? m[2])
 const absent = entries.filter(url => !existsSync(join(dist, url)))
 if (absent.length) {
