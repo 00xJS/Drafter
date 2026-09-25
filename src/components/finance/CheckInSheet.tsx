@@ -57,11 +57,6 @@ export function CheckInSheet({ accounts, focus, today, onSave, onClose }: Props)
   const unread = rows.filter(a => (typed[a.id] ?? '').trim() && parseBalance(typed[a.id]) === null)
   const changed = entered.length > 0 || added.length > 0
 
-  const close = () => {
-    if (changed && !window.confirm('Discard what you typed?')) return
-    onClose()
-  }
-
   const addAccount = () => {
     // stamped when the check-in is saved, with the rest
     const account = kind && accountFromForm({ kind, name }, { id: uid(), now: '', today })
@@ -85,7 +80,7 @@ export function CheckInSheet({ accounts, focus, today, onSave, onClose }: Props)
   }
 
   return (
-    <Modal onClose={close} className="modal narrow fin-sheet checkin-sheet">
+    <Modal onClose={onClose} dirty={changed} className="modal narrow fin-sheet checkin-sheet">
       <ModalHead title="Check in" variant="compose">
         <button type="button" className="btn primary" disabled={!changed || unread.length > 0} onClick={save}>
           Save

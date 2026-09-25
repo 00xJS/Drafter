@@ -6,7 +6,7 @@ import { money } from '../../taskform'
 import { RECURRENCE_META, type Bill, type RecurrenceFreq, type Task } from '../../types'
 import { dateKey, uid } from '../../utils'
 import { isDayKey } from '../../../shared/weeks.mts'
-import { Modal, ModalHead } from '../Modal'
+import { Modal, ModalHead, useDiscardPrompt } from '../Modal'
 import { SheetActions } from './SheetActions'
 import { ShareChoice, ShareField } from './ShareChoice'
 
@@ -53,10 +53,6 @@ export function BillSheet({ inHousehold, onAdd, onMore, onClose }: Props) {
   const ready = !!picked && !!name.trim() && value !== undefined && isDayKey(due)
   const typedIn = !!picked && (name !== picked.name || !!amount.trim() || !!due || autopay)
 
-  const close = () => {
-    if (typedIn && !window.confirm('Discard this bill?')) return
-    onClose()
-  }
   const add = () => {
     if (!picked || !ready || value === undefined) return
     onAdd(billFromTemplate(picked, { name, amount: value, due, freq, autopay, ...(inHousehold ? { shared } : {}) }, { id: uid(), now: new Date().toISOString() }))
@@ -102,7 +98,7 @@ export function BillSheet({ inHousehold, onAdd, onMore, onClose }: Props) {
   }
 
   return (
-    <Modal onClose={close} className="modal narrow fin-sheet bill-form">
+    <Modal onClose={onClose} dirty={typedIn} className="modal narrow fin-sheet bill-form">
       <ModalHead title={`${picked.emoji} ${name.trim() || 'New bill'}`} variant="compose">
         <button type="button" className="btn primary" disabled={!ready} onClick={add}>
           Add
@@ -186,10 +182,7 @@ export function BillEditSheet({ task, inHousehold, myId, members, onSave, onArch
   const changed = name !== task.title || value !== task.estimateCost || due !== first || freq !== (task.recurrence?.freq ?? '') || autopay !== !!task.bill.autopay || reshared
   const edited = () => (value === undefined ? null : editedMoney(task, { name, amount: value, due, freq: freq || null, autopay, ...(reshared ? { shared } : {}) }, newerStamp(task.updatedAt)))
 
-  const close = () => {
-    if (changed && !window.confirm('Discard your changes?')) return
-    onClose()
-  }
+  const { ask, prompt } = useDiscardPrompt()
   const save = () => {
     const next = ready && changed ? edited() : null
     if (next) onSave(next)
@@ -197,14 +190,14 @@ export function BillEditSheet({ task, inHousehold, myId, members, onSave, onArch
   }
   const more = () => {
     // what cannot be saved is not carried over: said, rather than lost without a word
-    if (changed && !ready && !window.confirm('Discard your changes?')) return
+    if (changed && !ready) return ask(() => onEditor(task))
     const next = ready && changed ? edited() : null
     if (next) onSave(next)
     onEditor(next ?? task)
   }
 
   return (
-    <Modal onClose={close} className="modal narrow fin-sheet bill-form bill-edit">
+    <Modal onClose={onClose} dirty={changed} className="modal narrow fin-sheet bill-form bill-edit">
       <ModalHead title={`${billEmoji(task.bill)} ${name.trim() || (saving ? 'Savings' : 'Bill')}`} variant="compose">
         <button type="button" className="btn primary" disabled={!ready} onClick={save}>
           Save
@@ -247,6 +240,7 @@ export function BillEditSheet({ task, inHousehold, myId, members, onSave, onArch
         {amount.trim() && value === undefined && <p className="warn">That is not an amount.</p>}
         <SheetActions archived={task.status === 'canceled'} onMore={more} onArchive={() => onArchive(task, task.status !== 'canceled')} onDelete={() => onDelete(task)} />
       </div>
+      {prompt}
     </Modal>
   )
 }

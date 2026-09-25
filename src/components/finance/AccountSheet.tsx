@@ -48,11 +48,6 @@ export function AccountSheet({ account, members, today, onSave, onRemove, onClos
   // a kind to add one as; an investment written before holdings can be saved without one
   const ready = !!name.trim() && !unread && (!!account || !!kind)
 
-  const close = () => {
-    if (changed && !window.confirm(account ? 'Discard your changes?' : 'Discard this account?')) return
-    onClose()
-  }
-
   /** The account as the sheet has it now, stamped newer than the one it was opened on. */
   const edited = (a: Account): Account => {
     let next: Account = { ...a, name: name.trim() || a.name }
@@ -127,7 +122,7 @@ export function AccountSheet({ account, members, today, onSave, onRemove, onClos
   const latest = account ? latestBalance(account) : null
   const history = account ? account.balances.slice(-HISTORY - 1) : []
   return (
-    <Modal onClose={close} className="modal narrow fin-sheet account-sheet">
+    <Modal onClose={onClose} dirty={changed} className="modal narrow fin-sheet account-sheet">
       <ModalHead
         title={
           <>

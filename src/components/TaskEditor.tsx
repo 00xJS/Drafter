@@ -261,9 +261,9 @@ export function TaskEditor({
     if (next) commit(next)
   }
 
-  function requestClose() {
+  /** Out, once Modal has asked "Discard changes?" where there were any: a step renamed and not yet left is still written, as steps always are. */
+  function close() {
     flushSteps()
-    if (isDirty(form, base, persisted) && !window.confirm('Discard your changes?')) return
     onClose()
   }
 
@@ -302,10 +302,11 @@ export function TaskEditor({
   const [details, setDetails] = useState(() => persisted || costsVisible(initForm(base), base))
 
   return (
-    // Modal owns Escape, the backdrop and focus; both close through
-    // requestClose, which asks before throwing away unsaved changes
+    // Modal owns Escape, the backdrop, Cancel, the swipe and focus; each asks
+    // "Discard changes?" before throwing away an unsaved change
     <Modal
-      onClose={requestClose}
+      onClose={close}
+      dirty={isDirty(form, base, persisted)}
       className="modal wide task-editor"
       onKeyDown={e => {
         const target = e.target as HTMLElement

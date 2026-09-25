@@ -333,10 +333,6 @@ export function RhythmSheet({ people, places, tasks, entries, meals, myId = null
   const tapped = changed.length - suggested
   const missing = places.filter(p => !p.deletedAt && !p.address?.trim()).length
 
-  const close = () => {
-    if (tapped > 0 && typeof window !== 'undefined' && !window.confirm(`Discard ${countOf(tapped, 'change')}?`)) return
-    onClose()
-  }
   const save = () => {
     const records = new Map<string, Person | Place>([...people, ...places].map(r => [r.id, r]))
     onSave(
@@ -349,7 +345,7 @@ export function RhythmSheet({ people, places, tasks, entries, meals, myId = null
   }
 
   return (
-    <Modal onClose={close} className="modal narrow rhythm-sheet">
+    <Modal onClose={onClose} dirty={tapped > 0} className="modal narrow rhythm-sheet">
       <ModalHead title="Who, and how often" variant="compose">
         <button type="button" className="btn primary" disabled={!changed.length} onClick={save}>
           Save

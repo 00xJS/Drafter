@@ -5,7 +5,7 @@ import { money } from '../../taskform'
 import { RECURRENCE_META, type Bill, type RecurrenceFreq, type Task } from '../../types'
 import { dateKey, uid } from '../../utils'
 import { isDayKey } from '../../../shared/weeks.mts'
-import { Modal, ModalHead } from '../Modal'
+import { Modal, ModalHead, useDiscardPrompt } from '../Modal'
 import { Segmented } from '../stats/Segmented'
 import { SheetActions } from './SheetActions'
 import { ShareChoice, ShareField } from './ShareChoice'
@@ -71,10 +71,6 @@ export function PaydaySheet({ members, myId, inHousehold, onAdd, onMore, onClose
     setWhose(id)
     if (!named) setName(payName(members, id))
   }
-  const close = () => {
-    if (typedIn && !window.confirm('Discard this payday?')) return
-    onClose()
-  }
   const add = () => {
     if (!ready || value === undefined) return
     onAdd(paydayFromForm({ name, whose, amount: value, due, freq, ...(inHousehold ? { shared } : {}) }, { id: uid(), now: new Date().toISOString() }))
@@ -91,7 +87,7 @@ export function PaydaySheet({ members, myId, inHousehold, onAdd, onMore, onClose
   }
 
   return (
-    <Modal onClose={close} className="modal narrow fin-sheet payday-sheet">
+    <Modal onClose={onClose} dirty={typedIn} className="modal narrow fin-sheet payday-sheet">
       <ModalHead title={`💵 ${name.trim() || 'New payday'}`} variant="compose">
         <button type="button" className="btn primary" disabled={!ready} onClick={add}>
           Add
@@ -181,24 +177,22 @@ export function PaydayEditSheet({ task, members, myId, inHousehold, onSave, onAr
   const changed = name !== task.title || value !== task.estimateCost || due !== first || freq !== was || whose !== (task.bill.forMemberId ?? '') || reshared
   const edited = () => (value === undefined ? null : editedMoney(task, { name, amount: value, due, freq: freq || null, whose: whose || null, ...(reshared ? { shared } : {}) }, newerStamp(task.updatedAt)))
 
-  const close = () => {
-    if (changed && !window.confirm('Discard your changes?')) return
-    onClose()
-  }
+  const { ask, prompt } = useDiscardPrompt()
   const save = () => {
     const next = ready && changed ? edited() : null
     if (next) onSave(next)
     else if (ready) onClose()
   }
   const more = () => {
-    if (changed && !ready && !window.confirm('Discard your changes?')) return
+    // what cannot be saved is not carried over: said, rather than lost without a word
+    if (changed && !ready) return ask(() => onEditor(task))
     const next = ready && changed ? edited() : null
     if (next) onSave(next)
     onEditor(next ?? task)
   }
 
   return (
-    <Modal onClose={close} className="modal narrow fin-sheet payday-sheet payday-edit">
+    <Modal onClose={onClose} dirty={changed} className="modal narrow fin-sheet payday-sheet payday-edit">
       {/* one still called Payday is named for whose it is, as its row names it (moneyName) */}
       <ModalHead title={`💵 ${name.trim() && name.trim() !== 'Payday' ? name.trim() : payName(members, whose || undefined)}`} variant="compose">
         <button type="button" className="btn primary" disabled={!ready} onClick={save}>
@@ -236,6 +230,7 @@ export function PaydayEditSheet({ task, members, myId, inHousehold, onSave, onAr
         {amount.trim() && value === undefined && <p className="warn">That is not an amount.</p>}
         <SheetActions archived={task.status === 'canceled'} onMore={more} onArchive={() => onArchive(task, task.status !== 'canceled')} onDelete={() => onDelete(task)} />
       </div>
+      {prompt}
     </Modal>
   )
 }

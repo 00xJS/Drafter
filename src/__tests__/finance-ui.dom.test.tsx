@@ -520,6 +520,30 @@ describe('the short sheets', () => {
     expect(p.onOpen).toHaveBeenCalledWith(saved)
   })
 
+  it('ask in the app before throwing away what was typed: on More options when it cannot be saved, and on Cancel', () => {
+    const confirm = vi.fn(() => true)
+    vi.stubGlobal('confirm', confirm)
+    const p = props()
+    render(<Finance {...p} />)
+    fireEvent.click(screen.getByRole('button', { name: /^Thu 1 Rent/ }))
+    fireEvent.change(within(dialog()).getByLabelText('Amount due'), { target: { value: 'lots' } })
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'More options…' }))
+    fireEvent.click(within(screen.getByRole('alertdialog', { name: 'Discard changes?' })).getByRole('button', { name: 'Keep editing' }))
+    expect(p.onOpen).not.toHaveBeenCalled()
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'More options…' }))
+    fireEvent.click(within(screen.getByRole('alertdialog', { name: 'Discard changes?' })).getByRole('button', { name: 'Discard' }))
+    // what could not be saved is left behind, and the editor opens on the bill as it was
+    expect(p.onSaveTask).not.toHaveBeenCalled()
+    expect(p.onOpen).toHaveBeenCalledWith(rows[4])
+
+    plus('Payday')
+    fireEvent.change(within(dialog()).getByLabelText('Next payday'), { target: { value: '2026-10-09' } })
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Cancel' }))
+    fireEvent.click(within(screen.getByRole('alertdialog', { name: 'Discard changes?' })).getByRole('button', { name: 'Discard' }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(confirm).not.toHaveBeenCalled()
+  })
+
   it('bring an archived one back from Manage', () => {
     const stopped = task('gym', { title: 'Gym', bill: { kind: 'subscription', emoji: '🏋️' }, estimateCost: 30, recurrence: { freq: 'monthly' }, dueAt: day(9, 28), status: 'canceled' })
     const p = props({ tasks: [...rows, stopped] })

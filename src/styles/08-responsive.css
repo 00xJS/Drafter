@@ -576,6 +576,19 @@
     overflow-y: auto;
   }
 
+  /* "Discard changes?" keeps its own size on a phone, at the foot of the
+     screen where the thumb already is, rather than the sheet's full height */
+  .modal-backdrop.discard-backdrop {
+    align-items: flex-end;
+  }
+  .modal.discard-prompt {
+    height: auto;
+  }
+  .discard-actions .btn {
+    flex: 1 1 0;
+    min-height: var(--touch);
+  }
+
   .landing-hero {
     padding: 40px 20px 24px;
   }

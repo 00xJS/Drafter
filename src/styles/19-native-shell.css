@@ -91,6 +91,10 @@
   border-top-color: var(--hairline);
   padding-bottom: calc(12px + env(safe-area-inset-bottom));
 }
+/* "Discard changes?" rises as a card of its own, so it keeps the home indicator clear itself */
+.native .discard-body {
+  padding-bottom: calc(20px + env(safe-area-inset-bottom));
+}
 @media (prefers-reduced-motion: reduce) {
   .native .modal {
     animation: none;

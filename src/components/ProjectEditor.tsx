@@ -8,7 +8,7 @@ import { GithubProjectFields, fetchProjectFields, parseGithubUrl } from '../gith
 import { defaultColumnMap } from '../githubsync'
 import { GithubCard } from './GithubCard'
 import { ConfirmButton } from './ConfirmButton'
-import { Modal, ModalHead } from './Modal'
+import { Modal, ModalCancel, ModalHead } from './Modal'
 
 interface Props {
   /** The project being edited. Nothing opens the editor on a blank one: there is one ongoing project. */
@@ -304,11 +304,6 @@ export function ProjectEditor({ project, tasks, getLatest, onSave, onDelete, onC
   /** What Save writes, and what a template's or a plan's tasks are added to: the newest copy of the project with this form's edits. */
   const edited = () => withEdits(getLatest(base.id) ?? base, baseValues(), formValues())
 
-  function requestClose() {
-    if (isDirty() && !window.confirm('Discard your changes?')) return
-    onClose()
-  }
-
   function save() {
     onSave(edited())
   }
@@ -328,7 +323,7 @@ export function ProjectEditor({ project, tasks, getLatest, onSave, onDelete, onC
   }
 
   return (
-    <Modal onClose={requestClose}>
+    <Modal onClose={onClose} dirty={isDirty()}>
       <ModalHead title="Edit project">
         <button className="btn primary modal-head-save" onClick={save}>
           Save
@@ -578,9 +573,7 @@ export function ProjectEditor({ project, tasks, getLatest, onSave, onDelete, onC
           </button>
         )}
         <span className="spacer" />
-        <button className="btn" onClick={requestClose}>
-          Cancel
-        </button>
+        <ModalCancel />
         {chosen && onCreateMany ? (
           <button className="btn primary" onClick={() => createWith(chosen, templateFrom)}>
             Add {chosen.tasks.length} task{chosen.tasks.length === 1 ? '' : 's'}

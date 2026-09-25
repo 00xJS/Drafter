@@ -120,15 +120,20 @@ describe('Save', () => {
 })
 
 describe('closing', () => {
-  it('asks before throwing away a change, and keeps the editor open on No', () => {
-    const confirm = confirmAnswers(false)
+  const question = () => screen.queryByRole('alertdialog', { name: 'Discard changes?' })
+
+  it('asks before throwing away a change, in the app, and keeps the editor open on Keep editing', () => {
+    const confirm = confirmAnswers(true)
     const calls = open({ task: saved() })
     typeInto(title(), 'Fix the side gate')
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
-    expect(confirm).toHaveBeenCalledWith('Discard your changes?')
+    expect(question()).toBeTruthy()
+    expect(confirm).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Keep editing' }))
     expect(calls.close).not.toHaveBeenCalled()
-    confirmAnswers(true)
+    expect(title()).toHaveProperty('value', 'Fix the side gate')
     fireEvent.keyDown(title(), { key: 'Escape' })
+    fireEvent.click(screen.getByRole('button', { name: 'Discard' }))
     expect(calls.close).toHaveBeenCalledTimes(1)
     expect(calls.save).not.toHaveBeenCalled()
   })
@@ -138,6 +143,19 @@ describe('closing', () => {
     const calls = open({ task: saved() })
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
     expect(confirm).not.toHaveBeenCalled()
+    expect(question()).toBeNull()
+    expect(calls.close).toHaveBeenCalledTimes(1)
+  })
+
+  it('still writes a step renamed and not yet left when a change is discarded', () => {
+    const task = saved({ checklist: [{ id: 's1', text: 'Buy hinges', done: false }] })
+    const calls = open({ task }, task)
+    typeInto(title(), 'Fix the side gate')
+    typeInto(screen.getByRole('textbox', { name: 'Step' }), 'Buy brass hinges')
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Discard' }))
+    expect((calls.commit.mock.calls[0][0] as Task).checklist?.[0].text).toBe('Buy brass hinges')
+    expect(calls.save).not.toHaveBeenCalled()
     expect(calls.close).toHaveBeenCalledTimes(1)
   })
 })
