@@ -21,17 +21,19 @@ test('Home turns the day at midnight: its heading, its sections and its badges, 
   await page.clock.install({ time: BEFORE })
   await app.open()
 
-  // two days with no time, from the editor (00:00 is a day, not a deadline)…
-  const file = async (title: string, due: string) => {
+  // two days with no time, from the editor: a day picked and its time left
+  // empty (a day alone is its midnight, and 00:00 is a day, not a deadline)…
+  const file = async (title: string, day: string) => {
     await page.getByRole('button', { name: 'New task', exact: true }).click()
     const editor = page.getByRole('dialog', { name: 'New task' })
     await editor.getByPlaceholder('e.g. Book the electrician').fill(title)
-    await editor.locator('input[type="datetime-local"]').fill(due)
+    await editor.getByLabel('Due', { exact: true }).fill(day)
+    await expect(editor.getByLabel('Due time')).toHaveValue('')
     await editor.getByRole('button', { name: 'Save', exact: true }).click()
     await expect(editor).toBeHidden()
   }
-  await file('Water the plants', '2026-09-22T00:00')
-  await file('Book the dentist', '2026-09-23T00:00')
+  await file('Water the plants', '2026-09-22')
+  await file('Book the dentist', '2026-09-23')
   // …and 9 this morning, long gone by, from the palette
   await page.keyboard.press('ControlOrMeta+K')
   const line = page.getByRole('dialog', { name: 'Search' }).getByRole('combobox', { name: 'Search' })

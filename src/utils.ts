@@ -26,8 +26,11 @@ export function fmtTime(iso?: string): string {
  *  same hours read the same on both. */
 export function clock(iso: string): string {
   const d = new Date(iso)
-  const h = d.getHours()
-  const m = d.getMinutes()
+  return clockAt(d.getHours(), d.getMinutes())
+}
+
+/** clock()'s words for an hour and minute of the day, with no date to read them from: 18, 0 → 6pm. */
+export function clockAt(h: number, m = 0): string {
   const ampm = h < 12 ? 'am' : 'pm'
   const h12 = h % 12 === 0 ? 12 : h % 12
   return m ? `${h12}:${String(m).padStart(2, '0')}${ampm}` : `${h12}${ampm}`

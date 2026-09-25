@@ -10,12 +10,13 @@ import { expect, test } from './fixtures'
 /** Wednesday 23 September 2026, 10:00 in Phoenix (the config's zone). */
 const NOW = new Date('2026-09-23T17:00:00Z')
 
-/** A task through the editor, due at a local YYYY-MM-DDTHH:mm. */
+/** A task through the editor, due at a local YYYY-MM-DDTHH:mm: its day and its time, in a field each. */
 async function file(page: Page, title: string, due: string) {
   await page.getByRole('button', { name: 'New task', exact: true }).click()
   const editor = page.getByRole('dialog', { name: 'New task' })
   await editor.getByPlaceholder('e.g. Book the electrician').fill(title)
-  await editor.locator('input[type="datetime-local"]').fill(due)
+  await editor.getByLabel('Due', { exact: true }).fill(due.slice(0, 10))
+  await editor.getByLabel('Due time').fill(due.slice(11, 16))
   await editor.getByRole('button', { name: 'Save', exact: true }).click()
   await expect(editor).toBeHidden()
 }

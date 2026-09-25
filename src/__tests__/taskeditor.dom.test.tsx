@@ -184,8 +184,9 @@ describe('money in the editor', () => {
     expect(field.value).toBe('')
     expect(screen.getByText('Add a date so Finance can count it.')).toBeTruthy()
     // the chips that are times of day are for chores
-    expect(screen.queryByRole('button', { name: 'Today 18:00' })).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Tomorrow 09:00' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Today 6pm' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Tomorrow 9am' })).toBeNull()
+    expect(screen.queryByLabelText('Due time')).toBeNull()
     typeInto(field, '2026-09-25')
     expect(screen.queryByText('Add a date so Finance can count it.')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
@@ -216,14 +217,70 @@ describe('money in the editor', () => {
     expect((calls.save.mock.calls[0][0] as Task).dueAt).toBe(new Date(today.getFullYear(), today.getMonth(), today.getDate()).toISOString())
   })
 
-  it('keeps a date and a time for an ordinary task', () => {
+  it('keeps a date and a time for an ordinary task, in a field each', () => {
     open({ task: saved({ dueAt: new Date(2026, 8, 30, 18, 0).toISOString() }) })
-    const due = document.querySelector('input[type="datetime-local"]') as HTMLInputElement
-    expect(due.value).toBe('2026-09-30T18:00')
-    expect(document.querySelector('input[type="date"]')).toBeNull()
-    // (its chips sit inside its label, which happy-dom lends the buttons' names: found by their words)
-    expect(screen.getByText('Today 18:00').tagName).toBe('BUTTON')
+    // never one date-and-time field: an iPhone can leave it empty when only its date is picked
+    expect(document.querySelector('input[type="datetime-local"]')).toBeNull()
+    expect(dateField('Due').type).toBe('date')
+    expect(dateField('Due').value).toBe('2026-09-30')
+    expect(dateField('Due time').type).toBe('time')
+    expect(dateField('Due time').value).toBe('18:00')
+    // the chips say their times the way the app says them
+    expect(screen.getByRole('button', { name: 'Today 6pm' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Tomorrow 9am' })).toBeTruthy()
     expect(screen.queryByText('Add a date so Finance can count it.')).toBeNull()
+  })
+
+  it('saves a date with no time as that day, with no time', () => {
+    const calls = open()
+    typeInto(title(), 'Water the plants')
+    typeInto(dateField('Due'), '2026-09-30')
+    expect(dateField('Due time').value).toBe('')
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect(calls.save).toHaveBeenCalledTimes(1)
+    const written = calls.save.mock.calls[0][0] as Task
+    expect(written.dueAt).toBe(localMidnightIso('2026-09-30'))
+  })
+
+  it('adds a time to the day, keeps the day when the time is cleared, and clears both with the day', () => {
+    const calls = open({ task: saved() })
+    typeInto(dateField('Due'), '2026-09-30')
+    typeInto(dateField('Due time'), '14:30')
+    typeInto(dateField('Due time'), '')
+    expect(dateField('Due').value).toBe('2026-09-30')
+    typeInto(dateField('Due time'), '14:30')
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect((calls.save.mock.calls[0][0] as Task).dueAt).toBe(new Date(2026, 8, 30, 14, 30).toISOString())
+    typeInto(dateField('Due'), '')
+    expect(dateField('Due time').value).toBe('')
+  })
+
+  it('takes a time picked before any day as today’s', () => {
+    open()
+    typeInto(dateField('Due time'), '17:00')
+    const today = new Date()
+    expect(dateField('Due').value).toBe(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`)
+  })
+
+  it('sets the day and the time from a chip', () => {
+    open()
+    fireEvent.click(screen.getByRole('button', { name: 'Tomorrow 9am' }))
+    const tomorrow = new Date()
+    tomorrow.setDate(tomorrow.getDate() + 1)
+    expect(dateField('Due').value).toBe(`${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}`)
+    expect(dateField('Due time').value).toBe('09:00')
+    fireEvent.click(screen.getByRole('button', { name: 'Clear' }))
+    expect(dateField('Due').value).toBe('')
+  })
+
+  it('asks when a done task was finished as a day and a time too', () => {
+    const calls = open({ task: saved({ status: 'done', completedAt: new Date(2026, 8, 20, 9, 15).toISOString() }) })
+    expect(dateField('Completed').value).toBe('2026-09-20')
+    expect(dateField('Completed time').value).toBe('09:15')
+    typeInto(dateField('Completed time'), '')
+    typeInto(dateField('Completed'), '2026-09-21')
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect((calls.save.mock.calls[0][0] as Task).completedAt).toBe(localMidnightIso('2026-09-21'))
   })
 
   it('has one amount for a payday, what it takes home, and says what arrived only once one has', () => {
