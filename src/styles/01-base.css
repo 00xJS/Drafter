@@ -309,6 +309,27 @@
   --viz-avg-opacity: 0.55;
 }
 
+/* The accent's tints, for a browser that reads no color-mix(): Safari before
+   16.2, which is iOS 16.0 and 16.1 in the app. A token holding one it cannot
+   read is not dropped where it is declared — it fails where it is used, and
+   the chosen segment, the picked chip and the focus ring lost their tint.
+   The same tints, written out: the accent (#f97316, in both themes) at each
+   token's share. theme-tokens.test.ts holds each equal to its color-mix(). */
+@supports not (color: color-mix(in srgb, red, red)) {
+  :root {
+    --accent-soft: rgba(249, 115, 22, 0.12);
+    --accent-softer: rgba(249, 115, 22, 0.07);
+    --accent-ring: rgba(249, 115, 22, 0.45);
+    --mark-bg: rgba(249, 115, 22, 0.28);
+    --glow-accent: 0 2px 14px rgba(249, 115, 22, 0.3);
+  }
+  :root[data-theme='dark'] {
+    --accent-soft: rgba(249, 115, 22, 0.15);
+    --accent-softer: rgba(249, 115, 22, 0.09);
+    --accent-ring: rgba(249, 115, 22, 0.34);
+  }
+}
+
 * {
   box-sizing: border-box;
 }
