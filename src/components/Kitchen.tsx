@@ -1152,7 +1152,8 @@ function GroceryPane({
         </button>
         <button
           className="btn primary"
-          onClick={() => onSave(buildGroceryList(week.key, meals, recipes, grocery, newerStamp(grocery?.updatedAt)))}
+          // the member's own row for the week, as mealWrites writes it: never the household-wide id
+          onClick={() => onSave(buildGroceryList(week.key, meals, recipes, grocery, newerStamp(grocery?.updatedAt), myId))}
         >
           Build from this week
         </button>
