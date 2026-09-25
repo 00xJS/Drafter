@@ -493,147 +493,154 @@ export function Calendar({
     const items = all.filter(item => item.kind !== 'meal')
     return (
       <>
-        <div className="cal-sheet-body">
-          {lookLine(day)}
-          {all.length === 0 && <p className="empty">Nothing on this day yet.</p>}
-          <ul className="cal-rows">
-            {items.map(item => {
-              if (item.kind === 'occasion') {
-                const { person, kind } = item.occasion
-                const gift = plannedGift(person.id, kind, day, tasks)
-                return (
-                  <li key={item.id} className="cal-row">
-                    <span className="cal-item-dot" style={{ background: person.color }} />
-                    <div className="cal-row-main">
-                      <span className="cal-row-title">
-                        {OCCASION_GLYPH[kind]} {itemTitle(item)}
-                      </span>
-                      <span className="cal-row-meta">{itemMeta(item)}</span>
-                    </div>
-                    {gift ? (
+        {/* The day's rows and its Eating scroll as one, under a header and
+            above a footer that hold still. The rows alone used to scroll, with
+            Eating (a dinner's sides make it most of a phone screen) stacked
+            under them outside the scroller: the rows got a 12pt strip, and
+            the footer's New task and New event went below the screen. */}
+        <div className="cal-sheet-scroll">
+          <div className="cal-sheet-body">
+            {lookLine(day)}
+            {all.length === 0 && <p className="empty">Nothing on this day yet.</p>}
+            <ul className="cal-rows">
+              {items.map(item => {
+                if (item.kind === 'occasion') {
+                  const { person, kind } = item.occasion
+                  const gift = plannedGift(person.id, kind, day, tasks)
+                  return (
+                    <li key={item.id} className="cal-row">
+                      <span className="cal-item-dot" style={{ background: person.color }} />
+                      <div className="cal-row-main">
+                        <span className="cal-row-title">
+                          {OCCASION_GLYPH[kind]} {itemTitle(item)}
+                        </span>
+                        <span className="cal-row-meta">{itemMeta(item)}</span>
+                      </div>
+                      {gift ? (
+                        <button
+                          className="btn cal-row-action"
+                          onClick={() => {
+                            leave()
+                            onOpen(gift)
+                          }}
+                        >
+                          Gift planned
+                        </button>
+                      ) : (
+                        <button
+                          className="btn cal-row-action"
+                          onClick={() => {
+                            leave()
+                            onPlanOccasion(person, kind, day)
+                          }}
+                        >
+                          Plan a gift
+                        </button>
+                      )}
+                    </li>
+                  )
+                }
+                if (item.kind === 'event') {
+                  const ev = item.event
+                  return (
+                    <li key={item.id} className="cal-row">
+                      <span className="cal-item-dot" style={{ background: eventColor(ev) }} />
+                      <div className="cal-row-main">
+                        <span className="cal-row-title">{ev.title}</span>
+                        <span className="cal-row-meta">{itemMeta(item)}</span>
+                      </div>
                       <button
                         className="btn cal-row-action"
                         onClick={() => {
                           leave()
-                          onOpen(gift)
+                          if (ev.localId) onEditEvent(ev.localId)
+                          else if (isPast(ev, Date.now())) onAttendance(ev)
+                          else onPlan(ev)
                         }}
                       >
-                        Gift planned
+                        {ev.localId ? 'Edit' : isPast(ev, minute) ? 'Who was there?' : 'Plan for this'}
                       </button>
-                    ) : (
+                    </li>
+                  )
+                }
+                if (item.kind === 'mark') {
+                  const { project } = item.mark
+                  return (
+                    <li key={item.id} className="cal-row">
                       <button
-                        className="btn cal-row-action"
+                        className="cal-row-tap"
                         onClick={() => {
                           leave()
-                          onPlanOccasion(person, kind, day)
+                          onOpenProject(project)
                         }}
                       >
-                        Plan a gift
+                        <span className="cal-item-dot" style={{ background: project.color }} />
+                        <span className="cal-row-main">
+                          <span className="cal-row-title">◆ {itemTitle(item)}</span>
+                          <span className="cal-row-meta">{itemMeta(item)}</span>
+                        </span>
                       </button>
-                    )}
-                  </li>
-                )
-              }
-              if (item.kind === 'event') {
-                const ev = item.event
-                return (
-                  <li key={item.id} className="cal-row">
-                    <span className="cal-item-dot" style={{ background: eventColor(ev) }} />
-                    <div className="cal-row-main">
-                      <span className="cal-row-title">{ev.title}</span>
-                      <span className="cal-row-meta">{itemMeta(item)}</span>
-                    </div>
-                    <button
-                      className="btn cal-row-action"
-                      onClick={() => {
-                        leave()
-                        if (ev.localId) onEditEvent(ev.localId)
-                        else if (isPast(ev, Date.now())) onAttendance(ev)
-                        else onPlan(ev)
-                      }}
-                    >
-                      {ev.localId ? 'Edit' : isPast(ev, minute) ? 'Who was there?' : 'Plan for this'}
-                    </button>
-                  </li>
-                )
-              }
-              if (item.kind === 'mark') {
-                const { project } = item.mark
+                    </li>
+                  )
+                }
+                if (item.kind !== 'task') return null
+                const t = item.task
+                const project = taskProject(t)
                 return (
                   <li key={item.id} className="cal-row">
                     <button
                       className="cal-row-tap"
                       onClick={() => {
                         leave()
-                        onOpenProject(project)
+                        onOpen(t)
                       }}
                     >
-                      <span className="cal-item-dot" style={{ background: project.color }} />
+                      <span className="cal-item-dot" style={{ background: project?.color ?? STATUS_META[t.status].color }} />
                       <span className="cal-row-main">
-                        <span className="cal-row-title">◆ {itemTitle(item)}</span>
-                        <span className="cal-row-meta">{itemMeta(item)}</span>
+                        <span className="cal-row-title">{itemTitle(item)}</span>
+                        <span className="cal-row-meta">
+                          <span className="badge" style={{ background: STATUS_META[t.status].bg, color: STATUS_META[t.status].color }}>
+                            {STATUS_META[t.status].label}
+                          </span>
+                          {item.at && hasClock(item.at) && <strong className="day-time">{fmtTime(item.at)}</strong>}
+                        </span>
                       </span>
                     </button>
                   </li>
                 )
-              }
-              if (item.kind !== 'task') return null
-              const t = item.task
-              const project = taskProject(t)
+              })}
+            </ul>
+          </div>
+          <section className="cal-sheet-eating" aria-label="Meals">
+            <h3 className="cal-sheet-eating-head">Eating</h3>
+            {MEAL_SLOTS.map(slot => {
+              const { mine, theirs } = mealsForSlot(meals, dateKey(day), slot, myId)
               return (
-                <li key={item.id} className="cal-row">
-                  <button
-                    className="cal-row-tap"
-                    onClick={() => {
-                      leave()
-                      onOpen(t)
-                    }}
-                  >
-                    <span className="cal-item-dot" style={{ background: project?.color ?? STATUS_META[t.status].color }} />
-                    <span className="cal-row-main">
-                      <span className="cal-row-title">{itemTitle(item)}</span>
-                      <span className="cal-row-meta">
-                        <span className="badge" style={{ background: STATUS_META[t.status].bg, color: STATUS_META[t.status].color }}>
-                          {STATUS_META[t.status].label}
-                        </span>
-                        {item.at && hasClock(item.at) && <strong className="day-time">{fmtTime(item.at)}</strong>}
-                      </span>
-                    </span>
-                  </button>
-                </li>
+                <MealSlotRow
+                  onCreateRecipe={onCreateRecipe}
+                  key={slot}
+                  date={dateKey(day)}
+                  slot={slot}
+                  meal={mine}
+                  theirs={theirs}
+                  nameOf={nameOf}
+                  inHousehold={inHousehold}
+                  myId={myId}
+                  members={members}
+                  recipes={recipes}
+                  meals={meals}
+                  cooked={cooked}
+                  visited={visited}
+                  places={places}
+                  onSave={onSaveMeal}
+                  onClear={onClearMeal}
+                  onCreatePlace={onCreatePlace}
+                  onStar={onStarRecipe}
+                />
               )
             })}
-          </ul>
+          </section>
         </div>
-        <section className="cal-sheet-eating" aria-label="Meals">
-          <h3 className="cal-sheet-eating-head">Eating</h3>
-          {MEAL_SLOTS.map(slot => {
-            const { mine, theirs } = mealsForSlot(meals, dateKey(day), slot, myId)
-            return (
-              <MealSlotRow
-                onCreateRecipe={onCreateRecipe}
-                key={slot}
-                date={dateKey(day)}
-                slot={slot}
-                meal={mine}
-                theirs={theirs}
-                nameOf={nameOf}
-                inHousehold={inHousehold}
-                myId={myId}
-                members={members}
-                recipes={recipes}
-                meals={meals}
-                cooked={cooked}
-                visited={visited}
-                places={places}
-                onSave={onSaveMeal}
-                onClear={onClearMeal}
-                onCreatePlace={onCreatePlace}
-                onStar={onStarRecipe}
-              />
-            )
-          })}
-        </section>
         <footer className="cal-sheet-foot">
           <button className="btn primary cal-sheet-new" onClick={() => newTaskOn(day)}>
             + New task this day

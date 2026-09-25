@@ -118,6 +118,22 @@
   padding: 8px 10px;
   border-bottom: 1px solid var(--border);
 }
+/* The sheet is a column: the header and the footer keep their size, and
+   everything between them — the day's rows and its Eating — is one scroller.
+   With the rows the only scroller and Eating beside it, Eating kept all of its
+   height, the rows were left a 12pt strip, and on a small phone the footer
+   (New task, New event) was pushed below the screen. */
+.cal-sheet-head,
+.cal-sheet-foot {
+  flex: none;
+}
+.cal-sheet-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
 .cal-sheet-title {
   flex: 1;
   min-width: 0;
@@ -145,7 +161,8 @@
   border-radius: 14px;
   overflow: hidden;
 }
-.cal-day .cal-sheet-body {
+.cal-day .cal-sheet-body,
+.cal-day .cal-sheet-scroll {
   overflow: visible;
 }
 @media (max-width: 640px) {
