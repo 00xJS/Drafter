@@ -39,9 +39,9 @@ test('this week’s 3 are set on Home, ticked there, kept, and cheered when all 
 
   // the last tick says so
   await goals.getByRole('checkbox', { name: 'Mark “Finish the garage shelves” done' }).check()
-  await expect(goals.getByRole('status')).toHaveText('Tick them off as the week goes')
+  await expect(goals.getByText('Tick them off as the week goes', { exact: true })).toBeVisible()
   await goals.getByRole('checkbox', { name: 'Mark “Date night Friday” done' }).check()
-  await expect(goals.getByRole('status')).toHaveText('All 3 done')
+  await expect(goals.getByText('All 3 done', { exact: true })).toBeVisible()
   await expect(goals.getByRole('img', { name: '3 of 3 done' })).toBeVisible()
 
   // …and Edit opens the same lines

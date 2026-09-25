@@ -140,8 +140,9 @@ export function WeekGoals({ reviews, record, noon, focusTitles, onSave, onMakeTa
         </GoalRing>
         <div className="goals-words">
           <h3 id={titleId}>{heading}</h3>
-          {/* said aloud when it changes: the cheer's words reach VoiceOver too */}
-          <p className={allDone && !asking ? 'chart-sub goals-cheer' : 'chart-sub'} role="status">
+          {/* said aloud when it changes, so the cheer's words reach VoiceOver too.
+              A live region, not role="status": that is the toast's, and Home has one of it */}
+          <p className={allDone && !asking ? 'chart-sub goals-cheer' : 'chart-sub'} aria-live="polite">
             {sub}
           </p>
         </div>

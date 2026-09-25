@@ -19,6 +19,11 @@ const LAST_WEEK = shiftRange(weekRange(NOON), -1).key
 const STAMP = '2026-09-20T10:00:00.000Z'
 const last = (over: Partial<Review> = {}): Review => ({ kind: 'review', id: 'r-last', period: 'week', key: LAST_WEEK, top: [], createdAt: STAMP, updatedAt: STAMP, ...over })
 const noop = () => {}
+/** The card's line under its title: a live region, so what it says is read out as it changes. */
+const said = () => {
+  const line = document.querySelector('.goals-words [aria-live="polite"]')
+  return line?.textContent
+}
 
 /** matchMedia answering Reduce Motion as asked. */
 function motion(reduced: boolean) {
@@ -87,6 +92,9 @@ describe('with the week’s 3 set', () => {
 
   it('shows them to tick, the ring counting, a struck line for each done, and → task for the rest', () => {
     const { onMakeTask } = card(set(), { focusTitles: new Set(['date night friday']) })
+    expect(said()).toBe('Tick them off as the week goes')
+    // never a second role="status" on Home: that is the toast's, which tests and VoiceOver find by it
+    expect(screen.queryByRole('status')).toBeNull()
     expect(screen.getByRole('heading', { name: 'This week’s 3' })).toBeTruthy()
     expect(screen.getByRole('img', { name: '1 of 3 done' })).toBeTruthy()
     const done = screen.getByRole('checkbox', { name: 'Mark “Book the electrician” not done' }) as HTMLInputElement
@@ -138,13 +146,13 @@ describe('the cheer on all 3', () => {
     expect(document.querySelectorAll('.goals-burst > i').length).toBeGreaterThan(0)
     // the shell saves the tick, and the card draws the week done
     view.rerender(<WeekGoals reviews={[onSave.mock.calls[0][0]]} record={onSave.mock.calls[0][0]} noon={NOON} focusTitles={new Set()} onSave={onSave} onMakeTask={noop} />)
-    expect(screen.getByRole('status').textContent).toBe('All 3 done')
+    expect(said()).toBe('All 3 done')
     expect(screen.getByRole('img', { name: '3 of 3 done' })).toBeTruthy()
   })
 
   it('never cheers as the card draws, even with all 3 done', () => {
     card(last({ top: ['a', 'b', 'c'], topDone: [true, true, true] }))
-    expect(screen.getByRole('status').textContent).toBe('All 3 done')
+    expect(said()).toBe('All 3 done')
     expect(document.querySelector('.goals-burst')).toBeNull()
     expect(buzz.haptic).not.toHaveBeenCalled()
   })
