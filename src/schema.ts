@@ -624,12 +624,13 @@ export function sanitizeMeal(raw: unknown): Meal | null {
   if (!id || ((!date || !title) && !deletedAt)) return null
   const now = new Date().toISOString()
   const slot: MealSlot = typeof r.slot === 'string' && MEAL_SLOT_SET.has(r.slot) ? (r.slot as MealSlot) : 'dinner'
+  const recipeId = idOrUndefined(r.recipeId)
   return {
     kind: 'meal',
     id,
     date: date ?? '',
     slot,
-    recipeId: idOrUndefined(r.recipeId),
+    recipeId,
     // a bought meal never carries a recipe, so the grocery list ignores it
     out: r.out === true || undefined,
     placeId: r.out === true ? idOrUndefined(r.placeId) : undefined,
@@ -638,8 +639,11 @@ export function sanitizeMeal(raw: unknown): Meal | null {
     sides: r.out === true ? undefined : sanitizeSides(r.sides),
     notes: str(r.notes)?.trim() || undefined,
     shared: r.shared === true ? true : r.shared === false ? false : undefined,
-    // Leftovers, the one quick pick, or none
-    quick: isQuickPick(r.quick) ? r.quick : undefined,
+    // Leftovers, the one quick pick, or none. Only on a meal with no recipe
+    // and no place that is not eaten out: build 16 knows no quick pick and
+    // carries the flag through a change of main, so a Leftovers changed there
+    // to a recipe came back here as Leftovers, with no groceries or cook task
+    quick: isQuickPick(r.quick) && !recipeId && r.out !== true && !idOrUndefined(r.placeId) ? r.quick : undefined,
     // who cooks it: a member's id, as a task's assignee is kept (mealCook decides when it counts)
     cookId: idOrUndefined(r.cookId),
     ownerId: idOrUndefined(r.ownerId),
