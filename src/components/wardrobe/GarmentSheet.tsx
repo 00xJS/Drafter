@@ -278,9 +278,11 @@ function AddPiece({ preset, userId, onCreate, onClose }: { preset?: GarmentType;
     }
     setSaving(false)
   }
+  // a photo made ready and not saved is the one thing here worth asking about
+  const unsaved = !!(ready || back.ready)
+
   return (
-    // a photo made ready and not saved is the one thing here worth asking about
-    <Modal onClose={onClose} dirty={!!(ready || back.ready)} className="modal narrow garment-sheet">
+    <Modal onClose={onClose} dirty={unsaved} className="modal narrow garment-sheet">
       <ModalHead title={queue.length > 1 ? `Add clothing · ${at + 1} of ${queue.length}` : 'Add clothing'}>
         {queue.length > 1 && (
           <button type="button" className="btn subtle" onClick={() => next()}>

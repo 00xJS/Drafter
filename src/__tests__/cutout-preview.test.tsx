@@ -273,7 +273,8 @@ describe('Cut out background, from the piece sheet', () => {
     expect(sheet.match(/createPortal\(/g)).toHaveLength(3)
     // no fragment round either sheet's Modal, so its lines keep their place
     expect(sheet).not.toMatch(/<>\s*<Modal/)
-    expect(sheet.match(/^ {4}<Modal onClose=\{close\} className="modal narrow garment-sheet">$/gm)).toHaveLength(2)
+    // (Add clothing closes through Modal's own "Discard changes?" once a photo is ready)
+    expect(sheet.match(/^ {4}<Modal onClose=\{(?:close|onClose)\}(?: dirty=\{\w+\})? className="modal narrow garment-sheet">$/gm)).toHaveLength(2)
   })
 
   it('shows nothing until it has read the photo, so a server render has no button', () => {
