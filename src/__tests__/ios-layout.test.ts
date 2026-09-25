@@ -68,3 +68,9 @@ describe('Kitchen → Recipes’ Includes chips', () => {
     expect(phone('.kind-chips')).toMatch(/overflow-x:\s*auto/)
   })
 })
+
+describe('a meal slot beside another member’s plan', () => {
+  it('puts their plans on a line of their own, under your chooser', () => {
+    expect(rule(css, '.meal-household')).toMatch(/flex:\s*1 1 100%/)
+  })
+})

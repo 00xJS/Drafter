@@ -9,12 +9,23 @@
   color: var(--muted);
   white-space: nowrap;
 }
+/* The other members' plans for the slot, on a line of their own under your
+   chooser, lined up with it as a meal's sides are. Beside it, "Maria: Sushi
+   from Hana…" took the row and your own lunch shrank to "🥗 …". */
 .meal-household {
-  margin: 4px 0 0;
-  padding: 0;
+  flex: 1 1 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 0 0 0 calc(7.5rem + 8px);
   list-style: none;
   font-size: 0.8rem;
   color: var(--text-2);
+}
+@media (max-width: 640px) {
+  /* the label has the whole first line on a phone: nothing to line up with */
+  .meal-household {
+    padding-left: 0;
+  }
 }
 .meal-household li {
   margin: 0;
