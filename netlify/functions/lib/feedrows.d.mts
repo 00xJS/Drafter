@@ -11,6 +11,9 @@ export declare function baseUrl(): string | undefined
 /** Service-key rows as `readerId` may see them: a household member's personal kinds dropped, each row carrying its owner. */
 export declare function readableItems(rows: { user_id?: string | null; data?: unknown }[] | null | undefined, readerId: string): Record<string, any>[]
 
+/** The kinds feedFor publishes, and so the only ones the feed reads. */
+export declare const FEED_KINDS: readonly string[]
+
 /** The feed rows for one reader: only their own tasks, projects and entries. */
 export declare function feedFor(
   items: unknown[],

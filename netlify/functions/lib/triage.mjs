@@ -12,14 +12,16 @@
 // hard deadline; the answer is read by the app's own JSON reader
 // (shared/ai.mts extractJSON); and the email is fenced as data. It writes only
 // over the task exactly as the webhook stored it: once the owner has touched
-// the task, their edit stands and the triage is dropped.
+// the task, their edit stands and the triage is dropped. It writes as the
+// task's owner (lib/writeas.mjs), so a triage that loses to their edit is
+// kept in their own history, never the site owner's.
 
 import { JSON_ONLY, asData, extractJSON } from '../../../shared/ai.mts'
 import { complete, resolveProvider } from './ai.mjs'
 import { rest } from './backup.mjs'
 import { recordJobRun } from './jobhealth.mjs'
-import { keyHeaders } from './supabasekeys.mjs'
 import { validTimeZone, zonedTime } from './timezone.mjs'
+import { writeAs } from './writeas.mjs'
 
 /** How long the model is waited for, all told: its answer, and one more ask when the first is not JSON. */
 export const TRIAGE_MS = 90_000
@@ -114,19 +116,11 @@ function justAfter(iso) {
   return new Date((Number.isFinite(t) ? t : Date.now()) + 1).toISOString()
 }
 
-/** Write through sync_posts: 'stored', 'stale' when a newer copy stands (or the row is gone), 'failed' when the request did not go through. */
-async function store(item) {
-  const supabaseUrl = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL
-  const res = await fetch(`${supabaseUrl}/rest/v1/rpc/sync_posts`, {
-    method: 'POST',
-    headers: keyHeaders(process.env.SUPABASE_SERVICE_KEY, { 'content-type': 'application/json' }),
-    // a future cursor: the answer carries the verdicts, never the whole table
-    body: JSON.stringify({ incoming: [item], since: new Date(Date.now() + DAY_MS).toISOString() }),
-  }).catch(() => null)
-  if (!res?.ok) return 'failed'
-  const answer = await res.json().catch(() => null)
-  if (Array.isArray(answer?.rejected) && answer.rejected.includes(item.id)) return 'failed'
-  return ['stale', 'gone'].some(k => Array.isArray(answer?.[k]) && answer[k].includes(item.id)) ? 'stale' : 'stored'
+/** Write as the task's owner: 'stored', 'stale' when a newer copy stands (or the row is gone), 'failed' when the write did not go through. */
+async function store(ownerId, item) {
+  const out = await writeAs(ownerId, [item])
+  if (!out.ok || out.rejected.includes(item.id)) return 'failed'
+  return out.stale.includes(item.id) || out.gone.includes(item.id) ? 'stale' : 'stored'
 }
 
 /**
@@ -170,6 +164,6 @@ export async function runTriage(job) {
   if (ai.error) return finish('no answer', ai.error)
   if (!patch) return finish('unchanged')
   const next = { ...task, ...patch, updatedAt: justAfter(task.updatedAt) }
-  const stored = await store(next)
+  const stored = await store(job.userId, next)
   return stored === 'stored' ? finish('triaged') : stored === 'stale' ? finish('edited') : finish('failed', 'the refined task could not be written')
 }

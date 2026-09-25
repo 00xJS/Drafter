@@ -45,25 +45,26 @@ function withOwner<T>(data: T, ownerId: string | undefined): T & { ownerId: stri
   return { ...data, ownerId }
 }
 
-/** Mirror of household_user_ids() + legacy null-owner rows for the site owner. */
+/**
+ * Mirror of household_user_ids(). A row with no owner is nobody's: none can
+ * exist, as posts.user_id has been NOT NULL since 2026-09-08, and the site
+ * owner's claim on such rows went with them. `_ownerId` is no longer read; it
+ * stays so its callers need not change.
+ */
 export function visibleItemsFor(
   rows: readonly { user_id: string | null; data: unknown }[] | null | undefined,
   userId: string,
   peerIds: Iterable<string> | null | undefined,
-  ownerId: string | null,
+  _ownerId?: string | null,
 ): VisibleItem[] {
-  const visible = new Set([userId, ...(peerIds ?? [])])
+  const visible = new Set<string | null>([userId, ...(peerIds ?? [])])
   // Mirrors the posts policy: a peer's rows are visible except PERSONAL_KINDS
   // (journal, review, calendar, habit, routine, meal and the wardrobe's garment,
   // outfit and wear), which only their owner sees, and a note they have not
   // shared, which is per record rather than per kind (readableRow). ownerId
   // rides along (as sync_posts does on read) so callers can tell whose row it is.
   return (rows ?? [])
-    .filter(r => {
-      if (r.user_id === userId) return true
-      if (r.user_id === null) return userId === ownerId
-      return visible.has(r.user_id) && readableRow(r.data, r.user_id, userId)
-    })
+    .filter(r => r.user_id === userId || (visible.has(r.user_id) && readableRow(r.data, r.user_id, userId)))
     .map(r => withOwner(legacyPostToTask(r.data), r.user_id ?? undefined))
 }
 

@@ -437,3 +437,19 @@ describe('the recap’s link', () => {
     expect(parseLink(params, { host }).insights).toEqual({ period: 'month', at: '2026-09' })
   })
 })
+
+// The recap's own read asked for rows with no owner too when the site owner's
+// recap was due, as legacy rows were once the site owner's. posts.user_id has
+// been NOT NULL since 2026-09-08, so there are none, and it asks for the due
+// accounts' rows alone.
+describe('the recap’s own read', () => {
+  it('asks for the due accounts’ rows, and never for an unowned one, the site owner’s recap included', async () => {
+    settings = [account(JOE)]
+    rows = september()
+    await runAt('2026-10-01T15:00:00.000Z')
+    const own = reads.filter(r => r.includes('kind=in.(journal,habit,garment,wear)'))
+    expect(own).toHaveLength(1)
+    expect(own[0]).toContain(`user_id=in.(${JOE})`)
+    expect(own[0]).not.toContain('user_id.is.null')
+  })
+})

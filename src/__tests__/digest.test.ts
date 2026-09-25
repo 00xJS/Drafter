@@ -80,7 +80,9 @@ describe('digest buildDigest + visibility', () => {
     expect(second.peopleDue.some((s: string) => s.includes('Mum'))).toBe(false)
   })
 
-  it('visibleItemsFor includes peers and null-owner rows for the site owner', () => {
+  // posts.user_id has been NOT NULL since 2026-09-08: a row with no owner
+  // cannot exist, and the site owner's claim on one is gone with it
+  it('visibleItemsFor includes peers, and an unowned row for nobody, the site owner included', () => {
     const rows = [
       { user_id: 'u1', data: { kind: 'task', id: 'a', status: 'todo', title: 'mine' } },
       { user_id: 'u2', data: { kind: 'task', id: 'b', status: 'todo', title: 'peer' } },
@@ -88,7 +90,7 @@ describe('digest buildDigest + visibility', () => {
       { user_id: 'u3', data: { kind: 'task', id: 'd', status: 'todo', title: 'other' } },
     ]
     const items = visibleItemsFor(rows, 'u1', ['u1', 'u2'], 'u1') as { id: string }[]
-    expect(items.map(i => i.id).sort()).toEqual(['a', 'b', 'c'])
+    expect(items.map(i => i.id).sort()).toEqual(['a', 'b'])
   })
 
   it('localParts never throws on a bad timezone', () => {
@@ -190,13 +192,11 @@ describe('visibleItemsFor carries ownership', () => {
     const rows = [
       { user_id: 'u1', data: { kind: 'journal', id: 'j1', date: '2026-09-08', body: 'mine' } },
       { user_id: 'u2', data: { kind: 'journal', id: 'j2', date: '2026-09-08', body: 'theirs' } },
-      { user_id: null, data: { kind: 'task', id: 't1', title: 'legacy' } },
     ]
     const items = visibleItemsFor(rows, 'u1', ['u1', 'u2'], 'u1') as { id: string; kind: string; ownerId?: string }[]
     expect(items.find(i => i.id === 'j1')?.ownerId).toBe('u1')
     // a peer's journal never reaches my digest at all — the policy hides it and so does this mirror
     expect(items.find(i => i.id === 'j2')).toBeUndefined()
-    expect(items.find(i => i.id === 't1')?.ownerId).toBeUndefined()
     const peerTask = visibleItemsFor([{ user_id: 'u2', data: { kind: 'task', id: 't2', title: 'shared chore' } }], 'u1', ['u1', 'u2'], 'u1')
     expect(peerTask).toHaveLength(1)
     // what Sunday's draft (lib/sundaydraft.mjs) does with it: only my own diary reaches the prompt

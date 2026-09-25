@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 // @ts-expect-error — a function file ships with no .d.mts: Netlify would deploy one as a function of its own
 import householdFunction from '../../netlify/functions/household.mjs'
-import { PERSONAL_KINDS } from '../../shared/kinds.mts'
+import { PERSONAL_KINDS, SHARED_BY_DEFAULT } from '../../shared/kinds.mts'
 
 // Removing a member and leaving a household each stamped a household_epoch
 // setting on every member, for their apps to notice and resync. user_settings
@@ -25,13 +25,15 @@ let posts: { id: string; user_id: string; kind: string; data: Record<string, unk
 
 /**
  * PostgREST, as far as the filter forms THIS endpoint sends:
- * `user_id=eq.<uuid>`, `kind=eq.note`, `kind=not.in.(a,b,c)`,
- * `data->>shared=eq.true` and one flat `or=(term,term,term)`. It models
- * nothing else on purpose — a stand-in that pretended to be general would
- * quietly answer differently from the database, and that is also why the
- * endpoint sends two simple statements rather than one nested filter. That the
- * real syntax parses was checked against the live PostgREST, which is the half
- * a stand-in cannot tell you.
+ * `user_id=eq.<uuid>`, `kind=eq.<kind>`, `kind=not.in.(a,b,c)`,
+ * `data->>shared=eq.true`, one flat `or=(term,term,term)`, and
+ * `data->tags=is.null` or `data->tags=not.cs.["visit"]`. It models nothing
+ * else on purpose — a stand-in that pretended to be general would quietly
+ * answer differently from the database, and that is also why the endpoint
+ * sends simple statements rather than one nested filter. The tags filters are
+ * modelled as SQL answers them: `data->'tags'` is NULL only when the key is
+ * absent (a JSON null is a value), and NOT of a NULL is NULL, so `not.cs`
+ * passes over a row with no tags — which is why `is.null` is sent too.
  */
 function matches(row: { user_id: string; kind: string; data: Record<string, unknown> }, q: URLSearchParams): boolean {
   const user = q.get('user_id')
@@ -48,6 +50,16 @@ function matches(row: { user_id: string; kind: string; data: Record<string, unkn
     if (flag === 'eq.true') {
       if (asText !== 'true') return false
     } else throw new Error(`the stand-in does not model the filter data->>shared=${flag}`)
+  }
+  const tags = q.get('data->tags')
+  if (tags) {
+    const list = row.data.tags
+    if (tags === 'is.null') {
+      if (list !== undefined) return false
+    } else if (tags === 'not.cs.["visit"]') {
+      if (list === undefined) return false
+      if (Array.isArray(list) && list.includes('visit')) return false
+    } else throw new Error(`the stand-in does not model the filter data->tags=${tags}`)
   }
   const or = q.get('or')
   if (or) {
@@ -82,6 +94,17 @@ beforeEach(() => {
     { id: 'n-shared', user_id: MEMBER, kind: 'note', data: { kind: 'note', id: 'n-shared', shared: true } },
     // and the two a task can be in, the other way round: no flag is household work
     { id: 't-private', user_id: MEMBER, kind: 'task', data: { kind: 'task', id: 't-private', shared: false } },
+    // a task with tags of its own is still household work; a visit they logged is not
+    { id: 't-email', user_id: MEMBER, kind: 'task', data: { kind: 'task', id: 't-email', tags: ['email'] } },
+    { id: 't-visit', user_id: MEMBER, kind: 'task', data: { kind: 'task', id: 't-visit', tags: ['visit'], peopleIds: ['mum'], status: 'done' } },
+    // a meal shared with the household, and one kept "Just me"
+    { id: 'm-shared', user_id: MEMBER, kind: 'meal', data: { kind: 'meal', id: 'm-shared' } },
+    { id: 'm-private', user_id: MEMBER, kind: 'meal', data: { kind: 'meal', id: 'm-private', shared: false } },
+    // their calendar: a work day, and lunch with someone
+    { id: 'e-work', user_id: MEMBER, kind: 'event', data: { kind: 'event', id: 'e-work', work: 'office' } },
+    { id: 'e-lunch', user_id: MEMBER, kind: 'event', data: { kind: 'event', id: 'e-lunch', peopleIds: ['mum'] } },
+    // the household's address book moves
+    { id: 'p-mum', user_id: MEMBER, kind: 'person', data: { kind: 'person', id: 'p-mum' } },
   ]
   members = [
     { user_id: OWNER, role: 'owner' },
@@ -169,13 +192,42 @@ describe('Household → remove and leave', () => {
     const patch = calls.find(c => c.method === 'PATCH' && c.path === '/rest/v1/posts')!
     const q = new URLSearchParams(patch.query)
     expect(q.get('user_id')).toBe(`eq.${MEMBER}`)
-    // notes move in a statement of their own now, so this one excludes them
-    // along with every personal kind
+    // the kinds decided per record move in statements of their own, and an
+    // event never moves, so this one excludes them along with every personal kind
     const excluded = (q.get('kind') ?? '').replace(/^not\.in\.\(|\)$/g, '').split(',').filter(Boolean)
-    expect(new Set(excluded)).toEqual(new Set([...PERSONAL_KINDS, 'note']))
+    expect(new Set(excluded)).toEqual(new Set([...PERSONAL_KINDS, ...Object.keys(SHARED_BY_DEFAULT), 'event']))
     // and the rows themselves moved the way the filters say
-    expect(posts.filter(p => p.user_id === OWNER).map(p => p.id)).toEqual(['t1', 'n-shared'])
-    expect(posts.filter(p => p.user_id === MEMBER).map(p => p.id)).toEqual(['j1', 'n-private', 'n-false', 't-private'])
+    expect(posts.filter(p => p.user_id === OWNER).map(p => p.id)).toEqual(['t1', 'n-shared', 't-email', 'm-shared', 'p-mum'])
+    expect(posts.filter(p => p.user_id === MEMBER).map(p => p.id)).toEqual(['j1', 'n-private', 'n-false', 't-private', 't-visit', 'm-private', 'e-work', 'e-lunch'])
+  })
+
+  // v3.22 lets a meal be kept "Just me", and the one statement for every
+  // shared kind moved it anyway: the member's private meals went to the
+  // creator's Kitchen, feed and backup.
+  it('leaves a meal its author kept to themselves with its author, and moves a shared one', async () => {
+    await post('remove', { userId: MEMBER })
+    const owned = (id: string) => posts.find(p => p.id === id)!.user_id
+    expect(owned('m-private'), 'a Just me meal stays').toBe(MEMBER)
+    expect(owned('m-shared'), 'a meal with no flag is the household’s and moves').toBe(OWNER)
+  })
+
+  // The address book is the household's; who you saw and where you were is
+  // each member's own (v3.24). Moved to the creator, the leaver's visits and
+  // calendar would read as the creator's own: seen Mum, worked at the office.
+  it('leaves the visits they logged and their calendar with them', async () => {
+    await post('remove', { userId: MEMBER })
+    const owned = (id: string) => posts.find(p => p.id === id)!.user_id
+    expect(owned('t-visit'), 'a visit they logged stays').toBe(MEMBER)
+    expect(owned('e-work'), 'a work day stays').toBe(MEMBER)
+    expect(owned('e-lunch'), 'an entry with people on it stays').toBe(MEMBER)
+    expect(owned('t-email'), 'a task with other tags moves').toBe(OWNER)
+    expect(owned('p-mum'), 'the address book moves').toBe(OWNER)
+  })
+
+  it('never moves a row by a filter it could misread: each is flat, and the tag filters come as a pair', async () => {
+    await post('remove', { userId: MEMBER })
+    const tasks = calls.filter(c => c.method === 'PATCH' && new URLSearchParams(c.query).get('kind') === 'eq.task').map(c => new URLSearchParams(c.query).get('data->tags'))
+    expect(tasks).toEqual(['is.null', 'not.cs.["visit"]'])
   })
 
   // v3.19 gives a task the same per-record audience, with the default the

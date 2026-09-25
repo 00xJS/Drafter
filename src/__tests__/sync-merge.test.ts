@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { applyLocalChoice, mergeRecord, same, sameContent } from '../../shared/merge.mts'
-import { Garment, GroceryList, Habit, Outfit, Routine, Task, Wear } from '../types'
+import { sanitizeAccount } from '../schema'
+import { Account, BalanceCheck, Garment, GroceryList, Habit, Outfit, Routine, Task, Wear } from '../types'
 
 const T0 = '2026-09-10T09:00:00.000Z'
 
@@ -183,6 +184,61 @@ describe('grocery lists', () => {
     expect(merged.items.find(l => l.name === 'Milk')!.state).toBe('need')
     expect(conflicts).toEqual([{ path: ['items', 'milk|', 'state'], local: 'have', remote: 'need' }])
     expect(merged.createdAt).toBe('2026-09-10T08:00:00.000Z')
+  })
+})
+
+// A balance check-in has no id: one a day, keyed by `on`. With no key the
+// whole list merged as one value, so two devices that checked in on
+// different days conflicted, and one of the two check-ins was lost.
+describe('an account’s balance check-ins merge by day', () => {
+  const account = (balances: BalanceCheck[], over: Partial<Account> = {}): Account => ({
+    kind: 'account',
+    id: 'acc-checking',
+    name: 'Checking',
+    type: 'checking',
+    balances,
+    createdAt: T0,
+    updatedAt: T0,
+    ...over,
+  })
+  const sep1 = { on: '2026-09-01', amount: 1200 }
+  /** The merged account as a device keeps it: sanitized, one a day, oldest first. */
+  const kept = (merged: Account) => sanitizeAccount(merged)!.balances
+
+  it('keeps both devices’ check-ins on different days, with no conflict', () => {
+    const base = account([sep1])
+    const local = account([sep1, { on: '2026-09-20', amount: 950 }])
+    const remote = account([sep1, { on: '2026-09-21', amount: 880.5 }])
+    const { merged, conflicts } = mergeRecord(base, local, remote)
+    expect(kept(merged)).toEqual([sep1, { on: '2026-09-20', amount: 950 }, { on: '2026-09-21', amount: 880.5 }])
+    expect(conflicts).toEqual([])
+  })
+
+  it('two amounts for one day: the other device’s stands, and Keep mine puts this one back', () => {
+    const base = account([sep1])
+    const local = account([sep1, { on: '2026-09-20', amount: 950 }])
+    const remote = account([sep1, { on: '2026-09-20', amount: 940 }])
+    const { merged, conflicts } = mergeRecord(base, local, remote)
+    expect(kept(merged)).toEqual([sep1, { on: '2026-09-20', amount: 940 }])
+    expect(conflicts).toEqual([{ path: ['balances', '2026-09-20', 'amount'], local: 950, remote: 940 }])
+    expect(kept(applyLocalChoice(merged, conflicts))).toEqual([sep1, { on: '2026-09-20', amount: 950 }])
+  })
+
+  it('a check-in taken off on one device stays off, and a day re-typed there survives', () => {
+    const base = account([sep1, { on: '2026-09-08', amount: 1100 }])
+    const local = account([sep1, { on: '2026-09-08', amount: 1150 }])
+    const remote = account([sep1, { on: '2026-09-15', amount: 1010 }])
+    const { merged, conflicts } = mergeRecord(base, local, remote)
+    // the other device took the 8th off, but this one had changed it: a changed line is not lost
+    expect(kept(merged)).toEqual([sep1, { on: '2026-09-08', amount: 1150 }, { on: '2026-09-15', amount: 1010 }])
+    expect(conflicts).toEqual([])
+    const untouched = mergeRecord(base, account([sep1, { on: '2026-09-08', amount: 1100 }, { on: '2026-09-22', amount: 990 }]), remote)
+    expect(kept(untouched.merged)).toEqual([sep1, { on: '2026-09-15', amount: 1010 }, { on: '2026-09-22', amount: 990 }])
+  })
+
+  it('what an older build writes is the same list, so a device that has not updated reads it as before', () => {
+    const { merged } = mergeRecord(account([sep1]), account([sep1, { on: '2026-09-20', amount: 950 }]), account([sep1, { on: '2026-09-21', amount: 880 }]))
+    for (const b of kept(merged)) expect(Object.keys(b).sort()).toEqual(['amount', 'on'])
   })
 })
 

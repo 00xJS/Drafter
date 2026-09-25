@@ -182,9 +182,9 @@ async function keepNotice(userId, { id, type, title, lines, target }, now) {
  * with no recap to send reads nothing more at all.
  * @param {{ user_id: string, timezone?: string | null, digest_hour?: number | null }[]} active the accounts with the digest on
  * @param {Date} now
- * @param {string | null} ownerId
+ * @param {string | null} _ownerId not read: posts.user_id is NOT NULL (2026-09-08), so no row is unowned
  */
-async function recapsToSend(active, now, ownerId) {
+async function recapsToSend(active, now, _ownerId) {
   /** @type {Map<string, string>} */
   const due = new Map()
   for (const u of active) {
@@ -198,8 +198,7 @@ async function recapsToSend(active, now, ownerId) {
   for (const [userId, month] of [...due]) if (gone.has(recapNoticeId(userId, month))) due.delete(userId)
   if (!due.size) return { due, rows: [] }
   const who = [...due.keys()].map(encodeURIComponent).join(',')
-  // legacy rows with no owner are the site owner's (visibleItemsFor)
-  const whose = ownerId && due.has(ownerId) ? `or=(user_id.in.(${who}),user_id.is.null)` : `user_id=in.(${who})`
+  const whose = `user_id=in.(${who})`
   const rows = /** @type {{ user_id: string | null, data: unknown }[]} */ (await restAll(`posts?select=id,data,user_id&deleted=is.false&kind=in.(${RECAP_KINDS.join(',')})&${whose}`))
   return { due, rows }
 }

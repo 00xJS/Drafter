@@ -38,6 +38,9 @@ const stored = [
   { user_id: PEER, data: task('assigned', 'Pick up the kids', { assigneeId: ME }) },
   { user_id: PEER, data: { kind: 'journal', id: 'journal~2026-09-20~p1', date: '2026-09-20', body: 'Peer diary entry', createdAt: at, updatedAt: at } },
   { user_id: PEER, data: { kind: 'habit', id: 'peer-habit', name: 'Peer habit', days: [], done: [], createdAt: at, updatedAt: at } },
+  // the reader's own rows of kinds a calendar never shows
+  { user_id: ME, data: { kind: 'note', id: 'my-note', title: 'Door code', body: '<p>1234</p>', createdAt: at, updatedAt: at } },
+  { user_id: ME, data: { kind: 'journal', id: 'journal~2026-09-20~me', date: '2026-09-20', body: 'My diary', createdAt: at, updatedAt: at } },
 ]
 
 type StoredRow = { user_id: string; data: { id: string } & Record<string, unknown> }
@@ -45,11 +48,23 @@ type StoredRow = { user_id: string; data: { id: string } & Record<string, unknow
 /** PostgREST's max_rows on Supabase: a page is never longer, whatever limit was asked for. */
 const MAX_ROWS = 1000
 
-/** One page of `rows` as PostgREST answers restAll: after the id it carried on from, in id order, at most MAX_ROWS, and how many were left. */
+/** Each kind a read of the posts brought back. */
+let kindsServed: Set<string>
+
+/**
+ * One page of `rows` as PostgREST answers restAll: of the kinds asked for (the
+ * generated column reads a row with no kind as a task), after the id it
+ * carried on from, in id order, at most MAX_ROWS, and how many were left.
+ */
 function pageOf(path: string, rows: StoredRow[]) {
   const q = new URLSearchParams(path.slice(path.indexOf('?') + 1))
+  const kinds = /^in\.\((.*)\)$/.exec(q.get('kind') ?? '')?.[1].split(',') ?? null
   const after = q.get('id')?.replace(/^gt\./, '') ?? null
-  const left = rows.filter(r => after === null || r.data.id > after).sort((a, b) => (a.data.id < b.data.id ? -1 : 1))
+  const left = rows
+    .filter(r => !kinds || kinds.includes(String(r.data.kind ?? 'task')))
+    .filter(r => after === null || r.data.id > after)
+    .sort((a, b) => (a.data.id < b.data.id ? -1 : 1))
+  for (const r of left) kindsServed.add(String(r.data.kind ?? 'task'))
   const page = left.slice(0, Math.min(Number(q.get('limit')), MAX_ROWS)).map(r => ({ id: r.data.id, data: r.data, user_id: r.user_id }))
   return new Response(JSON.stringify(page), { headers: { 'content-range': page.length ? `0-${page.length - 1}/${left.length}` : `*/${left.length}` } })
 }
@@ -66,6 +81,7 @@ beforeEach(() => {
   requests = []
   rows = [...stored]
   postsFail = false
+  kindsServed = new Set()
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -109,6 +125,15 @@ describe('GET /api/feed.ics', () => {
     const posts = requests.find(r => r.url.includes('/rest/v1/posts?'))
     expect(decodeURIComponent(posts!.url)).toContain(`user_id=in.("${ME}","${PEER}")`)
     expect(requests.every(r => r.headers.get('apikey') === 'service-key')).toBe(true)
+  })
+
+  // It read every row of every kind the household has — notes, the journal,
+  // the wardrobe, the chat — to publish tasks, projects and entries.
+  it('reads only the kinds it publishes: tasks, projects and entries', async () => {
+    await fetchFeed()
+    const posts = requests.find(r => r.url.includes('/rest/v1/posts?'))
+    expect(decodeURIComponent(posts!.url)).toContain('kind=in.(task,project,event)')
+    expect([...kindsServed].sort()).toEqual(['event', 'task'])
   })
 
   it('answers 404 to a token nobody holds, without reading any rows', async () => {

@@ -15,9 +15,11 @@
 // reader wrote themselves, nor over a save made while the model is asked: the
 // week's rows are read again straight from the table before anything is
 // written, and every write is stamped just after the copy it was built on, so
-// a newer save wins and the draft steps aside. Reviews are personal: a new row
-// is born the site owner's (sync_posts under the service key), so it is handed
-// to its reader, still empty, before any of their week goes to the model. An
+// a newer save wins and the draft steps aside. Reviews are personal: every
+// write is made as the reader (lib/writeas.mjs), so a new row is theirs from
+// the moment it exists. On a database before v3.34 a new row is still born
+// the site owner's and handed over after, which is why the review is made
+// before any of their week goes to the model, while it is still empty. An
 // account disabled in Admin is not drafted. The journal reaches the model only
 // when the account allowed it (user_settings.digest_journal). And the week's
 // records go to the model fenced as data, not instructions.
@@ -34,6 +36,7 @@ import { buildPeerMap } from './peers.mjs'
 import { previousWeekIn, sundayDraftStarts } from './reviewweek.mjs'
 import { keyHeaders } from './supabasekeys.mjs'
 import { validTimeZone } from './timezone.mjs'
+import { writeAs } from './writeas.mjs'
 
 /** What a draft reads: the week's tasks, people, events, habits, journal, and the reviews themselves. */
 export const DRAFT_KINDS = Object.freeze(['task', 'person', 'event', 'habit', 'journal', 'review'])
@@ -100,32 +103,14 @@ export function wantsDraft(review) {
 }
 
 /**
- * Write a review through sync_posts. False when the server did not take it:
- * the request failed, or a newer copy stands. A new row is the site owner's,
- * so with `handOver` it is then given to its reader, and the write counts
- * only once that has worked.
+ * Write a review as its reader. False when the server did not take it: the
+ * write failed, or a newer copy stands. On a database before v3.34 a new row
+ * is the site owner's, so with `handOver` it is then given to its reader, and
+ * the write counts only once that has worked.
  */
 async function writeReview(review, userId, { handOver = false } = {}) {
-  const supabaseUrl = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL
-  const serviceKey = process.env.SUPABASE_SERVICE_KEY
-  const res = await fetch(`${supabaseUrl}/rest/v1/rpc/sync_posts`, {
-    method: 'POST',
-    headers: keyHeaders(serviceKey, { 'content-type': 'application/json' }),
-    body: JSON.stringify({ incoming: [asRow(review)], since: new Date(Date.now() + 86_400_000).toISOString() }),
-  }).catch(() => null)
-  if (!res?.ok) return false
-  const answer = await res.json().catch(() => null)
-  if (['rejected', 'stale', 'gone'].some(k => Array.isArray(answer?.[k]) && answer[k].includes(review.id))) return false
-  if (!handOver) return true
-  // for the site owner this changes nothing and answers 204 all the same
-  return fetch(`${supabaseUrl}/rest/v1/posts?id=eq.${encodeURIComponent(review.id)}`, {
-    method: 'PATCH',
-    headers: keyHeaders(serviceKey, { 'content-type': 'application/json', prefer: 'return=minimal' }),
-    body: JSON.stringify({ user_id: userId }),
-  }).then(
-    r => r.ok,
-    () => false,
-  )
+  const out = await writeAs(userId, [asRow(review)], { handOver })
+  return out.ok && out.owned && ![...out.rejected, ...out.stale, ...out.gone].includes(review.id)
 }
 
 /**

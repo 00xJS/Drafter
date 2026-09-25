@@ -253,6 +253,78 @@ describe('Today’s sync alarm reads the check as Admin → Data does', () => {
 /** PostgREST's max_rows on Supabase: a page is never longer, whatever limit was asked for. */
 const MAX_ROWS = 1000
 
+// Disable was a Supabase Auth ban and nothing else. A ban stops a sign-in,
+// and nothing that reaches an account without one: its pushes, the email
+// digest, the recap, the calendar feed and email-in all went on. Disable now
+// switches those off, and a session the account still holds is refused.
+describe('Admin → Disable stops everything that reaches the account', () => {
+  const BANNED = '2126-08-20T08:00:00.000Z'
+  /** Each PUT to the auth server, and each settings write, in order. */
+  let log: string[]
+  let bans: { id: string; body: Record<string, unknown> }[]
+  let written: Record<string, unknown>[]
+  let settingsDown: boolean
+
+  beforeEach(() => {
+    log = []
+    bans = []
+    written = []
+    settingsDown = false
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input).replace(SUPABASE, '')
+        const method = init?.method ?? 'GET'
+        const body = init?.body ? JSON.parse(String(init.body)) : undefined
+        if (url === '/auth/v1/user') return Response.json({ id: OWNER, email: signedIn })
+        if (url.startsWith('/rest/v1/app_config?key=eq.owner_email')) return Response.json([{ value: 'owner@example.test' }])
+        if (url === `/auth/v1/admin/users/${LEAVER}` && method === 'PUT') {
+          log.push('ban')
+          bans.push({ id: LEAVER, body })
+          return Response.json({ id: LEAVER, email: 'leaving@example.test', banned_until: body.ban_duration === 'none' ? null : BANNED })
+        }
+        if (url === '/rest/v1/user_settings?on_conflict=user_id' && method === 'POST') {
+          log.push('settings')
+          if (settingsDown) return new Response('unavailable', { status: 503 })
+          written.push(body)
+          return new Response(null, { status: 201 })
+        }
+        throw new Error(`unexpected ${method} ${url}`)
+      }),
+    )
+  })
+
+  it('bans the sign-in, then clears their push devices, email digest, feed link and email-in address', async () => {
+    const res = await act('setDisabled', { userId: LEAVER, disabled: true })
+    expect(res.status).toBe(200)
+    expect((await res.json()).user).toMatchObject({ id: LEAVER, disabled: true })
+    expect(bans).toEqual([{ id: LEAVER, body: { ban_duration: '876000h' } }])
+    expect(log).toEqual(['ban', 'settings'])
+    expect(written).toEqual([{ user_id: LEAVER, push_subscriptions: [], digest_email: false, feed_token: null, inbound_token: null }])
+  })
+
+  it('says so when the ban went through and the rest could not be switched off, so Disable can be pressed again', async () => {
+    settingsDown = true
+    const res = await act('setDisabled', { userId: LEAVER, disabled: true })
+    expect(res.status).toBe(502)
+    expect((await res.json()).error).toMatch(/^Disabled, but their push, email digest, calendar feed and email-in could not be switched off: .*Try again\.$/)
+  })
+
+  it('Enable lifts the ban and nothing more: what was switched off is turned on again from their own Settings', async () => {
+    const res = await act('setDisabled', { userId: LEAVER, disabled: false })
+    expect(res.status).toBe(200)
+    expect((await res.json()).user).toMatchObject({ id: LEAVER, disabled: false })
+    expect(bans).toEqual([{ id: LEAVER, body: { ban_duration: 'none' } }])
+    expect(written).toEqual([])
+  })
+
+  it('never your own account', async () => {
+    const res = await act('setDisabled', { userId: OWNER, disabled: true })
+    expect(res.status).toBe(400)
+    expect(log).toEqual([])
+  })
+})
+
 /**
  * One page of `rows` as PostgREST answers restAll: the rows after the id it
  * carried on from, in id order, at most MAX_ROWS, and how many were left.
@@ -314,6 +386,19 @@ describe('Admin → the digest it runs reads every record, past a thousand', () 
     expect(body.counts.overdue).toBe(1500)
     expect(body.lines).toContainEqual(expect.stringMatching(/^1500 overdue: /))
     expect(pages).toEqual([null, 't-0999'])
+  })
+
+  // the preview read every row of every kind to build a digest from eight
+  it('reads the kinds the scheduled digest reads, and no other', async () => {
+    const reads: string[] = []
+    const passOn = vi.mocked(fetch).getMockImplementation()!
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      if (String(input).includes('/rest/v1/posts?')) reads.push(decodeURIComponent(String(input)))
+      return passOn(input, init)
+    })
+    expect((await act('runDigest')).status).toBe(200)
+    expect(reads.length).toBeGreaterThan(0)
+    for (const r of reads) expect(r).toContain('&kind=in.(task,project,person,place,meal,recipe,event,review)')
   })
 
   it('answers an error, never a digest of the first thousand, when a later page cannot be read', async () => {

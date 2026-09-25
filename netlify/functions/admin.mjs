@@ -22,7 +22,7 @@ import { readJobs } from './lib/jobhealth.mjs'
 import { shapeDataStats } from './lib/datastats.mjs'
 import { keyHeaders } from './lib/supabasekeys.mjs'
 import { pushConfigured, sendToAll, webPushConfigured } from './push.mjs'
-import { buildPeerMap, sendEmail } from './digest.mjs'
+import { DIGEST_KINDS, buildPeerMap, sendEmail } from './digest.mjs'
 import { buildDigest, visibleItemsFor } from '../../shared/digest.mts'
 
 /** How long a snapshot download link stays valid. */
@@ -190,15 +190,16 @@ function integrationStatus(origin) {
 
 /**
  * The owner's own digest, computed exactly as the scheduled run would see it:
- * the same read, a page at a time (restAll), so an account past a thousand
- * records is not cut short, and a page that can't be read is an error rather
- * than a digest of part of the records.
+ * the same read, of the kinds a digest reads (DIGEST_KINDS) and a page at a
+ * time (restAll), so an account past a thousand records is not cut short, and
+ * a page that can't be read is an error rather than a digest of part of the
+ * records.
  */
 async function ownerDigest(userId) {
   const settings = (await settingsGet(userId)) ?? {}
   const timezone = settings.timezone || 'UTC'
   const [rows, peers, ownerId] = await Promise.all([
-    restAll('posts?select=id,data,user_id&deleted=is.false'),
+    restAll(`posts?select=id,data,user_id&deleted=is.false&kind=in.(${DIGEST_KINDS.join(',')})`),
     buildPeerMap().catch(() => new Map()),
     rest('rpc/owner_user_id', { method: 'POST', body: '{}' }).catch(() => null),
   ])
@@ -347,6 +348,22 @@ const handler = async req => {
         method: 'PUT',
         body: JSON.stringify({ ban_duration: disabled ? '876000h' : 'none' }),
       })
+      // A ban stops a sign-in, and nothing that reaches the account without
+      // one: its pushes (the digest, due nudges, the recap and word of shared
+      // tasks), the email digest, the calendar feed and email-in, which are
+      // links anyone holding them can use. Disable switches all of those off
+      // here, and the session that account still holds is refused from now on
+      // (lib/session.mjs). Enable lifts the ban and nothing more: each is
+      // turned on again from that account's own Settings — push on each
+      // device, the digest email, and a new feed link and email-in address,
+      // since the old ones may be why it was disabled.
+      if (disabled) {
+        try {
+          await settingsSet(userId, { push_subscriptions: [], digest_email: false, feed_token: null, inbound_token: null })
+        } catch (e) {
+          return Response.json({ error: `Disabled, but their push, email digest, calendar feed and email-in could not be switched off: ${e?.message ?? e}. Try again.`, user: publicUser(updated) }, { status: 502 })
+        }
+      }
       return Response.json({ user: publicUser(updated) })
     }
 

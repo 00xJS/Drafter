@@ -87,6 +87,10 @@ let emails: { subject: string; text: string }[]
 let syncDown: boolean
 /** Accounts a row cannot be handed over to: the PATCH fails. */
 let handOverFails: Set<string>
+/** The database predates v3.34: PostgREST has no sync_posts_as. */
+let writeAsMissing: boolean
+/** Each hand-over PATCH's body. */
+let claims: Record<string, any>[]
 /** Every account as Supabase Auth lists them; Admin's Disable sets banned_until. */
 let authUsers: { id: string; email: string; banned_until: string | null }[]
 /** The list of accounts answers 503 from this page on; Infinity when it answers. */
@@ -126,6 +130,8 @@ beforeEach(() => {
   emails = []
   syncDown = false
   handOverFails = new Set()
+  writeAsMissing = false
+  claims = []
   authUsers = []
   authFailsFrom = Infinity
   started = []
@@ -194,6 +200,23 @@ beforeEach(() => {
         return Response.json(structuredClone(rows.filter(r => r.data.kind === 'review' && r.data.key === key)))
       }
       if (path === 'household_members?select=household_id,user_id') return Response.json(households)
+      if (path === 'rpc/sync_posts_as' && method === 'POST') {
+        if (writeAsMissing) return Response.json({ code: 'PGRST202', message: 'Could not find the function public.sync_posts_as(incoming, p_owner) in the schema cache' }, { status: 404 })
+        if (syncDown) return new Response('down', { status: 500 })
+        // as the database does since v3.34: a new row is the named owner's from
+        // the start, a row of anyone else's is refused, the strictly newer write
+        // wins, and a different one that loses is answered stale
+        const rejected: string[] = []
+        const stale: string[] = []
+        for (const item of body.incoming) {
+          const row = rows.find(r => r.data.id === item.id)
+          if (row && row.user_id !== body.p_owner) rejected.push(item.id)
+          else if (!row) rows.push({ user_id: body.p_owner, data: item })
+          else if (item.updatedAt > row.data.updatedAt) row.data = item
+          else if (JSON.stringify(item) !== JSON.stringify(row.data)) stale.push(item.id)
+        }
+        return Response.json({ items: [], rejected, stale, gone: [] })
+      }
       if (path === 'rpc/sync_posts' && method === 'POST') {
         if (syncDown) return new Response('down', { status: 500 })
         // as the database does: a new row is the site owner's until it is handed over,
@@ -208,6 +231,7 @@ beforeEach(() => {
         return Response.json({ items: [], rejected: [], stale, gone: [] })
       }
       if (path.startsWith('posts?id=eq.') && method === 'PATCH') {
+        claims.push(body)
         if (handOverFails.has(body.user_id)) return new Response('unavailable', { status: 503 })
         const row = rows.find(r => r.data.id === decodeURIComponent(path.slice('posts?id=eq.'.length)))
         if (row) row.user_id = body.user_id
@@ -360,17 +384,16 @@ describe('Sunday’s draft is started by the digest and written in the backgroun
     ])
   })
 
-  it('reads 8am when no hour is set, and drafts an account with no settings row at all, legacy rows included — each from its own records', async () => {
+  it('reads 8am when no hour is set, and drafts an account with no settings row at all — each from its own records', async () => {
     // the peer has a row but no hour; the site owner has no row, so UTC and 8am
     settings = [quiet(PEER, { digest_hour: null, timezone: 'Europe/London' })]
-    rows = [doneLastWeek(OWNER, 'fence', 'Fixed the fence'), doneLastWeek(null, 'shed', 'Painted the shed'), doneLastWeek(PEER, 'gutter', 'Cleared the gutter')]
+    rows = [doneLastWeek(OWNER, 'fence', 'Fixed the fence'), doneLastWeek(PEER, 'gutter', 'Cleared the gutter')]
     // 7am in London (BST) is 06:00 UTC; 7am in UTC is 07:00
     expect(await hourly('2026-09-12T00:00:00Z', '2026-09-14T00:00:00Z')).toEqual(['2026-09-13T06:00:00.000Z', '2026-09-13T07:00:00.000Z'])
     const [peers, owners] = ai.prompts
     expect(peers).toContain('Cleared the gutter')
     expect(peers).not.toContain('Fixed the fence')
     expect(owners).toContain('Fixed the fence')
-    expect(owners).toContain('Painted the shed')
     expect(owners).not.toContain('Cleared the gutter')
     expect(drafts().map(r => r.user_id).sort()).toEqual([OWNER, PEER].sort())
   })
@@ -450,33 +473,49 @@ describe('the draft itself, in the background function', () => {
     expect(rows.find(r => r.data.id === 'mine')!.data).toMatchObject({ top: ['Book the dentist'], summary: SUMMARY })
   })
 
-  it('makes a new review the reader’s, still empty, before anything is asked — and asks nothing while that fails', async () => {
+  // v3.34: written as its reader, a new review is theirs from the start
+  it('makes a new review the reader’s from the start: nothing of it is ever the site owner’s, and nothing is handed over', async () => {
     settings = [quiet(PEER, { timezone: 'UTC' })]
     rows = [doneLastWeek(PEER, 'gutter', 'Cleared the gutter')]
-    handOverFails = new Set([PEER])
-    const out = await job([PEER], '2026-09-13T07:00:00.000Z')
-    expect(ai.prompts).toEqual([])
-    expect(out.failures).toEqual([`${PEER}: the review could not be made theirs`])
-    // the site owner holds an empty row, with nothing of the peer's week in it
-    const held = rows.find(r => r.data.id === PEER_DRAFT)!
-    expect(held.user_id).toBe(OWNER)
-    expect(held.data.summary).toBeUndefined()
-    // the next try hands it over, then asks
-    handOverFails.clear()
-    await job([PEER], '2026-09-13T08:00:00.000Z')
-    expect(ai.prompts[0]).toContain('Cleared the gutter')
+    await job([PEER], '2026-09-13T07:00:00.000Z')
     expect(rows.find(r => r.data.id === PEER_DRAFT)).toMatchObject({ user_id: PEER, data: { summary: SUMMARY } })
+    expect(claims).toEqual([])
   })
 
-  it('the site owner never takes a peer’s week for theirs', async () => {
-    settings = [quiet(PEER, { timezone: 'UTC' }), quiet(OWNER, { timezone: 'UTC' })]
-    rows = [doneLastWeek(PEER, 'gutter', 'Cleared the gutter'), doneLastWeek(OWNER, 'fence', 'Fixed the fence')]
-    handOverFails = new Set([PEER])
-    await job([PEER, OWNER], '2026-09-13T07:00:00.000Z')
-    expect(ai.prompts).toHaveLength(1)
-    expect(ai.prompts[0]).toContain('Fixed the fence')
-    expect(rows.find(r => r.data.id === OWNER_DRAFT)).toMatchObject({ user_id: OWNER, data: { summary: SUMMARY } })
-    expect(rows.find(r => r.data.id === PEER_DRAFT)).toMatchObject({ user_id: OWNER })
+  describe('on a database before v3.34', () => {
+    beforeEach(() => {
+      writeAsMissing = true
+    })
+
+    it('makes a new review the reader’s, still empty, before anything is asked — and asks nothing while that fails', async () => {
+      settings = [quiet(PEER, { timezone: 'UTC' })]
+      rows = [doneLastWeek(PEER, 'gutter', 'Cleared the gutter')]
+      handOverFails = new Set([PEER])
+      const out = await job([PEER], '2026-09-13T07:00:00.000Z')
+      expect(ai.prompts).toEqual([])
+      expect(out.failures).toEqual([`${PEER}: the review could not be made theirs`])
+      // the site owner holds an empty row, with nothing of the peer's week in it
+      const held = rows.find(r => r.data.id === PEER_DRAFT)!
+      expect(held.user_id).toBe(OWNER)
+      expect(held.data.summary).toBeUndefined()
+      // the next try hands it over, synced_at and all, then asks
+      handOverFails.clear()
+      await job([PEER], '2026-09-13T08:00:00.000Z')
+      expect(ai.prompts[0]).toContain('Cleared the gutter')
+      expect(rows.find(r => r.data.id === PEER_DRAFT)).toMatchObject({ user_id: PEER, data: { summary: SUMMARY } })
+      expect(claims.at(-1)).toEqual({ user_id: PEER, synced_at: expect.any(String) })
+    })
+
+    it('the site owner never takes a peer’s week for theirs', async () => {
+      settings = [quiet(PEER, { timezone: 'UTC' }), quiet(OWNER, { timezone: 'UTC' })]
+      rows = [doneLastWeek(PEER, 'gutter', 'Cleared the gutter'), doneLastWeek(OWNER, 'fence', 'Fixed the fence')]
+      handOverFails = new Set([PEER])
+      await job([PEER, OWNER], '2026-09-13T07:00:00.000Z')
+      expect(ai.prompts).toHaveLength(1)
+      expect(ai.prompts[0]).toContain('Fixed the fence')
+      expect(rows.find(r => r.data.id === OWNER_DRAFT)).toMatchObject({ user_id: OWNER, data: { summary: SUMMARY } })
+      expect(rows.find(r => r.data.id === PEER_DRAFT)).toMatchObject({ user_id: OWNER })
+    })
   })
 
   it('thinking twice leaves the summary unwritten and the week unclaimed', async () => {
@@ -561,7 +600,10 @@ describe('the draft leaves an account disabled in Admin alone', () => {
     }
   })
 
-  it('still sends a disabled account its digest, ending with the summary it wrote', async () => {
+  // Admin → Disable clears the account's push devices and email digest
+  // (admin.mjs), so the digest has nowhere to go; a ban made some other way,
+  // in the Supabase dashboard, leaves them, and the digest goes on as before
+  it('a ban made outside Admin still gets its digest, ending with the summary it wrote', async () => {
     settings = [withPush(PEER), quiet(OWNER, { timezone: 'UTC' })]
     const theirs = row(PEER, { kind: 'review', id: 'theirs', period: 'week', key: '2026-W36', top: [], summary: 'You kept all three. The boiler is serviced.' })
     rows = [doneLastWeek(OWNER, 'fence', 'Fixed the fence'), theirs]

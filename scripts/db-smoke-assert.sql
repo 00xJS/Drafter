@@ -3604,3 +3604,215 @@ begin
   raise notice 'ok v3.33-5: media_owners names who uploaded each media object, for the service role only';
 end $$;
 rollback;
+
+-- ===== v3.34: a write the server makes for an account is that account's =====
+-- 20261011000000_v3_34_service_writes. Email-in, Sunday's draft, the triage
+-- and the notices write with the service key, where sync_posts has no
+-- signed-in caller: a new row was born the site owner's and handed over by a
+-- PATCH that left synced_at behind, and a loss was filed in the site owner's
+-- history. sync_posts_as writes as a named account instead. B stands for the
+-- member an email was sent to; A is the site owner.
+
+-- ------------- v3.34-1. a new row is the named account's from the start, synced_at and all
+begin;
+set local role service_role;
+do $$
+declare
+  r jsonb;
+  before_write timestamptz := clock_timestamp();
+begin
+  r := public.sync_posts_as('00000000-0000-0000-0000-00000000000b', '[{"kind":"task","id":"v334-mail","title":"Invoice 42","description":"Please pay by Friday.","status":"todo","priority":"normal","tags":["email"],"shared":false,"createdAt":"2026-09-25T09:00:00.000Z","updatedAt":"2026-09-25T09:00:00.000Z"}]'::jsonb);
+  if r is distinct from '{"items": [], "rejected": [], "stale": [], "gone": []}'::jsonb then
+    raise exception 'FAIL v3.34-1: a clean write should answer every list empty, got %', r;
+  end if;
+  if (select user_id from public.posts where id = 'v334-mail') is distinct from '00000000-0000-0000-0000-00000000000b' then
+    raise exception 'FAIL v3.34-1: the new row should be born the named account''s, not the site owner''s';
+  end if;
+  if (select synced_at from public.posts where id = 'v334-mail') < before_write then
+    raise exception 'FAIL v3.34-1: the new row''s synced_at should be the moment it was written';
+  end if;
+  -- the account is named for the call alone: a plain service-role write after
+  -- it is the site owner's, as the bot's and the canary's always are
+  r := public.sync_posts('[{"kind":"task","id":"v334-bot","title":"From the bot","description":"","status":"todo","priority":"normal","tags":[],"createdAt":"2026-09-25T09:00:00.000Z","updatedAt":"2026-09-25T09:00:00.000Z"}]'::jsonb, '2099-01-01');
+  if (select user_id from public.posts where id = 'v334-bot') is distinct from public.owner_user_id() then
+    raise exception 'FAIL v3.34-1: a plain service-role write after sync_posts_as should still be the site owner''s';
+  end if;
+  raise notice 'ok v3.34-1: sync_posts_as makes a new row the named account''s, synced_at of that moment; plain sync_posts still writes as the site owner';
+end $$;
+commit;
+
+-- the named account's next round brings it; the site owner never could see it
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000b","role":"authenticated","email":"peer@example.test"}', true);
+do $$
+declare r jsonb;
+begin
+  -- a cursor from just before the write: a device that synced a moment earlier
+  r := public.sync_posts('[]'::jsonb, (select synced_at from public.posts where id = 'v334-mail') - interval '1 millisecond');
+  if not exists (select 1 from jsonb_array_elements(r -> 'items') x
+                  where x ->> 'id' = 'v334-mail' and x ->> 'ownerId' = '00000000-0000-0000-0000-00000000000b') then
+    raise exception 'FAIL v3.34-1: the named account''s next delta should bring the row, as theirs, got %', r -> 'items';
+  end if;
+end $$;
+commit;
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000a","role":"authenticated","email":"owner@example.test"}', true);
+do $$
+declare r jsonb;
+begin
+  r := public.sync_posts('[]'::jsonb, null);
+  if exists (select 1 from jsonb_array_elements(r -> 'items') x where x ->> 'id' = 'v334-mail')
+     or (select count(*) from public.posts where id = 'v334-mail') <> 0 then
+    raise exception 'FAIL v3.34-1: the site owner can read the other member''s private email task';
+  end if;
+  raise notice 'ok v3.34-1: the named account''s next round brings the row; the site owner never holds it';
+end $$;
+commit;
+
+-- ------------- v3.34-2. a loss is filed under the named account, never the site owner
+begin;
+set local role service_role;
+do $$
+declare r jsonb;
+begin
+  -- the triage's write, older than an edit the member made meanwhile
+  r := public.sync_posts_as('00000000-0000-0000-0000-00000000000b', '[{"kind":"task","id":"v334-mail","title":"Pay the plumber","description":"Please pay by Friday.","status":"todo","priority":"high","tags":["email"],"shared":false,"createdAt":"2026-09-25T09:00:00.000Z","updatedAt":"2026-09-25T08:00:00.000Z"}]'::jsonb);
+  if (r -> 'stale') is distinct from '["v334-mail"]'::jsonb or jsonb_array_length(r -> 'rejected') <> 0 then
+    raise exception 'FAIL v3.34-2: an older write should be stale, got %', r - 'items';
+  end if;
+  if (select count(*) from public.posts_history h
+       where h.id = 'v334-mail' and h.reason = 'lost' and h.user_id = '00000000-0000-0000-0000-00000000000b'
+         and h.data ->> 'title' = 'Pay the plumber') <> 1
+     or exists (select 1 from public.posts_history h where h.id = 'v334-mail' and h.user_id <> '00000000-0000-0000-0000-00000000000b') then
+    raise exception 'FAIL v3.34-2: the losing copy should be filed under the named account, and only there';
+  end if;
+  -- the bot's own loss, through plain sync_posts, stays the site owner's: it acts for them
+  r := public.sync_posts('[{"kind":"task","id":"v334-bot","title":"From the bot, older","description":"","status":"todo","priority":"normal","tags":[],"createdAt":"2026-09-25T09:00:00.000Z","updatedAt":"2026-09-25T08:00:00.000Z"}]'::jsonb, '2099-01-01');
+  if (select count(*) from public.posts_history h
+       where h.id = 'v334-bot' and h.reason = 'lost' and h.user_id = public.owner_user_id()) <> 1 then
+    raise exception 'FAIL v3.34-2: a plain service-role loss should still be filed under the site owner';
+  end if;
+end $$;
+commit;
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000a","role":"authenticated","email":"owner@example.test"}', true);
+do $$
+begin
+  if (select count(*) from public.posts_history where id = 'v334-mail') <> 0 then
+    raise exception 'FAIL v3.34-2: the site owner can read the other member''s lost version';
+  end if;
+end $$;
+commit;
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000b","role":"authenticated","email":"peer@example.test"}', true);
+do $$
+begin
+  if (select count(*) from public.posts_history where id = 'v334-mail' and reason = 'lost') <> 1 then
+    raise exception 'FAIL v3.34-2: the named account should find its lost version in its own history';
+  end if;
+  raise notice 'ok v3.34-2: a lost write is filed under the named account, in its Versions and nobody else''s; the bot''s stays the site owner''s';
+end $$;
+commit;
+
+-- ------------- v3.34-3. a row stored under anyone else is refused, and the rest of the batch stores
+begin;
+set local role service_role;
+do $$
+declare r jsonb;
+begin
+  r := public.sync_posts_as('00000000-0000-0000-0000-00000000000b', '[
+    {"kind":"task","id":"v334-bot","title":"Taken over","description":"","status":"todo","priority":"normal","tags":[],"createdAt":"2026-09-25T09:00:00.000Z","updatedAt":"2026-09-26T09:00:00.000Z"},
+    {"kind":"notice","id":"v334-notice","at":"2026-09-25T09:00:00.000Z","type":"progress","title":"Owner made progress","createdAt":"2026-09-25T09:00:00.000Z","updatedAt":"2026-09-25T09:00:00.000Z"}
+  ]'::jsonb);
+  if (r -> 'rejected') is distinct from '["v334-bot"]'::jsonb then
+    raise exception 'FAIL v3.34-3: a row of the site owner''s should be refused, got %', r;
+  end if;
+  if (select data ->> 'title' from public.posts where id = 'v334-bot') is distinct from 'From the bot'
+     or (select user_id from public.posts where id = 'v334-bot') is distinct from public.owner_user_id() then
+    raise exception 'FAIL v3.34-3: the refused row changed';
+  end if;
+  if (select user_id from public.posts where id = 'v334-notice') is distinct from '00000000-0000-0000-0000-00000000000b' then
+    raise exception 'FAIL v3.34-3: the rest of the batch should store under the named account';
+  end if;
+  begin
+    perform public.sync_posts_as(null, '[]'::jsonb);
+    raise exception 'FAIL v3.34-3: a write with no account named went ahead';
+  exception when invalid_parameter_value then null;
+  end;
+  raise notice 'ok v3.34-3: a row stored under anyone else is refused and left alone; the rest of the batch stores; no account named is an error';
+end $$;
+commit;
+
+-- ------------- v3.34-4. a signed-in caller never meets the named account, even with the setting in place
+begin;
+select set_config('drafter.write_as', '00000000-0000-0000-0000-00000000000b', true);
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000a","role":"authenticated","email":"owner@example.test"}', true);
+do $$
+declare r jsonb;
+begin
+  r := public.sync_posts('[{"kind":"task","id":"v334-client","title":"Mine","description":"","status":"todo","priority":"normal","tags":[],"createdAt":"2026-09-25T09:00:00.000Z","updatedAt":"2026-09-25T09:00:00.000Z"}]'::jsonb, '2099-01-01');
+  if (select user_id from public.posts where id = 'v334-client') is distinct from '00000000-0000-0000-0000-00000000000a' then
+    raise exception 'FAIL v3.34-4: a signed-in caller''s new row went to the named account';
+  end if;
+  r := public.sync_posts('[{"kind":"task","id":"v334-client","title":"Mine, older","description":"","status":"todo","priority":"normal","tags":[],"createdAt":"2026-09-25T09:00:00.000Z","updatedAt":"2026-09-25T08:00:00.000Z"}]'::jsonb, '2099-01-01');
+  if (select count(*) from public.posts_history where id = 'v334-client' and reason = 'lost' and user_id = '00000000-0000-0000-0000-00000000000a') <> 1 then
+    raise exception 'FAIL v3.34-4: a signed-in caller''s loss should be filed under the caller';
+  end if;
+  begin
+    perform public.sync_posts_as('00000000-0000-0000-0000-00000000000a', '[]'::jsonb);
+    raise exception 'FAIL v3.34-4: a signed-in client could call sync_posts_as';
+  exception when insufficient_privilege then null;
+  end;
+  raise notice 'ok v3.34-4: a signed-in caller''s rows and losses stay its own whatever the setting says, and it cannot call sync_posts_as';
+end $$;
+rollback;
+
+do $$
+declare f constant text := 'public.sync_posts_as(uuid, jsonb)';
+begin
+  if has_function_privilege('anon', f, 'execute') or has_function_privilege('authenticated', f, 'execute') then
+    raise exception 'FAIL v3.34-5: a client role can execute sync_posts_as';
+  end if;
+  if not has_function_privilege('service_role', f, 'execute') then
+    raise exception 'FAIL v3.34-5: the service role cannot execute sync_posts_as';
+  end if;
+  if not has_function_privilege('authenticated', 'public.posts_history_record_loss(text, jsonb)', 'execute')
+     or has_function_privilege('anon', 'public.posts_history_record_loss(text, jsonb)', 'execute') then
+    raise exception 'FAIL v3.34-5: posts_history_record_loss should keep its grants';
+  end if;
+  -- nobody calls the trigger's function, and it fires without a grant (v3.34-4's writes ran through it)
+  if has_function_privilege('authenticated', 'public.posts_write_as()', 'execute') or has_function_privilege('anon', 'public.posts_write_as()', 'execute') then
+    raise exception 'FAIL v3.34-5: a client role can execute posts_write_as';
+  end if;
+  raise notice 'ok v3.34-5: sync_posts_as is the service role''s alone; posts_history_record_loss keeps its grants; the trigger''s function has none to give';
+end $$;
+
+-- ------------- v3.34-6. the rate limits' day-old sweep reads an index, not the whole table
+begin;
+set local enable_seqscan = off;
+do $$
+declare
+  plan text := '';
+  line text;
+begin
+  if not exists (select 1 from pg_indexes where schemaname = 'public' and tablename = 'rate_limits' and indexname = 'rate_limits_window_start_idx') then
+    raise exception 'FAIL v3.34-6: rate_limits has no index on window_start';
+  end if;
+  -- the statement rate_limit_take runs on every call
+  for line in execute 'explain delete from public.rate_limits r where r.window_start < now() - interval ''1 day''' loop
+    plan := plan || line || E'\n';
+  end loop;
+  if plan not like '%rate_limits_window_start_idx%' then
+    raise exception 'FAIL v3.34-6: the sweep does not use the index: %', plan;
+  end if;
+  raise notice 'ok v3.34-6: rate_limits is indexed on window_start, and the day-old sweep reads it';
+end $$;
+rollback;
+
+delete from public.posts_history where id like 'v334-%';
+delete from public.posts where id like 'v334-%';

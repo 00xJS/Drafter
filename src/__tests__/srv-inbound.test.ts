@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { TRIAGE_MS, runTriage } from '../../netlify/functions/lib/triage.mjs'
 // @ts-expect-error — a function file ships with no .d.mts: Netlify would deploy one as a function of its own
 import inboundFunction, { BUDGET_MS, CALL_MS, RATE_LIMIT, mailTaskId, titleFromMail } from '../../netlify/functions/inbound.mjs'
+import { readableRow } from '../../shared/kinds.mts'
 
 // Email-in stored the raw task, then asked the model to refine it inside the
 // webhook with nine seconds to go (a model that takes twenty), parsed its
@@ -10,6 +11,8 @@ import inboundFunction, { BUDGET_MS, CALL_MS, RATE_LIMIT, mailTaskId, titleFromM
 // hand-over to the token's owner fail in silence. Now the webhook stores the
 // task under its owner and answers, the triage runs in the background
 // function with a real deadline (lib/triage.mjs), and each of those is fixed.
+// Since v3.34 the task is written as its owner (sync_posts_as) and never
+// handed over at all; a database without it gets the old hand-over.
 // Fake time here: each webhook test advances the clock until it answers.
 
 const inbound = inboundFunction as (req: Request) => Promise<Response>
@@ -17,15 +20,23 @@ const SUPABASE = 'https://db.example.test'
 const JOBS_URL = 'https://site.test/.netlify/functions/ai-jobs-background'
 const OWNER = 'user-one'
 
-type Route = 'settings' | 'read' | 'store' | 'claim' | 'job' | 'ai' | 'job_runs'
+type Route = 'settings' | 'read' | 'write-as' | 'store' | 'claim' | 'job' | 'ai' | 'job_runs' | 'limit'
 let slow: Set<Route>
 let failing: Map<Route, number>
 let calls: Route[]
 let aiReply = ''
 /** The user_settings row the token finds. */
 let settingsRow: Record<string, unknown>
-/** Each task sent to sync_posts, in order. */
+/** Each task sent to sync_posts or sync_posts_as, in order. */
 let stored: Record<string, any>[]
+/** The database predates v3.34: PostgREST has no sync_posts_as. */
+let writeAsMissing = false
+/** Each hand-over PATCH's body. */
+let claims: Record<string, any>[]
+/** The account each sync_posts_as call wrote as. */
+let writtenAs: string[]
+/** The subject of each shared rate-limit count (rate_limit_take), each one a row in rate_limits. */
+let counted: string[]
 /** The posts table as far as these tests need it: id -> { user_id, data }. */
 let posts: Map<string, { user_id: string; data: Record<string, any> }>
 /** Each job the webhook started. */
@@ -36,7 +47,7 @@ let systems: string[]
 /** The key each model call carried. */
 let aiKeys: string[]
 let jobRuns: Map<string, Record<string, any>>
-/** sync_posts refuses what it is sent. */
+/** sync_posts (and sync_posts_as) refuse what they are sent. */
 let rejectStore = false
 let tokenN = 0
 /** A token of its own for each test: the per-token limit is kept in the webhook's memory. */
@@ -60,6 +71,10 @@ beforeEach(() => {
   aiReply = '{"title":"Pay the plumber","priority":"high"}'
   settingsRow = { user_id: OWNER, inbound_token: KEY }
   stored = []
+  writeAsMissing = false
+  claims = []
+  writtenAs = []
+  counted = []
   posts = new Map()
   started = []
   prompts = []
@@ -74,7 +89,9 @@ beforeEach(() => {
       const method = init?.method ?? 'GET'
       const route: Route = url.includes('/user_settings?')
         ? 'settings'
-        : url.endsWith('/rpc/sync_posts')
+        : url.endsWith('/rpc/sync_posts_as')
+          ? 'write-as'
+          : url.endsWith('/rpc/sync_posts')
           ? 'store'
           : url.includes('/rest/v1/posts?id=eq.') && method === 'PATCH'
             ? 'claim'
@@ -82,6 +99,8 @@ beforeEach(() => {
               ? 'read'
               : url.includes('/rest/v1/job_runs')
                 ? 'job_runs'
+                : url.endsWith('/rpc/rate_limit_take')
+                  ? 'limit'
                 : url === JOBS_URL
                   ? 'job'
                   : url.startsWith('https://integrate.api.nvidia.com/')
@@ -89,7 +108,7 @@ beforeEach(() => {
                     : (() => {
                         throw new Error(`unexpected fetch ${url}`)
                       })()
-      if (route !== 'job_runs') calls.push(route)
+      if (route !== 'job_runs' && route !== 'limit') calls.push(route)
       const body = init?.body ? JSON.parse(String(init.body)) : null
       if (slow.has(route)) return hang(init)
       if ((failing.get(route) ?? 0) > 0) {
@@ -97,8 +116,33 @@ beforeEach(() => {
         return new Response('unavailable', { status: 503 })
       }
       const id = decodeURIComponent(url.split('id=eq.')[1]?.split('&')[0] ?? '')
-      if (route === 'settings') return Response.json([settingsRow])
+      if (route === 'limit') {
+        counted.push(body.p_subject)
+        return Response.json({ allowed: true, remaining: RATE_LIMIT - 1, retry_after_ms: 0 })
+      }
+      // the token finds its row; any other key finds nothing
+      if (route === 'settings') return Response.json(url.includes(`inbound_token=eq.${encodeURIComponent(String(settingsRow.inbound_token))}&`) ? [settingsRow] : [])
       if (route === 'read') return Response.json(posts.has(id) ? [structuredClone(posts.get(id))] : [])
+      if (route === 'write-as') {
+        if (writeAsMissing) return Response.json({ code: 'PGRST202', message: 'Could not find the function public.sync_posts_as(incoming, p_owner) in the schema cache' }, { status: 404 })
+        writtenAs.push(body.p_owner)
+        if (rejectStore) return Response.json({ items: [], rejected: body.incoming.map((i: { id: string }) => i.id), stale: [], gone: [] })
+        const rejected: string[] = []
+        const stale: string[] = []
+        for (const item of body.incoming) {
+          const row = posts.get(item.id)
+          // as the database does since v3.34: a new row is the named owner's from the start, and a row of anyone else's is refused
+          if (row && row.user_id !== body.p_owner) rejected.push(item.id)
+          else if (!row) {
+            stored.push(item)
+            posts.set(item.id, { user_id: body.p_owner, data: item })
+          } else if (item.updatedAt > row.data.updatedAt) {
+            stored.push(item)
+            row.data = item
+          } else stale.push(item.id)
+        }
+        return Response.json({ items: [], rejected, stale, gone: [] })
+      }
       if (route === 'store') {
         if (rejectStore) return Response.json({ items: [], rejected: body.incoming.map((i: { id: string }) => i.id), stale: [], gone: [] })
         const stale: string[] = []
@@ -113,6 +157,7 @@ beforeEach(() => {
         return Response.json({ items: [], rejected: [], stale, gone: [] })
       }
       if (route === 'claim') {
+        claims.push(body)
         const row = posts.get(id)
         if (row) row.user_id = body.user_id
         return new Response(null, { status: 204 })
@@ -160,7 +205,7 @@ describe('email-in answers at once, and the triage goes to the background', () =
     const { res, elapsed } = await answer(email())
     const out = await res.json()
     expect(out).toMatchObject({ ok: true, title: 'Invoice 42', triage: 'started' })
-    expect(calls).toEqual(['settings', 'store', 'claim', 'job'])
+    expect(calls).toEqual(['settings', 'write-as', 'job'])
     expect(elapsed).toBeLessThan(1_000)
     expect(posts.get(out.id)?.user_id).toBe(OWNER)
     expect(started).toEqual([
@@ -171,7 +216,7 @@ describe('email-in answers at once, and the triage goes to the background', () =
   it('starts nothing where there is no AI provider', async () => {
     vi.stubEnv('NVIDIA_API_KEY', '')
     expect(await (await answer(email())).res.json()).toMatchObject({ ok: true, triage: 'off' })
-    expect(calls).toEqual(['settings', 'store', 'claim'])
+    expect(calls).toEqual(['settings', 'write-as'])
   })
 
   it('files the task all the same when the background function is out of reach', async () => {
@@ -182,7 +227,7 @@ describe('email-in answers at once, and the triage goes to the background', () =
   })
 
   it('answers 502 when the store never does, instead of hanging', async () => {
-    slow.add('store')
+    slow.add('write-as')
     const { res, elapsed } = await answer(email())
     expect(res.status).toBe(502)
     expect(elapsed).toBeLessThanOrEqual(CALL_MS + 100)
@@ -242,6 +287,16 @@ describe('an email is filed once', () => {
 })
 
 describe('what an email files', () => {
+  // A task is the household's unless it says otherwise, and every other path
+  // that makes one writes shared: false. Email-in did not, so a forwarded
+  // email's whole body was on the housemate's Tasks.
+  it('a task its owner alone reads until they share it', async () => {
+    await answer(email())
+    expect(stored[0]).toMatchObject({ kind: 'task', shared: false })
+    expect(readableRow(stored[0], OWNER, OWNER)).toBe(true)
+    expect(readableRow(stored[0], OWNER, 'user-two')).toBe(false)
+  })
+
   it('the HTML part, as text, when the text part is empty or missing', async () => {
     await answer(email({ subject: 'Your order', text: '', html: '<html><body><p>Hello <b>there</b>,</p><p>Your order ships Friday &amp; arrives Monday.</p><script>track()</script></body></html>' }))
     const html = new FormData()
@@ -265,48 +320,110 @@ describe('what an email files', () => {
 describe('whose task it is', () => {
   const retried = (messageId = 'm2@example.test') => email({ subject: 'Invoice 42', text: 'Pay it', messageId })
 
-  it('a hand-over that fails once is tried again and goes through', async () => {
-    failing.set('claim', 1)
+  // sync_posts under the service key made a new row the site owner's until a
+  // PATCH handed it over: long enough for the site owner's device to pull the
+  // whole email, and the PATCH left synced_at behind, so the owner's own
+  // devices, already past it, were never sent it. v3.34 writes it as its owner.
+  it('is written as the token’s owner from the start: never the site owner’s, and no hand-over', async () => {
     const { res } = await answer(retried())
     expect(res.status).toBe(200)
-    expect(calls.filter(c => c === 'claim')).toHaveLength(2)
+    expect(calls).toEqual(['settings', 'read', 'write-as', 'job'])
     expect([...posts.values()][0].user_id).toBe(OWNER)
-  })
-
-  it('failing twice is a 503, never a task left with the site owner in silence — and the delivery made again hands it over', async () => {
-    failing.set('claim', 2)
-    const { res } = await answer(retried())
-    expect(res.status).toBe(503)
-    expect([...posts.values()][0].user_id).toBe('site-owner')
-    expect(started).toEqual([])
-    // the mail service tries again: the task is found by its id, handed over now, and triaged now
-    const again = await answer(retried())
-    expect(again.res.status).toBe(200)
-    expect(await again.res.json()).toMatchObject({ duplicate: true, triage: 'started' })
-    expect([...posts.values()][0].user_id).toBe(OWNER)
-    expect(stored).toHaveLength(1)
-    expect(started).toEqual([expect.objectContaining({ type: 'triage', userId: OWNER, updatedAt: stored[0].updatedAt })])
+    expect(claims).toEqual([])
   })
 
   it('a store the database refuses is no task filed: the mail service hears so', async () => {
     rejectStore = true
     const { res } = await answer(retried('m3@example.test'))
     expect(res.status).toBe(502)
-    expect(calls).toEqual(['settings', 'read', 'store'])
+    expect(calls).toEqual(['settings', 'read', 'write-as'])
+  })
+
+  it('a task an older build left with the site owner is handed over when its email comes again, synced_at and all', async () => {
+    const id = mailTaskId(OWNER, 'm4@example.test')
+    posts.set(id, { user_id: 'site-owner', data: { kind: 'task', id, title: 'Invoice 42', updatedAt: '2026-09-20T10:00:00.000Z' } })
+    const { res } = await answer(retried('m4@example.test'))
+    expect(await res.json()).toMatchObject({ duplicate: true, triage: 'started' })
+    expect(posts.get(id)?.user_id).toBe(OWNER)
+    expect(claims).toEqual([{ user_id: OWNER, synced_at: expect.any(String) }])
+    expect(Number.isFinite(Date.parse(claims[0].synced_at))).toBe(true)
+  })
+
+  describe('on a database before v3.34', () => {
+    beforeEach(() => {
+      writeAsMissing = true
+    })
+
+    it('stores it as sync_posts always has and hands it over, moving synced_at with the owner', async () => {
+      const { res } = await answer(retried())
+      expect(res.status).toBe(200)
+      expect(calls).toEqual(['settings', 'read', 'write-as', 'store', 'claim', 'job'])
+      expect([...posts.values()][0].user_id).toBe(OWNER)
+      expect(claims).toEqual([{ user_id: OWNER, synced_at: expect.any(String) }])
+    })
+
+    it('a hand-over that fails once is tried again and goes through', async () => {
+      failing.set('claim', 1)
+      const { res } = await answer(retried())
+      expect(res.status).toBe(200)
+      expect(calls.filter(c => c === 'claim')).toHaveLength(2)
+      expect([...posts.values()][0].user_id).toBe(OWNER)
+    })
+
+    it('failing twice is a 503, never a task left with the site owner in silence — and the delivery made again hands it over', async () => {
+      failing.set('claim', 2)
+      const { res } = await answer(retried())
+      expect(res.status).toBe(503)
+      expect([...posts.values()][0].user_id).toBe('site-owner')
+      expect(started).toEqual([])
+      // the mail service tries again: the task is found by its id, handed over now, and triaged now
+      const again = await answer(retried())
+      expect(again.res.status).toBe(200)
+      expect(await again.res.json()).toMatchObject({ duplicate: true, triage: 'started' })
+      expect([...posts.values()][0].user_id).toBe(OWNER)
+      expect(stored).toHaveLength(1)
+      expect(started).toEqual([expect.objectContaining({ type: 'triage', userId: OWNER, updatedAt: stored[0].updatedAt })])
+    })
+
+    it('a store the database refuses is no task filed: the mail service hears so', async () => {
+      rejectStore = true
+      const { res } = await answer(retried('m3@example.test'))
+      expect(res.status).toBe(502)
+      expect(calls).toEqual(['settings', 'read', 'write-as', 'store'])
+    })
   })
 })
 
 describe('one token files so many emails', () => {
-  it('past its limit a token is told to try later, before anything is looked up; another token is not', async () => {
+  it('past its limit a token is told to try later, before anything is stored; another token is not', async () => {
     for (let i = 0; i < RATE_LIMIT; i++) expect((await answer(email())).res.status).toBe(200)
     calls = []
     const refused = (await answer(email())).res
     expect(refused.status).toBe(429)
     expect(Number(refused.headers.get('retry-after'))).toBeGreaterThan(0)
-    expect(calls).toEqual([])
+    expect(calls).toEqual(['settings'])
     const other = `other-${KEY}`
     settingsRow.inbound_token = other
     expect((await answer(email(undefined, other))).res.status).toBe(200)
+  })
+
+  it('counts a token under its hash, never the address itself', async () => {
+    await answer(email())
+    expect(counted).toHaveLength(1)
+    expect(counted[0]).toMatch(/^[0-9a-f]{32}$/)
+    expect(counted[0]).not.toContain(KEY)
+  })
+
+  // The shared count is a row per subject, and email-in counted each key
+  // before looking it up: every key anyone made up was a row in rate_limits,
+  // and rate_limit_take swept that whole table on every call.
+  it('a key nobody holds is looked up, refused and never counted', async () => {
+    for (let i = 0; i < 5; i++) {
+      const { res } = await answer(email(undefined, `made-up-${i}-${'x'.repeat(24)}`))
+      expect(res.status).toBe(404)
+    }
+    expect(counted).toEqual([])
+    expect(calls).toEqual(['settings', 'settings', 'settings', 'settings', 'settings'])
   })
 })
 
@@ -329,6 +446,21 @@ describe('the triage, in the background function', () => {
     expect(await runTriage(filed())).toEqual({ state: 'triaged' })
     expect(triaged()).toMatchObject({ id: 'mail-1', title: 'Pay the plumber', priority: 'high', updatedAt: '2026-09-13T10:00:00.001Z' })
     expect(jobRuns.get('email-triage')).toMatchObject({ ok: true, counts: { triaged: 1 } })
+  })
+
+  // under the service key a write that lost to the owner's own edit was filed
+  // in the SITE owner's history, the email's words and all; written as the
+  // task's owner, the database files it under them (db-smoke v3.34-2)
+  it('writes as the task’s owner, so a triage that loses to their edit is kept in their history alone', async () => {
+    expect(await runTriage(filed())).toEqual({ state: 'triaged' })
+    expect(writtenAs).toEqual([OWNER])
+  })
+
+  it('on a database before v3.34, writes through sync_posts as before', async () => {
+    writeAsMissing = true
+    expect(await runTriage(filed())).toEqual({ state: 'triaged' })
+    expect(calls.filter(c => c === 'write-as' || c === 'store')).toEqual(['write-as', 'store'])
+    expect(triaged()).toMatchObject({ id: 'mail-1', title: 'Pay the plumber' })
   })
 
   it('reads an answer in a code fence, or with a sentence and a trailing comma around it', async () => {

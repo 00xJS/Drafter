@@ -18,13 +18,17 @@
 // 503 below — finds the task it made the first time rather than making a
 // second. An email with no Message-ID gets a fresh id, as before.
 //
-// Whose task it is matters most. sync_posts under the service key files a new
-// row under the site owner, and the next call hands it to the token's owner.
-// That hand-over used to be fire-and-forget, so an email sent to the other
-// member's address could stay filed as the site owner's with nothing said. It
-// is tried twice now, and when it still fails the webhook answers 503: the
-// mail service tries again, and the retry, finding the task by its id, hands
-// it over then.
+// Whose task it is matters most. It is written as the token's owner
+// (lib/writeas.mjs, v3.34): theirs from the instant it exists, never the site
+// owner's for a moment in between, where the site owner's device could pull
+// the whole email. On a database before v3.34 it is stored as the site
+// owner's and handed over after, as it used to be: tried twice, and when that
+// still fails the webhook answers 503, so the mail service tries again and the
+// retry, finding the task by its id, hands it over then. A task an older build
+// left with the site owner is handed over the same way when its email comes
+// again. And the task is its owner's alone until they share it (shared:
+// false), as every new task is: a forwarded email's whole body used to be on
+// the housemate's Tasks.
 //
 // Every outbound call runs against one deadline (BUDGET_MS), so one slow
 // answer from Supabase cannot hold the webhook open until the platform kills it.
@@ -38,6 +42,7 @@ import { readableText } from './lib/recipeimport.mjs'
 import { settingsFind, settingsStoreConfigured } from './lib/session.mjs'
 import { keyHeaders } from './lib/supabasekeys.mjs'
 import { validTimeZone } from './lib/timezone.mjs'
+import { handOver, writeAs } from './lib/writeas.mjs'
 
 const MAX_BODY = 4000
 /** The whole webhook, from arrival to answer. */
@@ -50,7 +55,10 @@ export const RATE_WINDOW_MS = 10 * 60_000
 
 // per token, counted across instances (lib/ratelimit.mjs, v3.33): enough to
 // stop a forwarding loop or a leaked address filing hundreds of tasks, and
-// asking the model hundreds of times — spread over cold starts as well
+// asking the model hundreds of times — spread over cold starts as well. Only
+// a token someone holds is counted: the shared count is a row per subject, so
+// counting every key anyone makes up wrote a row for each, and every count
+// then swept a table they had filled.
 const perToken = sharedWindow({ bucket: 'inbound', limit: RATE_LIMIT, windowMs: RATE_WINDOW_MS })
 
 /** What the limit counts a token under: its hash, so the address itself is never written to the limits table. */
@@ -169,17 +177,18 @@ export default async req => {
   const url = new URL(req.url)
   const key = url.searchParams.get('key') ?? ''
   if (key.length < 16) return new Response('Not found', { status: 404 })
-  // before anything is looked up: a flood costs this instance nothing more
-  const slot = await perToken.take(tokenSubject(key))
-  if (!slot.ok) return new Response('Too many emails — try again later', { status: 429, headers: { 'retry-after': String(Math.max(1, Math.ceil(slot.retryAfterMs / 1000))) } })
   let row
   try {
+    // one lookup on a unique column, which is less than counting the key would cost
     row = await withTimeout(left(), signal => settingsFind('inbound_token', key, { signal }))
   } catch {
     // a slow or unreachable store means "try again later", not "no such address"
     return new Response('Temporarily unavailable', { status: 503 })
   }
+  // a key nobody holds is not counted: it would be a row of its own in rate_limits
   if (!row) return new Response('Not found', { status: 404 })
+  const slot = await perToken.take(tokenSubject(key))
+  if (!slot.ok) return new Response('Too many emails — try again later', { status: 429, headers: { 'retry-after': String(Math.max(1, Math.ceil(slot.retryAfterMs / 1000))) } })
 
   const { subject, text, from, messageId } = await parseBody(req)
   const body = text.toString().replace(/\r\n/g, '\n').trim().slice(0, MAX_BODY)
@@ -194,14 +203,6 @@ export default async req => {
       }),
     )
   const id = mailTaskId(row.user_id, messageId)
-  // the task to its owner: tried twice, and a refusal both times is a 503 — never a task left under the site owner in silence
-  const handOver = async () => {
-    for (let attempt = 0; attempt < 2; attempt++) {
-      const res = await supabase(`posts?id=eq.${encodeURIComponent(id)}`, { method: 'PATCH', headers: { prefer: 'return=minimal' }, body: JSON.stringify({ user_id: row.user_id }) }).catch(() => null)
-      if (res?.ok) return true
-    }
-    return false
-  }
   const unavailable = () => new Response('Temporarily unavailable', { status: 503 })
   // the second pass, in the background: it has time this webhook does not
   const triage = async updatedAt => {
@@ -218,8 +219,9 @@ export default async req => {
       .catch(() => null)
     if (!Array.isArray(seen)) return unavailable()
     if (seen[0]) {
+      // the task to its owner: a refusal is a 503, never a task left under the site owner in silence
       const stranded = seen[0].user_id !== row.user_id
-      if (stranded && !(await handOver())) return unavailable()
+      if (stranded && !(await handOver(row.user_id, id, { request: supabase }))) return unavailable()
       return Response.json({ ok: true, id, title: seen[0].data?.title ?? '', duplicate: true, ...(stranded ? { triage: await triage(seen[0].data?.updatedAt) } : {}) })
     }
   }
@@ -237,15 +239,15 @@ export default async req => {
     tags: ['email'],
     notes: from ? `From: ${from}` : undefined,
     link: (body.match(/https?:\/\/\S+/) ?? [])[0],
+    // private until its owner shares it, like every new task (v3.23)
+    shared: false,
   }
-  // a future cursor means the RPC returns nothing: without it every inbound
-  // email makes Postgres aggregate the entire table into one json document
-  const stored = await supabase('rpc/sync_posts', { method: 'POST', body: JSON.stringify({ incoming: [task], since: new Date(Date.now() + 86_400_000).toISOString() }) }).catch(() => null)
-  if (!stored?.ok) return new Response('store failed', { status: 502 })
-  const verdict = await stored.json().catch(() => null)
-  if (Array.isArray(verdict?.rejected) && verdict.rejected.includes(id)) return new Response('store refused', { status: 502 })
+  // as its owner, from the start; before v3.34, stored and then handed over
+  const stored = await writeAs(row.user_id, [task], { handOver: true, request: supabase })
+  if (!stored.ok) return new Response('store failed', { status: 502 })
+  if (stored.rejected.includes(id)) return new Response('store refused', { status: 502 })
   // deleted forever since an earlier delivery made it: it stays deleted
-  if (Array.isArray(verdict?.gone) && verdict.gone.includes(id)) return Response.json({ ok: true, id, title: task.title, duplicate: true })
-  if (!(await handOver())) return unavailable()
+  if (stored.gone.includes(id)) return Response.json({ ok: true, id, title: task.title, duplicate: true })
+  if (!stored.owned) return unavailable()
   return Response.json({ ok: true, id, title: task.title, triage: await triage(task.updatedAt) })
 }
