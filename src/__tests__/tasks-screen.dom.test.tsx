@@ -15,7 +15,7 @@ vi.mock('../components/planner/lazy', async () => ({
   NotesView: () => null,
 }))
 
-import { TasksScreen } from '../components/planner/TasksScreen'
+import { TASKS_NOTE_KEY, TasksScreen } from '../components/planner/TasksScreen'
 import type { PlannerCtx } from '../components/planner/ctx'
 import type { TasksTab } from '../components/planner/routes'
 
@@ -82,5 +82,23 @@ describe('the Finance segment, tapped again', () => {
     fireEvent.click(segment('Finance'))
     expect(inManage()).toBe(false)
     expect(segment('Finance').getAttribute('aria-selected')).toBe('true')
+  })
+})
+
+describe('the line that says what Tasks is', () => {
+  const line = () => screen.queryByText(/^The day is on Home\./)
+
+  it('is said on this device’s first visit, and not on the next', () => {
+    const first = render(<Shell start="list" />)
+    expect(line()).toBeTruthy()
+    expect(localStorage.getItem(TASKS_NOTE_KEY)).toBe('1')
+    first.unmount()
+    render(<Shell start="list" />)
+    expect(line()).toBeNull()
+  })
+
+  it('is never said over Finance', () => {
+    render(<Shell start="bills" />)
+    expect(line()).toBeNull()
   })
 })

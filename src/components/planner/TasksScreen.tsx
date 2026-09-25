@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { memberName } from '../../household'
 import { Icon } from '../Icon'
 import { inTrash, newerStamp } from '../../itemops'
@@ -6,6 +6,27 @@ import type { Account } from '../../types'
 import type { PlannerCtx } from './ctx'
 import { Board, Finance, NotesView, TasksTable } from './lazy'
 import { TASKS_TABS } from './routes'
+
+/** Set once this device has shown the line that says what Tasks is. */
+export const TASKS_NOTE_KEY = 'drafter:tasks-note-seen'
+
+// Read and written out here: the React Compiler leaves a component with a try
+// in it as written. Storage that cannot be read counts as seen — the line is
+// a welcome, not something to repeat on every visit.
+function tasksNoteSeen(): boolean {
+  try {
+    return localStorage.getItem(TASKS_NOTE_KEY) === '1'
+  } catch {
+    return true
+  }
+}
+function markTasksNoteSeen(): void {
+  try {
+    localStorage.setItem(TASKS_NOTE_KEY, '1')
+  } catch {
+    /* ignore */
+  }
+}
 
 /** Tasks: the list, the board, Finance and the project notes, four segments of one tab. */
 export function TasksScreen({ p }: { p: PlannerCtx }) {
@@ -20,6 +41,11 @@ export function TasksScreen({ p }: { p: PlannerCtx }) {
   const trashCount = store.visibleItems.filter(inTrash).length
   // the Finance segment tapped while Finance is up: Finance goes back to its pay periods
   const [financeHome, setFinanceHome] = useState(0)
+  // what Tasks is, said on this device's first visit and not on every one after
+  const [firstVisit] = useState(() => !tasksNoteSeen())
+  useEffect(() => {
+    if (firstVisit) markTasksNoteSeen()
+  }, [firstVisit])
 
   // a map lookup so an id whose project was deleted degrades to the index
   const notesProject = notesProjectId ? projectMap.get(notesProjectId) : undefined
@@ -29,7 +55,7 @@ export function TasksScreen({ p }: { p: PlannerCtx }) {
       {/* one workspace, four lenses on the same project data — the list, the
           board, the money (bills, paydays and accounts) and the project notes.
           Finance opens on what is safe to spend, not on this line about tasks. */}
-      {tasksTab !== 'bills' && <p className="field-hint tasks-home-note">The day is on Home. This is every task — the list, the board, the money and the notes.</p>}
+      {firstVisit && tasksTab !== 'bills' && <p className="field-hint tasks-home-note">The day is on Home. This is every task — the list, the board, the money and the notes.</p>}
       <div className="people-tab-seg with-trash">
         <span className="segmented" role="tablist" aria-label="Tasks view">
           {TASKS_TABS.map(t => (
