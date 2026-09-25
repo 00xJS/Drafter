@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { BILL_TEMPLATES, TEMPLATE_GROUPS, billFromTemplate, editedMoney, type BillTemplate } from '../../billtemplates'
 import { billEmoji } from '../../bills'
 import { localMidnightIso, newerStamp } from '../../itemops'
@@ -52,6 +52,10 @@ export function BillSheet({ inHousehold, onAdd, onMore, onClose }: Props) {
   const value = money(amount)
   const ready = !!picked && !!name.trim() && value !== undefined && isDayKey(due)
   const typedIn = !!picked && (name !== picked.name || !!amount.trim() || !!due || autopay)
+  // why Add is not ready yet, said under the fields and read out with Add: an
+  // amount typed that is not one says so beside it (the warn line below)
+  const needs = [!name.trim() && 'a name', !amount.trim() && 'the amount', !isDayKey(due) && 'the day it is next due'].filter((x): x is string => !!x)
+  const hintId = useId()
 
   const add = () => {
     if (!picked || !ready || value === undefined) return
@@ -100,7 +104,7 @@ export function BillSheet({ inHousehold, onAdd, onMore, onClose }: Props) {
   return (
     <Modal onClose={onClose} dirty={typedIn} className="modal narrow fin-sheet bill-form">
       <ModalHead title={`${picked.emoji} ${name.trim() || 'New bill'}`} variant="compose">
-        <button type="button" className="btn primary" disabled={!ready} onClick={add}>
+        <button type="button" className="btn primary" disabled={!ready} aria-describedby={needs.length ? hintId : undefined} onClick={add}>
           Add
         </button>
       </ModalHead>
@@ -122,6 +126,12 @@ export function BillSheet({ inHousehold, onAdd, onMore, onClose }: Props) {
             <input type="date" required value={due} onChange={e => setDue(e.target.value)} />
           </label>
         </div>
+        {needs.length > 0 && (
+          <p id={hintId} className="field-hint fin-sheet-hint">
+            Add needs {needs.length > 1 ? `${needs.slice(0, -1).join(', ')} and ${needs[needs.length - 1]}` : needs[0]}
+            {isDayKey(due) ? '.' : ': Finance counts a bill from its date, the way it counts paydays.'}
+          </p>
+        )}
         <div className="field-row">
           <label className="field">
             <span>Repeats</span>

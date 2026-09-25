@@ -425,6 +425,25 @@ describe('+ Bill', () => {
     expect(screen.queryByRole('dialog')).toBeNull()
   })
 
+  it('says what Add is waiting for, and says it with Add, until nothing is missing', () => {
+    render(<Finance {...props()} />)
+    plus('Bill')
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Electric' }))
+    const add = within(dialog()).getByRole('button', { name: 'Add' }) as HTMLButtonElement
+    const said = () => document.getElementById(add.getAttribute('aria-describedby') ?? '')?.textContent
+    expect(add.disabled).toBe(true)
+    expect(said()).toBe('Add needs the amount and the day it is next due: Finance counts a bill from its date, the way it counts paydays.')
+    fireEvent.change(within(dialog()).getByLabelText('Amount due'), { target: { value: '142.60' } })
+    expect(said()).toBe('Add needs the day it is next due: Finance counts a bill from its date, the way it counts paydays.')
+    fireEvent.change(within(dialog()).getByLabelText('Name'), { target: { value: '' } })
+    fireEvent.change(within(dialog()).getByLabelText('Next due'), { target: { value: '2026-09-28' } })
+    expect(said()).toBe('Add needs a name.')
+    fireEvent.change(within(dialog()).getByLabelText('Name'), { target: { value: 'Electric' } })
+    expect(add.disabled).toBe(false)
+    expect(add.getAttribute('aria-describedby')).toBeNull()
+    expect(screen.queryByText(/^Add needs/)).toBeNull()
+  })
+
   it('hands anything the short form leaves out to the full editor, as filled in so far', () => {
     const p = props({ inHousehold: false })
     render(<Finance {...p} />)
