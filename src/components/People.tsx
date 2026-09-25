@@ -4,10 +4,11 @@ import { newerStamp } from '../itemops'
 import { PersonFilter, PersonStats, SEEN_META, cadenceChoice, compareStats, countOf, personMatcher, personStats, seenLabel, seenTasks } from '../people'
 import { PlaceWithPerson, favourites, placesWith } from '../places'
 import { localDayKey, mentions } from '../journal'
-import { fmtDate, fromLocalInput, uid } from '../utils'
+import { fmtDate, fromLocalInput, scrollBehavior, uid } from '../utils'
 import { Bars } from './bits'
+import { ColorSwatches } from './ColorSwatches'
 import { ConfirmButton } from './ConfirmButton'
-import { Modal, ModalHead } from './Modal'
+import { Modal, ModalHead, useChanged } from './Modal'
 import { PlacePicker } from './PlacePicker'
 import { CatchUpIdea, suggestCatchUp } from '../ai'
 import { useDayKey } from '../useDayKey'
@@ -68,7 +69,7 @@ const SORTS: { key: SortKey; label: string }[] = [
   { key: 'least', label: 'Least recently seen' },
 ]
 
-function PersonForm({ person, onSave, onDelete, onClose }: { person?: Person; onSave(p: Person): void; onDelete?(id: string): void; onClose(): void }) {
+export function PersonForm({ person, onSave, onDelete, onClose }: { person?: Person; onSave(p: Person): void; onDelete?(id: string): void; onClose(): void }) {
   const [name, setName] = useState(person?.name ?? '')
   const [emoji, setEmoji] = useState(person?.emoji ?? '')
   const [group, setGroup] = useState<PersonGroup>(person?.group ?? 'family')
@@ -78,6 +79,7 @@ function PersonForm({ person, onSave, onDelete, onClose }: { person?: Person; on
   const [notes, setNotes] = useState(person?.notes ?? '')
   const [birthday, setBirthday] = useState(person?.birthday ?? '')
   const [anniversary, setAnniversary] = useState(person?.anniversary ?? '')
+  const dirty = useChanged({ name, emoji, group, cadence, color, notes, birthday, anniversary })
   const save = () => {
     if (!name.trim()) return
     const now = new Date().toISOString()
@@ -99,8 +101,12 @@ function PersonForm({ person, onSave, onDelete, onClose }: { person?: Person; on
     onClose()
   }
   return (
-    <Modal onClose={onClose} className="modal narrow">
-      <ModalHead title={person ? `Edit ${person.name}` : 'Add a person'} />
+    <Modal onClose={onClose} dirty={dirty} className="modal narrow">
+      <ModalHead title={person ? `Edit ${person.name}` : 'Add a person'} variant="compose">
+        <button type="button" className="btn primary" disabled={!name.trim()} onClick={save}>
+          Save
+        </button>
+      </ModalHead>
       <div className="modal-body">
         <div className="field-row">
           <label className="field emoji-field">
@@ -114,9 +120,9 @@ function PersonForm({ person, onSave, onDelete, onClose }: { person?: Person; on
         </div>
         <div className="field">
           <span>Group</span>
-          <div className="segmented">
+          <div className="segmented" role="group" aria-label="Group">
             {PERSON_GROUPS.map(g => (
-              <button key={g} type="button" className={group === g ? 'seg on' : 'seg'} onClick={() => setGroup(g)}>
+              <button key={g} type="button" className={group === g ? 'seg on' : 'seg'} aria-pressed={group === g} onClick={() => setGroup(g)}>
                 {PERSON_GROUP_META[g]}
               </button>
             ))}
@@ -148,22 +154,18 @@ function PersonForm({ person, onSave, onDelete, onClose }: { person?: Person; on
         </div>
         <div className="field">
           <span>Color</span>
-          <div className="swatches">
-            {PROJECT_COLORS.map(c => (
-              <button key={c} type="button" className={color === c ? 'swatch on' : 'swatch'} style={{ background: c }} onClick={() => setColor(c)} aria-label={c} />
-            ))}
-          </div>
+          <ColorSwatches value={color} onChange={setColor} />
         </div>
         <label className="field">
           <span>Notes</span>
           <textarea rows={2} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Favourite restaurant, gift ideas, what to ask about next time…" />
         </label>
       </div>
-      <footer className="modal-foot">
-        {person && onDelete && (
+      {person && onDelete && (
+        <footer className="modal-foot">
           <ConfirmButton
             className="btn subtle danger"
-            confirmLabel="Click again to remove"
+            confirmLabel="Tap again to remove"
             onConfirm={() => {
               onDelete(person.id)
               onClose()
@@ -171,20 +173,13 @@ function PersonForm({ person, onSave, onDelete, onClose }: { person?: Person; on
           >
             Remove
           </ConfirmButton>
-        )}
-        <span className="spacer" />
-        <button className="btn" onClick={onClose}>
-          Cancel
-        </button>
-        <button className="btn primary" disabled={!name.trim()} onClick={save}>
-          Save
-        </button>
-      </footer>
+        </footer>
+      )}
     </Modal>
   )
 }
 
-function LogVisit({
+export function LogVisit({
   person,
   places,
   onLog,
@@ -202,9 +197,18 @@ function LogVisit({
   const [date, setDate] = useState(() => localDayKey())
   const [note, setNote] = useState('')
   const [placeId, setPlaceId] = useState<string | undefined>()
+  const dirty = useChanged({ date, note, placeId })
+  const log = () => {
+    onLog(fromLocalInput(`${date}T12:00`)!, note.trim(), placeId)
+    onClose()
+  }
   return (
-    <Modal onClose={onClose} className="modal narrow">
-      <ModalHead title={`Saw ${person.name}`} />
+    <Modal onClose={onClose} dirty={dirty} className="modal narrow">
+      <ModalHead title={`Saw ${person.name}`} variant="compose">
+        <button type="button" className="btn primary" disabled={!date} onClick={log}>
+          Log it
+        </button>
+      </ModalHead>
       <div className="modal-body">
         <label className="field">
           <span>When</span>
@@ -216,22 +220,6 @@ function LogVisit({
         </label>
         {(places.length > 0 || onSavePlace) && <PlacePicker placeId={placeId} onChange={setPlaceId} places={places} onSavePlace={onSavePlace} label="Where?" />}
       </div>
-      <footer className="modal-foot">
-        <span className="spacer" />
-        <button className="btn" onClick={onClose}>
-          Cancel
-        </button>
-        <button
-          className="btn primary"
-          disabled={!date}
-          onClick={() => {
-            onLog(fromLocalInput(`${date}T12:00`)!, note.trim(), placeId)
-            onClose()
-          }}
-        >
-          Log it
-        </button>
-      </footer>
     </Modal>
   )
 }
@@ -477,7 +465,7 @@ export function People({ people, places = [], tasks, entries = NO_ENTRIES, journ
   useEffect(() => {
     if (!wantOpen) return
     // a long list can hold the row below the fold; one already in view stays put
-    window.setTimeout(() => document.getElementById(`person-${wantOpen}`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 60)
+    window.setTimeout(() => document.getElementById(`person-${wantOpen}`)?.scrollIntoView({ block: 'nearest', behavior: scrollBehavior() }), 60)
     openConsumed()
   }, [wantOpen])
   useEffect(() => {

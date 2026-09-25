@@ -217,6 +217,17 @@
   color: var(--text-2);
   background: var(--surface-2);
 }
+/* A day and, if it has one, a time (DueFields' WhenFields, the event editor's
+   Starts and Ends): two fields side by side, the day taking the room. */
+.when-row {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: 8px;
+}
+.when-row input {
+  width: 100%;
+  min-width: 0;
+}
 .due-chips {
   display: flex;
   flex-wrap: wrap;

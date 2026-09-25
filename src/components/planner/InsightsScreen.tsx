@@ -1,4 +1,4 @@
-import { newerStamp } from '../../itemops'
+import { trashedLine } from '../../itemops'
 import type { PlannerCtx } from './ctx'
 import { JournalView, Review } from './lazy'
 import { INSIGHTS_TABS, STATS_PAGE_TITLES } from './routes'
@@ -28,7 +28,7 @@ import { Segmented } from '../stats/Segmented'
  */
 export function InsightsScreen({ p }: { p: PlannerCtx }) {
   const { store, upsert, remove, restore, household, showToast, insightsTab, setInsightsTab, statsTab, closeStatsPage } = p
-  const { journalOpenDate, setJournalOpenDate, openTask, newTask, changeStatus, openSheet, openWardrobe } = p
+  const { journalOpenDate, setJournalOpenDate, openTask, newTask, changeStatus, changeStatusAll, deferAll, openSheet, openWardrobe } = p
   // an area's figures, or the year, pushed over the Highlights: the page and ‹ Back, and no segments
   if (insightsTab === 'stats' && statsTab !== 'highlights') {
     return (
@@ -50,7 +50,7 @@ export function InsightsScreen({ p }: { p: PlannerCtx }) {
           onSave={(e: Parameters<typeof upsert>[0]) => upsert(e)}
           onDelete={(id: string) => {
             remove(id)
-            showToast('Journal entry removed', () => restore([id]))
+            showToast(trashedLine(null, 'Journal entry'), () => restore([id]))
           }}
           openDate={journalOpenDate}
           onOpenDateConsumed={() => setJournalOpenDate(null)}
@@ -71,13 +71,9 @@ export function InsightsScreen({ p }: { p: PlannerCtx }) {
           onSaveReview={r => upsert(r)}
           onOpen={openTask}
           onStatus={changeStatus}
-          onReschedule={(ids, dueAt) => {
-            for (const id of ids) {
-              const t = store.tasks.find(x => x.id === id)
-              if (t) upsert({ ...t, dueAt, status: t.status === 'wishlist' ? 'todo' : t.status, updatedAt: newerStamp(t.updatedAt) })
-            }
-            showToast(`Moved ${ids.length} task${ids.length === 1 ? '' : 's'} to Monday`)
-          }}
+          // the day's own defer and status moves: times kept, the board told, one Undo each
+          onDeferAll={deferAll}
+          onStatusAll={changeStatusAll}
           onNew={preset => newTask(preset)}
           onPlanWeek={() => openSheet({ kind: 'week' })}
           // what you wore that week: a look opens the composer on its day, the

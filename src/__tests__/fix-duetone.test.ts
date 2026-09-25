@@ -15,7 +15,7 @@ const task = (dueAt: string, status: Task['status'] = 'todo'): Task => ({
   dueAt,
 })
 
-// built from local parts, the way the editor's datetime-local field writes them;
+// built from local parts, the way the editor's day and time fields write them;
 // a task with a date and no time is stored at that day's local midnight
 const on12th = (h: number, m = 0) => new Date(2026, 8, 12, h, m).toISOString()
 const now = (day: number, h: number, m = 0) => new Date(2026, 8, day, h, m)

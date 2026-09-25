@@ -510,7 +510,9 @@ describe('Kitchen’s fourth segment', () => {
     onCreatePlace: () => cafe,
     onCreateRecipe: (name: string) => recipe('new', name),
   }
-  const segments = (out: string) => [...out.matchAll(/<button class="seg( on)?">([^<]+)<\/button>/g)].map(m => (m[1] ? `[${m[2]}]` : m[2]))
+  /** Kitchen's own row of segments, the one pressed in brackets: its group alone, not the Recipes list's All / Not lately. */
+  const segments = (out: string) =>
+    [...(out.match(/aria-label="Kitchen view">([\s\S]*?)<\/span>/)?.[1] ?? '').matchAll(/<button[^>]*class="seg( on)?"[^>]*>([^<]+)<\/button>/g)].map(m => (m[1] ? `[${m[2]}]` : m[2]))
   /** The segment on in a tree Kitchen returned: its row's buttons only, not the Recipes list's All / Not lately. */
   const on = (tree: ReactNode) =>
     elements(tree)
@@ -536,7 +538,7 @@ describe('Kitchen’s fourth segment', () => {
     const out = html(<Kitchen {...props} />)
     expect(segments(out)).toEqual(['Recipes', 'This week', 'Grocery', '[Stats]'])
     // the row a phone narrows and caps, as it does Home's four
-    expect(out).toContain('<div class="people-tab-seg kitchen-seg"><span class="segmented">')
+    expect(out).toContain('<div class="people-tab-seg kitchen-seg"><span class="segmented" role="group" aria-label="Kitchen view">')
     expect(out).toContain('<h3>Most cooked</h3>')
     expect(out).toContain('Each day’s dinner · 7 dinners cooked at home')
   })

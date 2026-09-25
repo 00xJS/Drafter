@@ -59,7 +59,7 @@ export function Sync({ store, supabaseOn, syncing, setSyncing }: SettingsCtx) {
                   <button className="btn" onClick={() => void store.retrySync(f.id)}>
                     Try again
                   </button>
-                  <ConfirmButton className="btn subtle danger" confirmLabel="Discard? Click again" onConfirm={() => store.discardLocal(f.id)}>
+                  <ConfirmButton className="btn subtle danger" confirmLabel="Tap again to discard" onConfirm={() => store.discardLocal(f.id)}>
                     Discard my copy
                   </ConfirmButton>
                 </span>

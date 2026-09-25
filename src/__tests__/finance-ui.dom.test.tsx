@@ -449,6 +449,25 @@ describe('+ Bill', () => {
     expect(screen.queryByRole('dialog')).toBeNull()
   })
 
+  it('says what Add is waiting for, and says it with Add, until nothing is missing', () => {
+    render(<Finance {...props()} />)
+    plus('Bill')
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Electric' }))
+    const add = within(dialog()).getByRole('button', { name: 'Add' }) as HTMLButtonElement
+    const said = () => document.getElementById(add.getAttribute('aria-describedby') ?? '')?.textContent
+    expect(add.disabled).toBe(true)
+    expect(said()).toBe('Add needs the amount and the day it is next due: Finance counts a bill from its date, the way it counts paydays.')
+    fireEvent.change(within(dialog()).getByLabelText('Amount due'), { target: { value: '142.60' } })
+    expect(said()).toBe('Add needs the day it is next due: Finance counts a bill from its date, the way it counts paydays.')
+    fireEvent.change(within(dialog()).getByLabelText('Name'), { target: { value: '' } })
+    fireEvent.change(within(dialog()).getByLabelText('Next due'), { target: { value: '2026-09-28' } })
+    expect(said()).toBe('Add needs a name.')
+    fireEvent.change(within(dialog()).getByLabelText('Name'), { target: { value: 'Electric' } })
+    expect(add.disabled).toBe(false)
+    expect(add.getAttribute('aria-describedby')).toBeNull()
+    expect(screen.queryByText(/^Add needs/)).toBeNull()
+  })
+
   it('hands anything the short form leaves out to the full editor, as filled in so far', () => {
     const p = props({ inHousehold: false })
     render(<Finance {...p} />)
@@ -533,7 +552,7 @@ describe('the short sheets', () => {
     const del = within(dialog()).getByRole('button', { name: 'Delete' })
     fireEvent.click(del)
     expect(p.onDeleteTask).not.toHaveBeenCalled()
-    fireEvent.click(within(dialog()).getByRole('button', { name: 'Delete it?' }))
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Tap again to delete' }))
     expect(p.onDeleteTask).toHaveBeenCalledWith(rows[4])
 
     fireEvent.click(screen.getByRole('button', { name: /^Thu 1 Rent/ }))
@@ -544,6 +563,30 @@ describe('the short sheets', () => {
     expect(p.onOpen).toHaveBeenCalledWith(saved)
   })
 
+  it('ask in the app before throwing away what was typed: on More options when it cannot be saved, and on Cancel', () => {
+    const confirm = vi.fn(() => true)
+    vi.stubGlobal('confirm', confirm)
+    const p = props()
+    render(<Finance {...p} />)
+    fireEvent.click(screen.getByRole('button', { name: /^Thu 1 Rent/ }))
+    fireEvent.change(within(dialog()).getByLabelText('Amount due'), { target: { value: 'lots' } })
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'More options…' }))
+    fireEvent.click(within(screen.getByRole('alertdialog', { name: 'Discard changes?' })).getByRole('button', { name: 'Keep editing' }))
+    expect(p.onOpen).not.toHaveBeenCalled()
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'More options…' }))
+    fireEvent.click(within(screen.getByRole('alertdialog', { name: 'Discard changes?' })).getByRole('button', { name: 'Discard' }))
+    // what could not be saved is left behind, and the editor opens on the bill as it was
+    expect(p.onSaveTask).not.toHaveBeenCalled()
+    expect(p.onOpen).toHaveBeenCalledWith(rows[4])
+
+    plus('Payday')
+    fireEvent.change(within(dialog()).getByLabelText('Next payday'), { target: { value: '2026-10-09' } })
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Cancel' }))
+    fireEvent.click(within(screen.getByRole('alertdialog', { name: 'Discard changes?' })).getByRole('button', { name: 'Discard' }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(confirm).not.toHaveBeenCalled()
+  })
+
   it('bring an archived one back from Manage', () => {
     const stopped = task('gym', { title: 'Gym', bill: { kind: 'subscription', emoji: '🏋️' }, estimateCost: 30, recurrence: { freq: 'monthly' }, dueAt: day(9, 28), status: 'canceled' })
     const p = props({ tasks: [...rows, stopped] })
@@ -551,7 +594,9 @@ describe('the short sheets', () => {
     manage('Bills')
     const archived = screen.getByRole('group', { name: 'Archived' })
     fireEvent.click(within(archived).getByRole('button', { name: /^Gym/ }))
-    fireEvent.click(within(dialog()).getByRole('button', { name: 'Restore' }))
+    // brought back is Unarchive, the word Archive's other half has everywhere
+    expect(within(dialog()).queryByRole('button', { name: 'Restore' })).toBeNull()
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Unarchive' }))
     expect(p.onArchiveTask).toHaveBeenCalledWith(stopped, false)
   })
 })
@@ -760,7 +805,7 @@ describe('an account', () => {
     expect(message).toBe('Archived “Amex”')
     fireEvent.click(screen.getByRole('button', { name: /^Amex:/ }))
     fireEvent.click(within(dialog()).getByRole('button', { name: 'Delete' }))
-    fireEvent.click(within(dialog()).getByRole('button', { name: 'Delete it?' }))
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Tap again to delete' }))
     expect(p.onRemoveAccount).toHaveBeenCalledWith('amex')
     expect(screen.queryByRole('dialog')).toBeNull()
   })
@@ -827,6 +872,22 @@ describe('Check in', () => {
     view.rerender(<Finance {...props({ checkIn: false, onCheckInOpened: opened })} />)
     view.rerender(<Finance {...props({ checkIn: true, onCheckInOpened: opened })} />)
     expect(within(dialog()).getByRole('heading', { name: 'Check in' })).toBeTruthy()
+  })
+})
+
+describe('the palette’s New bill', () => {
+  it('opens + Bill’s own sheet, with its templates, whether Finance was on screen or not', () => {
+    const opened = vi.fn()
+    const view = render(<Finance {...props({ addBill: true, onAddBillOpened: opened })} />)
+    expect(within(dialog()).getByRole('heading', { name: 'Add a bill' })).toBeTruthy()
+    expect(within(dialog()).getByRole('button', { name: 'Rent' })).toBeTruthy()
+    expect(opened).toHaveBeenCalled()
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Close' }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    // handed over again while Finance is up
+    view.rerender(<Finance {...props({ addBill: false, onAddBillOpened: opened })} />)
+    view.rerender(<Finance {...props({ addBill: true, onAddBillOpened: opened })} />)
+    expect(within(dialog()).getByRole('heading', { name: 'Add a bill' })).toBeTruthy()
   })
 })
 

@@ -16,7 +16,7 @@ import {
 import { blankNote, noteToSave } from './notes/model'
 import { MEAL_SLOTS, MEAL_SLOT_META, PRIORITIES, PRIORITY_META, type ChatAction, type ChatOutcome, type ChatTurn, type Meal, type Note, type Person, type Place, type PlaceCategory, type Recipe } from '../types'
 import { MealSlotRow } from './MealSlotRow'
-import { Modal, ModalHead } from './Modal'
+import { Modal, ModalHead, useChanged } from './Modal'
 import { PeoplePicker } from './PeoplePicker'
 import { PlacePicker } from './PlacePicker'
 import { RichNotes } from './RichNotes'
@@ -296,26 +296,22 @@ function MealEdit({ action, data, on, onSave, onCancel }: { action: ActionOf<'pl
 }
 
 /** A suggested note in the note editor's own editor, saved as Notes saves one. */
-function NoteSheet({ action, id, onSave, onClose }: { action: ActionOf<'create_note'>; id: string; onSave(n: Note): void; onClose(): void }) {
+export function NoteSheet({ action, id, onSave, onClose }: { action: ActionOf<'create_note'>; id: string; onSave(n: Note): void; onClose(): void }) {
   const [title, setTitle] = useState(action.title)
   const [body, setBody] = useState(() => noteBody(action.text))
   const note = noteToSave(blankNote(id, new Date().toISOString()), { title, body })
+  const dirty = useChanged({ title, body })
   return (
-    <Modal onClose={onClose} className="modal chat-note-sheet">
-      <ModalHead title="New note" />
+    <Modal onClose={onClose} dirty={dirty} className="modal chat-note-sheet">
+      <ModalHead title="New note" variant="compose">
+        <button type="button" className="btn primary" disabled={!note} onClick={() => note && onSave(note)}>
+          Save
+        </button>
+      </ModalHead>
       <div className="modal-body">
         <input className="note-title-input" aria-label="Note title" placeholder="Title" value={title} maxLength={200} onChange={e => setTitle(e.target.value)} />
         <RichNotes value={body} onChange={setBody} status={note ? 'Private until you share it' : 'Needs a title or some text'} />
       </div>
-      <footer className="modal-foot">
-        <span className="spacer" />
-        <button type="button" className="btn" onClick={onClose}>
-          Cancel
-        </button>
-        <button type="button" className="btn primary" disabled={!note} onClick={() => note && onSave(note)}>
-          Save note
-        </button>
-      </footer>
     </Modal>
   )
 }

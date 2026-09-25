@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { dragSheet } from '../components/Modal'
 
 // Dragging a sheet down past the line asks it to close. A close can be turned
-// down — the task editor's "Discard your changes?" answered Cancel — and the
+// down — "Discard changes?" answered Keep editing — and the
 // sheet was left pushed down where the finger let go, with no way back up but
 // another drag. It now goes back up when it is still there a frame later.
 //
@@ -48,7 +48,7 @@ function sheet() {
 describe('letting go of a sheet dragged past the line', () => {
   it('goes back up when the close was turned down', () => {
     const { panel, drag } = sheet()
-    const close = vi.fn() // "Discard your changes?" → Cancel: the sheet stays
+    const close = vi.fn() // "Discard changes?" → Keep editing: the sheet stays
     drag(260, close)
     expect(close).toHaveBeenCalledTimes(1)
     // still where the finger let go until the frame has shown whether it went

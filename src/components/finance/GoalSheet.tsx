@@ -59,17 +59,13 @@ export function GoalSheet({ today, at, inHousehold, onAdd, onClose }: Props) {
   )
   const preview = useMemo(() => (draft ? (savingGoals([draft], at)[0] ?? null) : null), [draft, at])
 
-  const close = () => {
-    if ((name.trim() || target.trim() || amount.trim()) && !window.confirm('Discard this goal?')) return
-    onClose()
-  }
   const add = () => {
     if (!ready || !goal || !each) return
     onAdd(goalFromForm({ name, emoji, target: goal, by: by || undefined, amount: each, freq, first, autopay, ...(inHousehold ? { shared } : {}) }, { id: uid(), now: new Date().toISOString() }))
   }
 
   return (
-    <Modal onClose={close} className="modal narrow fin-sheet goal-sheet">
+    <Modal onClose={onClose} dirty={!!(name.trim() || target.trim() || amount.trim())} className="modal narrow fin-sheet goal-sheet">
       <ModalHead title="New goal" variant="compose">
         <button type="button" className="btn primary" disabled={!ready} onClick={add}>
           Add

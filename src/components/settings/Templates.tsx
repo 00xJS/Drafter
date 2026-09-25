@@ -16,7 +16,7 @@ export function Templates({ store }: SettingsCtx) {
               {t.emoji ? `${t.emoji} ` : ''}
               {t.name} <small>· {t.tasks.length} tasks{t.milestones?.length ? `, ${t.milestones.length} milestones` : ''}</small>
             </span>
-            <ConfirmButton className="btn subtle danger" confirmLabel="Sure?" onConfirm={() => store.remove(t.id)}>
+            <ConfirmButton className="btn subtle danger" confirmLabel="Tap again to remove" onConfirm={() => store.remove(t.id)}>
               Remove
             </ConfirmButton>
           </li>

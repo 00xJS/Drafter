@@ -1,6 +1,6 @@
 import { useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
 import { workDaysOf } from '../../calgrid'
-import { newerStamp } from '../../itemops'
+import { newerStamp, trashedLine } from '../../itemops'
 import { shortDay } from '../../kitchen'
 import { retireMedia } from '../../media'
 import type { CalendarEntry, Garment, Item, Outfit, Wear } from '../../types'
@@ -153,7 +153,7 @@ export function Wardrobe({ garments, inTrash = NONE, outfits, wears, myId = null
     const target = wearId ? looks.find(w => w.id === wearId) : lastOf(looks)
     if (!target) return
     onRemove(target.id)
-    showToast(target.planned ? 'Plan removed' : 'Look removed', () => onRestore([target.id]))
+    showToast(trashedLine(null, target.planned ? 'Plan' : 'Look'), () => onRestore([target.id]))
   }
   const saveCombo = (pieces: readonly string[]) => {
     const { outfit, reused } = saveOutfit(outfits, pieces)
@@ -185,7 +185,7 @@ export function Wardrobe({ garments, inTrash = NONE, outfits, wears, myId = null
   const removePiece = (g: Garment) => {
     setSheet(null)
     onRemove(g.id)
-    showToast(`Deleted ${g.name}`, () => onRestore([g.id]))
+    showToast(trashedLine(g.name, 'Piece'), () => onRestore([g.id]))
   }
   /**
    * The piece sheet's Wear today: into today's latest look, in its own slot, or
@@ -248,7 +248,7 @@ export function Wardrobe({ garments, inTrash = NONE, outfits, wears, myId = null
           onFavouriteOutfit={(o, on) => onSave(starred(o, on))}
           onDeleteOutfit={o => {
             onRemove(o.id)
-            showToast('Outfit deleted', () => onRestore([o.id]))
+            showToast(trashedLine(o.name, 'Outfit'), () => onRestore([o.id]))
           }}
           pending={pending}
           onPendingUsed={() => setPending(null)}

@@ -157,7 +157,7 @@ export function ErrorsCard({ errors, unavailable, busy, onClear }: { errors: Cli
       )}
       {any && (
         <div className="check-add">
-          <ConfirmButton className="btn" confirmLabel="Clear them all?" onConfirm={onClear}>
+          <ConfirmButton className="btn" confirmLabel="Tap again to clear them all" onConfirm={onClear}>
             {busy ? 'Clearing…' : 'Clear'}
           </ConfirmButton>
         </div>

@@ -26,16 +26,38 @@ export function fmtTime(iso?: string): string {
  *  same hours read the same on both. */
 export function clock(iso: string): string {
   const d = new Date(iso)
-  const h = d.getHours()
-  const m = d.getMinutes()
+  return clockAt(d.getHours(), d.getMinutes())
+}
+
+/** clock()'s words for an hour and minute of the day, with no date to read them from: 18, 0 → 6pm. */
+export function clockAt(h: number, m = 0): string {
   const ampm = h < 12 ? 'am' : 'pm'
   const h12 = h % 12 === 0 ? 12 : h % 12
   return m ? `${h12}:${String(m).padStart(2, '0')}${ampm}` : `${h12}${ampm}`
 }
 
+/**
+ * How a scroll the app starts should travel: smoothly, or at once for someone
+ * who has asked the system for less motion (Reduce Motion), which a CSS
+ * blanket rule cannot reach — scrollIntoView takes its behaviour from here.
+ */
+export function scrollBehavior(): ScrollBehavior {
+  return typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'
+}
+
 export function excerpt(s: string, n = 90): string {
   const t = s.replace(/\s+/g, ' ').trim()
   return t.length > n ? t.slice(0, n - 1) + '…' : t
+}
+
+/**
+ * A YYYY-MM-DD day as it is said aloud — "Thursday, September 24" — for a
+ * name a screen reader speaks, where the key itself reads as a string of
+ * numbers. Read at local noon, so no zone can move it a day.
+ */
+export function spokenDay(key: string): string {
+  const d = new Date(`${key}T12:00:00`)
+  return Number.isNaN(d.getTime()) ? key : d.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })
 }
 
 export function dateKey(d: Date | string): string {

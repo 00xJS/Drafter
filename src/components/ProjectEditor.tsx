@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { BOARD_STATUSES, GithubProjectSync, Milestone, PROJECT_COLORS, PROJECT_STATUSES, PROJECT_STATUS_META, Project, ProjectStatus, STATUS_META, Task, Template } from '../types'
+import { BOARD_STATUSES, GithubProjectSync, Milestone, PROJECT_STATUSES, PROJECT_STATUS_META, Project, ProjectStatus, STATUS_META, Task, Template } from '../types'
 import { BUILT_IN_TEMPLATES, extendProject, templateFromProject } from '../templates'
 import { DraftedPlan, draftPlan } from '../ai'
 import { newerStamp } from '../itemops'
@@ -7,6 +7,7 @@ import { fromLocalInput, toLocalInput, uid } from '../utils'
 import { GithubProjectFields, fetchProjectFields, parseGithubUrl } from '../github'
 import { defaultColumnMap } from '../githubsync'
 import { GithubCard } from './GithubCard'
+import { ColorSwatches } from './ColorSwatches'
 import { ConfirmButton } from './ConfirmButton'
 import { Modal, ModalHead } from './Modal'
 
@@ -304,11 +305,6 @@ export function ProjectEditor({ project, tasks, getLatest, onSave, onDelete, onC
   /** What Save writes, and what a template's or a plan's tasks are added to: the newest copy of the project with this form's edits. */
   const edited = () => withEdits(getLatest(base.id) ?? base, baseValues(), formValues())
 
-  function requestClose() {
-    if (isDirty() && !window.confirm('Discard your changes?')) return
-    onClose()
-  }
-
   function save() {
     onSave(edited())
   }
@@ -328,9 +324,9 @@ export function ProjectEditor({ project, tasks, getLatest, onSave, onDelete, onC
   }
 
   return (
-    <Modal onClose={requestClose}>
-      <ModalHead title="Edit project">
-        <button className="btn primary modal-head-save" onClick={save}>
+    <Modal onClose={onClose} dirty={isDirty()}>
+      <ModalHead title="Edit project" variant="compose">
+        <button type="button" className="btn primary" onClick={save}>
           Save
         </button>
       </ModalHead>
@@ -349,11 +345,7 @@ export function ProjectEditor({ project, tasks, getLatest, onSave, onDelete, onC
 
         <div className="field">
           <span>Color</span>
-          <div className="swatches">
-            {PROJECT_COLORS.map(c => (
-              <button key={c} type="button" className={color === c ? 'swatch on' : 'swatch'} style={{ background: c }} onClick={() => setColor(c)} aria-label={c} />
-            ))}
-          </div>
+          <ColorSwatches value={color} onChange={setColor} />
         </div>
 
         <label className="field">
@@ -363,9 +355,9 @@ export function ProjectEditor({ project, tasks, getLatest, onSave, onDelete, onC
 
         <div className="field">
           <span>Status</span>
-          <div className="segmented">
+          <div className="segmented" role="group" aria-label="Status">
             {PROJECT_STATUSES.map(s => (
-              <button key={s} type="button" className={status === s ? 'seg on' : 'seg'} onClick={() => setStatus(s)}>
+              <button key={s} type="button" className={status === s ? 'seg on' : 'seg'} aria-pressed={status === s} onClick={() => setStatus(s)}>
                 {PROJECT_STATUS_META[s].label}
               </button>
             ))}
@@ -562,7 +554,7 @@ export function ProjectEditor({ project, tasks, getLatest, onSave, onDelete, onC
       </div>
 
       <footer className="modal-foot">
-        <ConfirmButton onConfirm={() => onDelete(project.id)} confirmLabel="Click again to delete project">
+        <ConfirmButton onConfirm={() => onDelete(project.id)} confirmLabel="Tap again to delete the project">
           Delete
         </ConfirmButton>
         {onSaveTemplate && (
@@ -577,18 +569,13 @@ export function ProjectEditor({ project, tasks, getLatest, onSave, onDelete, onC
             {savedTemplate ? 'Saved as template ✓' : 'Save as template'}
           </button>
         )}
-        <span className="spacer" />
-        <button className="btn" onClick={requestClose}>
-          Cancel
-        </button>
-        {chosen && onCreateMany ? (
-          <button className="btn primary" onClick={() => createWith(chosen, templateFrom)}>
-            Add {chosen.tasks.length} task{chosen.tasks.length === 1 ? '' : 's'}
-          </button>
-        ) : (
-          <button className="btn primary" onClick={save}>
-            Save
-          </button>
+        {chosen && onCreateMany && (
+          <>
+            <span className="spacer" />
+            <button className="btn primary" onClick={() => createWith(chosen, templateFrom)}>
+              Add {chosen.tasks.length} task{chosen.tasks.length === 1 ? '' : 's'}
+            </button>
+          </>
         )}
       </footer>
     </Modal>

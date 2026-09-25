@@ -261,9 +261,9 @@ export function TaskEditor({
     if (next) commit(next)
   }
 
-  function requestClose() {
+  /** Out, once Modal has asked "Discard changes?" where there were any: a step renamed and not yet left is still written, as steps always are. */
+  function close() {
     flushSteps()
-    if (isDirty(form, base, persisted) && !window.confirm('Discard your changes?')) return
     onClose()
   }
 
@@ -296,16 +296,19 @@ export function TaskEditor({
   }
 
   const project = projects.find(p => p.id === form.projectId)
+  // "✓ Log a finished task": a new task that is done already, written down after the fact
+  const logging = !task && preset?.status === 'done'
   // A blank new task is title, due and who can see it. Everything else —
   // description, checklist, people, photos, repeat — waits behind More
   // details. A bill, or any saved task, opens already expanded.
   const [details, setDetails] = useState(() => persisted || costsVisible(initForm(base), base))
 
   return (
-    // Modal owns Escape, the backdrop and focus; both close through
-    // requestClose, which asks before throwing away unsaved changes
+    // Modal owns Escape, the backdrop, Cancel, the swipe and focus; each asks
+    // "Discard changes?" before throwing away an unsaved change
     <Modal
-      onClose={requestClose}
+      onClose={close}
+      dirty={isDirty(form, base, persisted)}
       className="modal wide task-editor"
       onKeyDown={e => {
         const target = e.target as HTMLElement
@@ -317,7 +320,7 @@ export function TaskEditor({
         }
       }}
     >
-        <ModalHead title={task ? 'Edit task' : 'New task'} variant="compose">
+        <ModalHead title={task ? 'Edit task' : logging ? 'Log something done' : 'New task'} variant="compose">
           <button type="button" className="btn primary" onClick={save}>
             Save
           </button>
@@ -349,7 +352,7 @@ export function TaskEditor({
 
               {!details && (
                 <>
-                  <DueFields form={form} set={set} />
+                  <DueFields form={form} set={set} logged={logging} />
                   <AssignFields form={form} set={set} members={members} candidates={[]} taskId={base.id} myId={myId} ownerId={base.ownerId} essentials />
                 </>
               )}
@@ -390,7 +393,7 @@ export function TaskEditor({
             {details && (
               <aside className="editor-side">
                 <AssignFields form={form} set={set} members={members} candidates={candidates} taskId={base.id} myId={myId} ownerId={base.ownerId} />
-                <DueFields form={form} set={set} />
+                <DueFields form={form} set={set} logged={logging} />
                 <BillCost form={form} set={set} showCosts={costsVisible(form, base)} members={members} />
                 <PeoplePlace form={form} set={set} people={people} places={places} onSavePlace={onSavePlace} onSavePerson={onSavePerson} />
                 <Images mediaIds={form.mediaIds} set={set} />
@@ -420,7 +423,7 @@ export function TaskEditor({
 
         {task && (
           <footer className="modal-foot">
-            <ConfirmButton onConfirm={() => onDelete(task.id)} confirmLabel="Click again to delete">
+            <ConfirmButton onConfirm={() => onDelete(task.id)} confirmLabel="Tap again to delete">
               Delete
             </ConfirmButton>
             {onDuplicate && (

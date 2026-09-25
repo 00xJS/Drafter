@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Kitchen } from '../components/Kitchen'
 import { MealSlotRow } from '../components/MealSlotRow'
 import type { GroceryList, Item, Meal, Place, PlaceCategory, Recipe } from '../types'
+import { weekKeyOf, weekStartKey } from '../../shared/weeks.mts'
 
 // Kitchen → This week as a thumb uses it, in a household of two: the open
 // day's cards, planned and empty; an idea planning a dinner in one tap, and
@@ -109,6 +110,12 @@ function openKitchen(items: Item[] = seed()) {
   return { toasts, savedMeals, saved, cleared }
 }
 
+/** What an idea chip says for itself, its reason (drawn on a phone, in its name everywhere) left out. */
+const chipWords = (b: HTMLElement) =>
+  Array.from(b.childNodes)
+    .filter(n => !(n instanceof Element && n.classList.contains('meal-chip-why')))
+    .map(n => n.textContent)
+    .join('')
 const strip = () => screen.getByRole('navigation', { name: 'Dinners this week' })
 const day = (name: RegExp) => within(strip()).getByRole('button', { name })
 const card = (slot: 'Breakfast' | 'Lunch' | 'Dinner') => screen.getByRole('region', { name: slot })
@@ -135,7 +142,7 @@ describe('the open day’s cards', () => {
       expect(empty.className).toContain('empty')
       expect(within(empty).getByRole('button', { name: 'Choose…' })).toBeTruthy()
       const ideas = within(empty).getByRole('group', { name: `Ideas for ${slot.toLowerCase()}` })
-      expect(within(ideas).getAllByRole('button').map(b => b.textContent?.trim())).toEqual(offered[slot])
+      expect(within(ideas).getAllByRole('button').map(b => chipWords(b).trim())).toEqual(offered[slot])
       // one row of chips, and no other one-tap answers
       expect(within(empty).getAllByRole('group').length).toBe(1)
       expect(within(empty).queryByText(/Fend for yourself|Takeout/)).toBeNull()
@@ -153,13 +160,25 @@ describe('the open day’s cards', () => {
     openKitchen()
     fireEvent.click(day(/^Fri/))
     const ideas = within(card('Dinner')).getByRole('group', { name: 'Ideas for dinner' })
-    expect(within(ideas).getAllByRole('button').map(b => b.textContent)).toEqual(['★Spaghetti', '★Chicken Parm', 'Enchiladas', '🍲 Leftovers'])
+    expect(within(ideas).getAllByRole('button').map(chipWords)).toEqual(['★Spaghetti', '★Chicken Parm', 'Enchiladas', '🍲 Leftovers'])
+  })
+
+  it('says why each idea is offered in its name, and on the chip in short where nothing hovers', () => {
+    openKitchen()
+    fireEvent.click(day(/^Fri/))
+    const ideas = within(card('Dinner')).getByRole('group', { name: 'Ideas for dinner' })
+    const spag = within(ideas).getByRole('button', { name: 'Spaghetti: A favourite, last had 2 weeks ago' })
+    expect(spag.querySelector('.meal-chip-why')?.textContent).toBe('2 weeks ago')
+    const ench = within(ideas).getByRole('button', { name: 'Enchiladas: Never had' })
+    expect(ench.querySelector('.meal-chip-why')?.textContent).toBe('new')
+    // …and still as the pointer's tooltip
+    expect(spag.getAttribute('title')).toBe('A favourite, last had 2 weeks ago')
   })
 
   it('plans a dinner from an idea in one tap, in Joe’s own row and for both of them, and Undo takes it back', () => {
     const k = openKitchen()
     fireEvent.click(day(/^Fri/))
-    fireEvent.click(within(within(card('Dinner')).getByRole('group', { name: 'Ideas for dinner' })).getByRole('button', { name: 'Spaghetti' }))
+    fireEvent.click(within(within(card('Dinner')).getByRole('group', { name: 'Ideas for dinner' })).getByRole('button', { name: /^Spaghetti:/ }))
     expect(k.savedMeals.at(-1)).toMatchObject({ id: 'meal~2026-09-25~dinner~joe', date: '2026-09-25', slot: 'dinner', recipeId: 'spag', title: 'Spaghetti', shared: true })
     expect(k.toasts.map(t => t.msg)).toEqual(['Planned “Spaghetti” for dinner'])
     // the card is the meal now
@@ -178,6 +197,51 @@ describe('the open day’s cards', () => {
     expect(k.savedMeals.some(m => m.id === 'meal~2026-09-24~lunch')).toBe(false)
     expect(k.savedMeals.at(-1)).not.toHaveProperty('recipeId')
     expect(within(card('Lunch')).getByText('Nothing to cook · just you')).toBeTruthy()
+  })
+})
+
+describe('the Kitchen’s switches, to a screen reader', () => {
+  it('say which segment and which grocery filter is on', () => {
+    const week = weekKeyOf(weekStartKey('2026-09-24')!)!
+    openKitchen([...seed(), { kind: 'grocery', id: `grocery~${week}`, weekKey: week, ownerId: JOE, items: [{ id: 'g1', name: 'Milk', state: 'need', recipeIds: [], manual: true }], createdAt: T0, updatedAt: T0 }])
+    const view = screen.getByRole('group', { name: 'Kitchen view' })
+    const on = (group: HTMLElement) => within(group).getAllByRole('button').filter(b => b.getAttribute('aria-pressed') === 'true').map(b => b.textContent)
+    expect(on(view)).toEqual(['This week'])
+    fireEvent.click(within(view).getByRole('button', { name: 'Grocery' }))
+    expect(on(view)).toEqual(['Grocery'])
+    const show = screen.getByRole('group', { name: 'Show' })
+    expect(on(show)).toEqual(['Need 1'])
+    fireEvent.click(within(show).getByRole('button', { name: /^All/ }))
+    expect(on(show)).toEqual(['All 1'])
+  })
+})
+
+describe('the open day under a thumb', () => {
+  /** A touch on the day's cards at (x, y), as React reads it: changedTouches. */
+  const touch = (type: 'touchstart' | 'touchmove' | 'touchend', x: number, y: number) => {
+    const e = new Event(type, { bubbles: true, cancelable: true })
+    Object.defineProperty(e, 'changedTouches', { value: [{ clientX: x, clientY: y }] })
+    act(() => void document.querySelector('.meal-day')!.dispatchEvent(e))
+  }
+  const open = () => document.querySelector('.meal-day-head strong')?.textContent
+
+  it('turns to the next day on a swipe to the left', () => {
+    openKitchen()
+    expect(open()).toBe('Thursday')
+    touch('touchstart', 300, 400)
+    touch('touchmove', 280, 402)
+    touch('touchend', 200, 405)
+    expect(open()).toBe('Friday')
+  })
+
+  it('stays on the day for a scroll down the cards that drifts sideways', () => {
+    openKitchen()
+    touch('touchstart', 300, 400)
+    // committed downward in the first few pixels, then carried well over to the side
+    touch('touchmove', 297, 385)
+    touch('touchmove', 240, 250)
+    touch('touchend', 220, 200)
+    expect(open()).toBe('Thursday')
   })
 })
 
@@ -252,7 +316,7 @@ describe('the meal picker', () => {
   it('keeps a planned meal’s own For, changes it there and then, and Remove takes the meal off with an Undo', () => {
     const k = openKitchen()
     fireEvent.click(day(/^Fri/))
-    fireEvent.click(within(within(card('Dinner')).getByRole('group', { name: 'Ideas for dinner' })).getByRole('button', { name: 'Enchiladas' }))
+    fireEvent.click(within(within(card('Dinner')).getByRole('group', { name: 'Ideas for dinner' })).getByRole('button', { name: /^Enchiladas:/ }))
     fireEvent.click(within(card('Dinner')).getByRole('button', { name: 'Change dinner' }))
     const picker = sheet(/Fri 25 · Dinner/)
     const forGroup = within(picker).getByRole('group', { name: 'Who this meal is for' })
@@ -264,7 +328,7 @@ describe('the meal picker', () => {
     expect(screen.getByRole('dialog')).toBeTruthy()
     const remove = within(picker).getByRole('button', { name: 'Remove Enchiladas' })
     fireEvent.click(remove)
-    fireEvent.click(within(picker).getByRole('button', { name: 'Remove Enchiladas: Remove?' }))
+    fireEvent.click(within(picker).getByRole('button', { name: 'Remove Enchiladas: Tap again to remove' }))
     expect(k.cleared).toEqual(['meal~2026-09-25~dinner~joe'])
     expect(screen.queryByRole('dialog')).toBeNull()
     expect(k.toasts.at(-1)?.msg).toBe('Removed “Enchiladas” from dinner')
@@ -347,7 +411,7 @@ describe('starring a recipe', () => {
     fireEvent.click(screen.getByRole('button', { name: 'This week' }))
     fireEvent.click(day(/^Fri/))
     const ideas = within(card('Dinner')).getByRole('group', { name: 'Ideas for dinner' })
-    expect(within(ideas).getAllByRole('button').map(b => b.textContent)).toEqual(['★Spaghetti', '★Beef Stew', '★Chicken Parm', '🍲 Leftovers'])
+    expect(within(ideas).getAllByRole('button').map(chipWords)).toEqual(['★Spaghetti', '★Beef Stew', '★Chicken Parm', '🍲 Leftovers'])
     fireEvent.click(within(card('Dinner')).getByRole('button', { name: 'Choose…' }))
     const picker = sheet(/Fri 25 · Dinner/)
     fireEvent.click(within(picker).getByRole('button', { name: 'Favourite: Chicken Parm' }))
@@ -378,7 +442,7 @@ describe('the slot row, as the calendar’s day sheet draws it', () => {
       />,
     )
     expect(screen.queryByRole('combobox')).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: /^Lunch on 2026-09-24/ }))
+    fireEvent.click(screen.getByRole('button', { name: /^Lunch on Thursday, September 24:/ }))
     const picker = sheet(/Thu 24 · Lunch/)
     // it is not his to change, so the sheet is for a new meal of his, and has nothing to remove
     expect(within(picker).queryByRole('button', { name: /^Remove/ })).toBeNull()

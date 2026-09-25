@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef } from 'react'
 import { STATUS_META, type Project, type Task, type TaskStatus } from '../../types'
 import type { Store } from '../../store'
-import { newerStamp, nextOccurrence } from '../../itemops'
+import { newerStamp, nextOccurrence, trashedLine } from '../../itemops'
 import { parseGithubUrl, setIssueState } from '../../github'
 import { boardDateToDue, cancelQueuedPushes, projectSyncEnabled, queueProjectPush, useGithubProjectSync, type ProjectPull } from '../../githubboard'
 import { fmtDateTime, uid } from '../../utils'
@@ -86,7 +86,7 @@ export function useTaskActions({ store, showToast, setEditor, setProjectEditor, 
   const deleteTask = (t: Task) => {
     store.remove(t.id)
     setEditor(null)
-    showToast(`Deleted “${t.title || 'Untitled'}”`, () => store.restore([t.id]))
+    showToast(trashedLine(t.title, 'Untitled task'), () => store.restore([t.id]))
   }
 
   const deleteProject = (p: Project) => {
@@ -96,7 +96,7 @@ export function useTaskActions({ store, showToast, setEditor, setProjectEditor, 
     setProjectEditor(null)
     // a deleted project's notepad closes back to the index
     setNotesProjectId(cur => (cur === p.id ? null : cur))
-    showToast(`Deleted project “${p.name}”`, () => store.restore([p.id]))
+    showToast(trashedLine(p.name, 'Project'), () => store.restore([p.id]))
   }
 
   /** Done in Drafter closes the linked GitHub issue (when the host can write). Quiet on failure. */
@@ -178,18 +178,28 @@ export function useTaskActions({ store, showToast, setEditor, setProjectEditor, 
     return change
   }
 
+  /** Puts a status move back, on the board too, with any repeat it spawned taken out again. */
+  const undoStatus = (change: NonNullable<ReturnType<typeof applyStatus>>) => {
+    // the undo goes to the board too: it supersedes the queued push (same
+    // task id, so the timer is replaced), and without it GitHub would keep
+    // proposing the move the user just took back
+    const restored = { ...change.prev, updatedAt: newerStamp(change.prev.updatedAt) }
+    store.upsert(restored)
+    pushToProjectBoard(restored)
+    if (change.spawnedId) store.remove(change.spawnedId)
+  }
+
   const changeStatus = (id: string, status: TaskStatus) => {
     const change = applyStatus(id, status)
     if (!change) return
-    showToast(`Moved to ${STATUS_META[status].label}`, () => {
-      // the undo goes to the board too: it supersedes the queued push (same
-      // task id, so the timer is replaced), and without it GitHub would keep
-      // proposing the move the user just took back
-      const restored = { ...change.prev, updatedAt: newerStamp(change.prev.updatedAt) }
-      store.upsert(restored)
-      pushToProjectBoard(restored)
-      if (change.spawnedId) store.remove(change.spawnedId)
-    })
+    showToast(`Moved to ${STATUS_META[status].label}`, () => undoStatus(change))
+  }
+
+  /** Several tasks to one status at once (the review's Back to Wishlist): one toast, and one Undo that puts every one back. */
+  const changeStatusAll = (ids: string[], status: TaskStatus) => {
+    const changes = ids.map(id => applyStatus(id, status)).filter(c => c !== null)
+    if (!changes.length) return
+    showToast(`Moved ${changes.length} to ${STATUS_META[status].label}`, () => changes.forEach(undoStatus))
   }
 
   /**
@@ -246,5 +256,5 @@ export function useTaskActions({ store, showToast, setEditor, setProjectEditor, 
     })
   }
 
-  return { captureTask, deleteTask, deleteProject, closeLinkedIssue, pushToProjectBoard, applyStatus, changeStatus, reschedule, defer, deferAll }
+  return { captureTask, deleteTask, deleteProject, closeLinkedIssue, pushToProjectBoard, applyStatus, changeStatus, changeStatusAll, reschedule, defer, deferAll }
 }

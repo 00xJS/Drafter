@@ -403,10 +403,6 @@
     flex-wrap: wrap;
   }
 
-  .modal-head-save {
-    display: inline-block;
-  }
-
   /* 10px + 10px + the 1px border = 21px of padding and border, plus the
      tallest control. Two controls compete for that: the 40px .new-post-btn, a
      fixed square that does not grow with the text, and the 🔍 / ⚙ .btn.subtle
@@ -574,6 +570,19 @@
 
   .modal-body {
     overflow-y: auto;
+  }
+
+  /* "Discard changes?" keeps its own size on a phone, at the foot of the
+     screen where the thumb already is, rather than the sheet's full height */
+  .modal-backdrop.discard-backdrop {
+    align-items: flex-end;
+  }
+  .modal.discard-prompt {
+    height: auto;
+  }
+  .discard-actions .btn {
+    flex: 1 1 0;
+    min-height: var(--touch);
   }
 
   .landing-hero {

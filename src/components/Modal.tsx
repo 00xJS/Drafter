@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { createModalStack, pickReturn, wrapFocus } from '../modalstack'
 
 /** Every open dialog, topmost last. One per page, like the focus it looks after. */
@@ -40,11 +41,28 @@ function onDocumentKey(e: KeyboardEvent) {
   if (stack.key(e)) e.preventDefault()
 }
 
+/**
+ * How long after a field in the sheet lets go of focus a press on the
+ * backdrop is still that field's. On an iPhone the tap that puts a date wheel
+ * or the keyboard away lands on the backdrop a moment after the field has
+ * already blurred.
+ */
+export const FIELD_SETTLE_MS = 400
+
+/** `onClose` is the sheet's way out as ✕ and Cancel take it: through "Discard changes?" when it has unsaved changes. */
 const ModalContext = createContext<{ titleId: string; onClose(): void } | null>(null)
 
 interface ModalProps {
-  /** Escape, the backdrop and ModalHead's ✕ all call this. Pass the "discard changes?" version where there is one. */
+  /** What closing does, once it is decided. Escape, the backdrop, ModalHead's ✕ and Cancel and the swipe down all come here, through `dirty`. */
   onClose(): void
+  /**
+   * Unsaved changes: every way out — the backdrop, Escape, ✕, Cancel and the
+   * swipe down — asks "Discard changes?" once, in the app, and closes only
+   * on Discard.
+   */
+  dirty?: boolean
+  /** A question that must be answered (the discard prompt): announced as an alert dialog. */
+  alert?: boolean
   children: ReactNode
   /** the panel's class; `modal` is what the iOS card sheet is drawn from */
   className?: string
@@ -73,11 +91,16 @@ interface ModalProps {
  * - Tab and Shift+Tab go round the visible controls instead of leaving;
  * - on close, focus goes back to what opened it, if that is still on the page;
  * - a press that starts on the backdrop itself closes it (a drag out of a
- *   field that ends there does not).
+ *   field that ends there does not) — unless a field in the sheet is up: then
+ *   that press puts the keyboard or the picker away and the sheet stays, and
+ *   so does it for a moment after a field lets go (FIELD_SETTLE_MS);
+ * - with `dirty`, every way out asks "Discard changes?" first (DiscardPrompt).
  * No haptics, no animation and no scroll lock of its own.
  */
 export function Modal({
   onClose,
+  dirty = false,
+  alert = false,
   children,
   className = 'modal',
   backdropClassName = 'modal-backdrop',
@@ -88,6 +111,14 @@ export function Modal({
 }: ModalProps) {
   const titleId = useId()
   const panel = useRef<HTMLDivElement | null>(null)
+  const [asking, setAsking] = useState(false)
+  /** When a field in the panel last let go of focus (Date.now()). */
+  const fieldLeft = useRef(-Infinity)
+  /** Every way out comes here: straight out, or through the question when there is something to lose. */
+  const requestClose = () => {
+    if (dirty) setAsking(true)
+    else onClose()
+  }
   // whatever had focus when this first rendered — read now, before an
   // autoFocus field inside takes it at commit
   const [opener] = useState(() => {
@@ -98,9 +129,9 @@ export function Modal({
   })
   // decided at the first mount: StrictMode's rehearsal remount must not re-decide it
   const back = useRef<HTMLElement | null | undefined>(undefined)
-  const close = useRef(onClose)
+  const close = useRef(requestClose)
   useLayoutEffect(() => {
-    close.current = onClose
+    close.current = requestClose
   })
 
   useEffect(() => {
@@ -138,22 +169,112 @@ export function Modal({
     <div
       className={backdropClassName}
       onMouseDown={e => {
-        if (closeOnBackdrop && e.target === e.currentTarget) onClose()
+        if (e.target !== e.currentTarget) return
+        // a field in the sheet is up — the keyboard, a date wheel: a tap above
+        // the sheet puts it away, as it does everywhere else on the phone, and
+        // is not a request to throw the sheet away
+        const active = document.activeElement
+        if (active instanceof HTMLElement && panel.current?.contains(active) && active.matches(FIELD)) {
+          active.blur()
+          return
+        }
+        // …nor is the tap that has just done so, a moment after the field let go
+        if (Date.now() - fieldLeft.current < FIELD_SETTLE_MS) return
+        if (closeOnBackdrop) requestClose()
       }}
     >
       <div
         ref={panel}
         className={className}
-        role="dialog"
+        role={alert ? 'alertdialog' : 'dialog'}
         aria-modal="true"
         aria-label={label}
         aria-labelledby={label ? undefined : (labelledBy ?? titleId)}
         tabIndex={-1}
         onKeyDown={onKeyDown}
+        onBlur={e => {
+          if (e.target instanceof Element && e.target.matches(FIELD)) fieldLeft.current = Date.now()
+        }}
       >
-        <ModalContext.Provider value={{ titleId, onClose }}>{children}</ModalContext.Provider>
+        <ModalContext.Provider value={{ titleId, onClose: requestClose }}>{children}</ModalContext.Provider>
       </div>
+      {asking && (
+        <DiscardPrompt
+          onKeep={() => setAsking(false)}
+          onDiscard={() => {
+            setAsking(false)
+            onClose()
+          }}
+        />
+      )}
     </div>
+  )
+}
+
+/**
+ * The one "Discard changes?": Keep editing, or Discard. In the app rather
+ * than the browser's confirm, which on an iPhone is a system alert naming
+ * the page's address. Drawn over the page itself (a portal), so it sits above
+ * the sheet that asks; Escape and a tap beside it are Keep editing.
+ */
+export function DiscardPrompt({ onKeep, onDiscard }: { onKeep(): void; onDiscard(): void }) {
+  const id = useId()
+  // a server render has no page to put it over
+  if (typeof document === 'undefined') return null
+  return createPortal(
+    <Modal onClose={onKeep} alert className="modal narrow discard-prompt" backdropClassName="modal-backdrop discard-backdrop" labelledBy={id}>
+      <div className="discard-body">
+        <h2 id={id}>Discard changes?</h2>
+        <div className="discard-actions">
+          <button type="button" className="btn" onClick={onKeep}>
+            Keep editing
+          </button>
+          <button type="button" className="btn danger" onClick={onDiscard}>
+            Discard
+          </button>
+        </div>
+      </div>
+    </Modal>,
+    document.body,
+  )
+}
+
+/**
+ * "Discard changes?" for a step that is not a close: More options on a bill
+ * that cannot be saved as it stands. `ask(then)` puts the question up and
+ * runs `then` on Discard; `prompt` is where it is drawn, anywhere in the sheet.
+ */
+export function useDiscardPrompt(): { ask(then: () => void): void; prompt: ReactNode } {
+  const [then, setThen] = useState<(() => void) | null>(null)
+  const prompt = then ? (
+    <DiscardPrompt
+      onKeep={() => setThen(null)}
+      onDiscard={() => {
+        setThen(null)
+        then()
+      }}
+    />
+  ) : null
+  // a function in state is called as an updater: wrapped, it is kept as the value
+  return { ask: next => setThen(() => next), prompt }
+}
+
+/**
+ * Whether what a sheet holds has changed since it opened: `now`, the fields
+ * as they stand, against what they were on its first render. For `dirty`.
+ */
+export function useChanged(now: unknown): boolean {
+  const [opened] = useState(() => JSON.stringify(now))
+  return JSON.stringify(now) !== opened
+}
+
+/** A Cancel in a sheet's own footer: out the way ✕ goes, asking first when the sheet has unsaved changes. */
+export function ModalCancel({ children = 'Cancel', className = 'btn' }: { children?: ReactNode; className?: string }) {
+  const modal = useContext(ModalContext)
+  return (
+    <button type="button" className={className} onClick={modal?.onClose}>
+      {children}
+    </button>
   )
 }
 
@@ -238,8 +359,8 @@ export function dragSheet(e: SheetPress, close: () => void): void {
     const thrown = dy > FLING_PX && (ev.clientY - last) / ms > FLING
     if (dy > DISMISS_PX || thrown) {
       close()
-      // A close can be turned down — "Discard your changes?" answered
-      // Cancel — and the sheet stayed pushed down where the finger let go.
+      // A close can be turned down — "Discard changes?" answered Keep
+      // editing — and the sheet stayed pushed down where the finger let go.
       // Still here a frame later means it was kept, so it goes back up.
       requestAnimationFrame(() => {
         if (panel.isConnected) springBack()

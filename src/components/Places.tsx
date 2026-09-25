@@ -39,9 +39,10 @@ import { Bars } from './bits'
 import { requestDevicePosition, tidyCoords } from '../geo'
 import { FindAddress } from './AddressFinder'
 import type { AddressCandidate } from '../geocode'
-import { fmtDate, fromLocalInput, uid } from '../utils'
+import { fmtDate, fromLocalInput, scrollBehavior, uid } from '../utils'
+import { ColorSwatches } from './ColorSwatches'
 import { ConfirmButton } from './ConfirmButton'
-import { Modal, ModalHead } from './Modal'
+import { Modal, ModalHead, useChanged } from './Modal'
 
 interface Props {
   places: Place[]
@@ -139,6 +140,7 @@ export function PlaceForm({
   const [aliases, setAliases] = useState((place?.aliases ?? []).join(', '))
   const [pin, setPin] = useState(() => tidyCoords(place ?? {}))
   const [pinning, setPinning] = useState(false)
+  const dirty = useChanged({ name, emoji, category, color, cadence, notes, address, aliases, pin })
   const save = () => {
     if (!name.trim() || !category) return
     const now = new Date().toISOString()
@@ -167,8 +169,12 @@ export function PlaceForm({
     if (here) setPin(here)
   }
   return (
-    <Modal onClose={onClose} className="modal narrow">
-      <ModalHead title={place ? `Edit ${place.name}` : 'Add a place'} />
+    <Modal onClose={onClose} dirty={dirty} className="modal narrow">
+      <ModalHead title={place ? `Edit ${place.name}` : 'Add a place'} variant="compose">
+        <button type="button" className="btn primary" disabled={!name.trim() || !category} onClick={save}>
+          Save
+        </button>
+      </ModalHead>
       <div className="modal-body">
         <div className="field-row">
           <label className="field emoji-field">
@@ -182,9 +188,9 @@ export function PlaceForm({
         </div>
         <div className="field">
           <span>Category</span>
-          <div className="segmented" style={{ flexWrap: 'wrap' }}>
+          <div className="segmented" role="group" aria-label="Category" style={{ flexWrap: 'wrap' }}>
             {PLACE_CATEGORIES.map(c => (
-              <button key={c} type="button" className={category === c ? 'seg on' : 'seg'} onClick={() => setCategory(c)}>
+              <button key={c} type="button" className={category === c ? 'seg on' : 'seg'} aria-pressed={category === c} onClick={() => setCategory(c)}>
                 {PLACE_CATEGORY_META[c].emoji} {PLACE_CATEGORY_META[c].label}
               </button>
             ))}
@@ -242,22 +248,18 @@ export function PlaceForm({
         </label>
         <div className="field">
           <span>Color</span>
-          <div className="swatches">
-            {PROJECT_COLORS.map(c => (
-              <button key={c} type="button" className={color === c ? 'swatch on' : 'swatch'} style={{ background: c }} onClick={() => setColor(c)} aria-label={c} />
-            ))}
-          </div>
+          <ColorSwatches value={color} onChange={setColor} />
         </div>
         <label className="field">
           <span>Notes</span>
           <textarea rows={2} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Best table, booking tip, what to order…" />
         </label>
       </div>
-      <footer className="modal-foot">
-        {place && onDelete && (
+      {place && onDelete && (
+        <footer className="modal-foot">
           <ConfirmButton
             className="btn subtle danger"
-            confirmLabel="Click again to remove"
+            confirmLabel="Tap again to remove"
             onConfirm={() => {
               onDelete(place.id)
               onClose()
@@ -265,20 +267,13 @@ export function PlaceForm({
           >
             Remove
           </ConfirmButton>
-        )}
-        <span className="spacer" />
-        <button className="btn" onClick={onClose}>
-          Cancel
-        </button>
-        <button className="btn primary" disabled={!name.trim() || !category} onClick={save}>
-          Save
-        </button>
-      </footer>
+        </footer>
+      )}
     </Modal>
   )
 }
 
-function LogOuting({
+export function LogOuting({
   place,
   people,
   onLog,
@@ -293,9 +288,18 @@ function LogOuting({
   const [date, setDate] = useState(() => localDayKey())
   const [note, setNote] = useState('')
   const [ids, setIds] = useState<string[]>([])
+  const dirty = useChanged({ date, note, ids })
+  const log = () => {
+    onLog(fromLocalInput(`${date}T12:00`)!, note.trim(), ids)
+    onClose()
+  }
   return (
-    <Modal onClose={onClose} className="modal narrow">
-      <ModalHead title={`Went to ${place.name}`} />
+    <Modal onClose={onClose} dirty={dirty} className="modal narrow">
+      <ModalHead title={`Went to ${place.name}`} variant="compose">
+        <button type="button" className="btn primary" disabled={!date} onClick={log}>
+          Log it
+        </button>
+      </ModalHead>
       <div className="modal-body">
         <label className="field">
           <span>When</span>
@@ -314,6 +318,7 @@ function LogOuting({
                   key={p.id}
                   type="button"
                   className={ids.includes(p.id) ? 'toggle on' : 'toggle'}
+                  aria-pressed={ids.includes(p.id)}
                   onClick={() => setIds(cur => (cur.includes(p.id) ? cur.filter(x => x !== p.id) : [...cur, p.id]))}
                 >
                   {p.emoji ? `${p.emoji} ` : ''}
@@ -325,22 +330,6 @@ function LogOuting({
           </div>
         )}
       </div>
-      <footer className="modal-foot">
-        <span className="spacer" />
-        <button className="btn" onClick={onClose}>
-          Cancel
-        </button>
-        <button
-          className="btn primary"
-          disabled={!date}
-          onClick={() => {
-            onLog(fromLocalInput(`${date}T12:00`)!, note.trim(), ids)
-            onClose()
-          }}
-        >
-          Log it
-        </button>
-      </footer>
     </Modal>
   )
 }
@@ -566,7 +555,7 @@ export function Places({ places, people, tasks, myId, onSave, onDelete, onLogOut
   useEffect(() => {
     if (!wantOpen) return
     // a long list can hold the row below the fold; one already in view stays put
-    window.setTimeout(() => document.getElementById(`place-${wantOpen}`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 60)
+    window.setTimeout(() => document.getElementById(`place-${wantOpen}`)?.scrollIntoView({ block: 'nearest', behavior: scrollBehavior() }), 60)
     openConsumed()
   }, [wantOpen])
   useEffect(() => {

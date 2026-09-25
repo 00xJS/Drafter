@@ -5,6 +5,7 @@ import {
   QUICK_PICK_META,
   daysAgo,
   daysBetween,
+  lastCookedShort,
   mealAdjusted,
   mealCook,
   mealIsShared,
@@ -191,13 +192,25 @@ export function MealDayCard({
         {/* the rotation's ideas, and Leftovers last: one row, with or without ideas */}
         <div className="meal-card-chips" role="group" aria-label={`Ideas for ${slotName}`}>
           {ideas.map(i => (
-            <button key={i.recipe.id} type="button" className={i.favourite ? 'meal-chip idea fav' : 'meal-chip idea'} title={why(i)} onClick={() => plan({ recipeId: i.recipe.id, title: i.recipe.name })}>
+            <button
+              key={i.recipe.id}
+              type="button"
+              className={i.favourite ? 'meal-chip idea fav' : 'meal-chip idea'}
+              title={why(i)}
+              // the reason is part of what the chip says, not only a hover's
+              aria-label={`${i.recipe.name}: ${why(i)}`}
+              onClick={() => plan({ recipeId: i.recipe.id, title: i.recipe.name })}
+            >
               {i.favourite && (
                 <span className="meal-chip-star" aria-hidden="true">
                   ★
                 </span>
               )}
-              {i.recipe.name}
+              <span className="meal-chip-name">{i.recipe.name}</span>
+              {/* …and on a phone, where nothing hovers, it is on the chip, short */}
+              <small className="meal-chip-why" aria-hidden="true">
+                {lastCookedShort(cooked, i.recipe.id)}
+              </small>
             </button>
           ))}
           <button type="button" className="meal-chip leftovers" title={LEFTOVERS.hint} onClick={() => plan(quickMain('leftovers'))}>

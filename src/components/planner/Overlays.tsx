@@ -1,7 +1,7 @@
 import { Suspense, useMemo, useState, type ReactNode } from 'react'
 import { mediaIdsOf } from '../../../shared/media.mts'
 import { proposeWeek, targetWeek } from '../../../shared/weekplan.mts'
-import { newerStamp } from '../../itemops'
+import { newerStamp, trashedLine } from '../../itemops'
 import { COOK_TASK_PREFIX, mealForCookHandOver, saveCookToRecipe } from '../../kitchen'
 import { OPEN_STATUSES, type Task } from '../../types'
 import { deleteMedia } from '../../media'
@@ -73,6 +73,16 @@ function WeekPlanLayer({ p }: { p: PlannerCtx }) {
   )
 }
 
+/**
+ * What saving a brand-new task says. One logged as done already ("✓ Log a
+ * finished task") is not on the list's Open filter, so its toast offers Show,
+ * which brings its row up (`logged`).
+ */
+export function addedLine(t: Pick<Task, 'title' | 'status'>): { msg: string; logged: boolean } {
+  const name = `“${t.title || 'Untitled'}”`
+  return t.status === 'done' ? { msg: `Logged ${name} as done`, logged: true } : { msg: `Added ${name}`, logged: false }
+}
+
 /** The toast after Who, and how often: whose rhythm was saved, by name for one. */
 export function rhythmsSaved(changes: readonly RhythmChange[]): string {
   if (changes.length === 1) return `Rhythm saved for ${changes[0].after.name}`
@@ -100,7 +110,7 @@ export function blockerCandidates(tasks: readonly Task[], editing: Task | undefi
 /** Whatever sits over the screen: the task, project and event editors, the attendance picker, the planning sheets, search, trash, settings and Admin. */
 export function Overlays({ p }: { p: PlannerCtx }) {
   const { store, upsert, remove, restore, purge, household, projectMap, paletteCommands, inHousehold, showToast, allEvents } = p
-  const { setView, goTasksTab, setNotesProjectId, openNote, openPlace, openPerson, openJournal, openWardrobe } = p
+  const { setView, goTasksTab, setNotesProjectId, openNote, openPlace, openPerson, openJournal, openWardrobe, showTaskInList } = p
   const { editor, setEditor, projectEditor, setProjectEditor, attendance, setAttendance, eventEditor, setEventEditor, sheet, openSheet, closeSheet } = p
   const { searchOpen, setSearchOpen, trashOpen, setTrashOpen } = p
   const { openTask, newTask, openProject, sawThem, logOuting, logAttendance, captureTask, deleteTask, deleteProject, closeLinkedIssue, pushToProjectBoard } = p
@@ -192,7 +202,10 @@ export function Overlays({ p }: { p: PlannerCtx }) {
               handOverCook(t)
               upsert(t)
               setEditor(null)
-              if (isNew) showToast(`Added “${t.title || 'Untitled'}”`, () => remove(t.id))
+              if (isNew) {
+                const said = addedLine(t)
+                showToast(said.msg, () => remove(t.id), said.logged ? { label: 'Show', run: () => showTaskInList(t.id) } : undefined)
+              }
               if (t.status === 'done' && before?.status !== 'done') closeLinkedIssue(t)
               if (!before || before.status !== t.status || before.dueAt !== t.dueAt) pushToProjectBoard(t)
             }}
@@ -380,7 +393,7 @@ export function Overlays({ p }: { p: PlannerCtx }) {
             onSaveJournal={e => upsert(e)}
             onDeleteJournal={id => {
               remove(id)
-              showToast('Journal entry removed', () => restore([id]))
+              showToast(trashedLine(null, 'Journal entry'), () => restore([id]))
             }}
             onApply={r => {
               closeSheet()

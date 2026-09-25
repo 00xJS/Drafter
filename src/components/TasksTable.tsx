@@ -1,7 +1,7 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { BOARD_STATUSES, PRIORITIES, PRIORITY_META, Priority, STATUS_META, TASK_STATUSES, Task, TaskStatus } from '../types'
 import { compareTasks } from '../taskutils'
-import { excerpt } from '../utils'
+import { excerpt, scrollBehavior } from '../utils'
 import { useMediaQuery } from '../useMediaQuery'
 import { DueBadge, PriorityMark, ShareMark } from './bits'
 import { ConfirmButton } from './ConfirmButton'
@@ -17,15 +17,42 @@ interface Props {
   myId?: string | null
   /** A member's display name, for "Maria" on a task of theirs. */
   nameOf?(id: string | undefined): string | null
+  /**
+   * A task to bring into view — one just logged as done, which Open hides:
+   * the status filter moves to the task's own, and its row is scrolled to.
+   * Consumed once (onRevealed), whether the list was up or not.
+   */
+  reveal?: string | null
+  onRevealed?(): void
 }
+
+type StatusFilter = TaskStatus | 'all' | 'open'
+
+/** The filter that shows `t`: Open while it is open, its own status once it is done or canceled. */
+const filterShowing = (t: Task | undefined): StatusFilter => (t && (t.status === 'done' || t.status === 'canceled') ? t.status : 'open')
 
 type SortKey = 'due' | 'priority' | 'updated'
 
 // No project column or chip, and a search that reads no project name: there is
 // one ongoing project, so it would say the same on every row.
-export function TasksTable({ tasks, onOpen, onNew, onDelete, inHousehold, myId, nameOf }: Props) {
+export function TasksTable({ tasks, onOpen, onNew, onDelete, inHousehold, myId, nameOf, reveal = null, onRevealed }: Props) {
   const [q, setQ] = useState('')
-  const [status, setStatus] = useState<TaskStatus | 'all' | 'open'>('open')
+  // a task handed over to show sets the filter as the list first draws, and
+  // again if one is handed over while the list is up
+  const [status, setStatus] = useState<StatusFilter>(() => (reveal ? filterShowing(tasks.find(t => t.id === reveal)) : 'open'))
+  const [revealed, setRevealed] = useState(reveal)
+  if (reveal !== revealed) {
+    setRevealed(reveal)
+    if (reveal) {
+      setStatus(filterShowing(tasks.find(t => t.id === reveal)))
+      setQ('')
+    }
+  }
+  useEffect(() => {
+    if (!reveal) return
+    onRevealed?.()
+    document.getElementById(`task-row-${reveal}`)?.scrollIntoView?.({ block: 'center', behavior: scrollBehavior() })
+  }, [reveal, onRevealed])
   const [priority, setPriority] = useState<Priority | 'all'>('all')
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: 'due', dir: 1 })
   const [notice, setNotice] = useState('')
@@ -71,8 +98,10 @@ export function TasksTable({ tasks, onOpen, onNew, onDelete, inHousehold, myId, 
    * the Trash is now an icon on the segment row above (TasksScreen).
    */
   const actions = (
-    <button className="btn" onClick={() => onNew({ status: 'done', completedAt: new Date().toISOString() })}>
-      Log something done
+    // quieter than a new task, which is + in the header: this one is for
+    // writing down what is already finished
+    <button type="button" className="btn subtle log-done" onClick={() => onNew({ status: 'done', completedAt: new Date().toISOString() })}>
+      ✓ Log a finished task
     </button>
   )
 
@@ -83,7 +112,7 @@ export function TasksTable({ tasks, onOpen, onNew, onDelete, inHousehold, myId, 
         {/* named, like every other control here: without a label a screen
             reader reads only the current option — "Open, combo box" — which
             says nothing about what it filters */}
-        <select aria-label="Filter by status" value={status} onChange={e => setStatus(e.target.value as TaskStatus | 'all' | 'open')}>
+        <select aria-label="Filter by status" value={status} onChange={e => setStatus(e.target.value as StatusFilter)}>
           <option value="open">Open</option>
           <option value="all">All statuses</option>
           {statusChoices.map(s => (
@@ -101,11 +130,11 @@ export function TasksTable({ tasks, onOpen, onNew, onDelete, inHousehold, myId, 
           ))}
         </select>
         {isNarrow && (
-          <span className="segmented sort-seg">
-            <button className={sort.key === 'due' ? 'seg on' : 'seg'} onClick={() => toggleSort('due')}>
+          <span className="segmented sort-seg" role="group" aria-label="Sort by">
+            <button type="button" className={sort.key === 'due' ? 'seg on' : 'seg'} aria-pressed={sort.key === 'due'} onClick={() => toggleSort('due')}>
               Due{sortArrow('due')}
             </button>
-            <button className={sort.key === 'priority' ? 'seg on' : 'seg'} onClick={() => toggleSort('priority')}>
+            <button type="button" className={sort.key === 'priority' ? 'seg on' : 'seg'} aria-pressed={sort.key === 'priority'} onClick={() => toggleSort('priority')}>
               Prio{sortArrow('priority')}
             </button>
           </span>
@@ -126,7 +155,7 @@ export function TasksTable({ tasks, onOpen, onNew, onDelete, inHousehold, myId, 
       {isNarrow ? (
         <ul className="mpost-list">
           {visible.map(t => (
-            <li key={t.id} className="mpost" onClick={() => onOpen(t)}>
+            <li key={t.id} id={`task-row-${t.id}`} className="mpost" onClick={() => onOpen(t)}>
               <div className="mpost-top">
                 <button type="button" className="row-open">
                   <span className="row-title">
@@ -142,7 +171,7 @@ export function TasksTable({ tasks, onOpen, onNew, onDelete, inHousehold, myId, 
                 {mark(t)}
                 <DueBadge task={t} />
                 <span className="spacer" />
-                <ConfirmButton className="btn subtle danger" stopPropagation confirmLabel="Sure? Click again" onConfirm={() => onDelete(t)}>
+                <ConfirmButton className="btn subtle danger" stopPropagation confirmLabel="Tap again to delete" onConfirm={() => onDelete(t)}>
                   Delete
                 </ConfirmButton>
               </div>
@@ -176,7 +205,7 @@ export function TasksTable({ tasks, onOpen, onNew, onDelete, inHousehold, myId, 
             </thead>
             <tbody>
               {visible.map(t => (
-                <tr key={t.id} onClick={() => onOpen(t)}>
+                <tr key={t.id} id={`task-row-${t.id}`} onClick={() => onOpen(t)}>
                   <td>
                     <button type="button" className="row-open row-title">
                       {t.title || excerpt(t.description, 48) || 'Untitled'}
@@ -195,7 +224,7 @@ export function TasksTable({ tasks, onOpen, onNew, onDelete, inHousehold, myId, 
                   <td className="cell-date">{t.dueAt ? <DueBadge task={t} /> : '—'}</td>
                   <td className="cell-date">{new Date(t.updatedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</td>
                   <td onClick={e => e.stopPropagation()}>
-                    <ConfirmButton className="btn subtle danger" stopPropagation confirmLabel="Sure? Click again" onConfirm={() => onDelete(t)}>
+                    <ConfirmButton className="btn subtle danger" stopPropagation confirmLabel="Tap again to delete" onConfirm={() => onDelete(t)}>
                       Delete
                     </ConfirmButton>
                   </td>

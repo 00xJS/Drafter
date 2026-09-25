@@ -22,6 +22,7 @@ import type { CookedIndex, KitchenMember, MealMain, VisitIndex } from '../kitche
 import { findsPlace, placeByName, placeEmoji, placeFor } from '../places'
 import type { Meal, MealSlot, Place, PlaceCategory, Recipe } from '../types'
 import { useDayKey } from '../useDayKey'
+import { spokenDay } from '../utils'
 import { ConfirmButton } from './ConfirmButton'
 import { Icon } from './Icon'
 import { Modal, ModalHead } from './Modal'
@@ -362,7 +363,7 @@ export function MealPicker({
           }
         }}
         placeholder="What are you cooking?"
-        aria-label={`Name of the new recipe for ${slot} on ${date}`}
+        aria-label={`Name of the new recipe for ${slot} on ${spokenDay(date)}`}
       />
       <button className="btn primary" onClick={addRecipe} disabled={!newName.trim()}>
         Save
@@ -377,7 +378,7 @@ export function MealPicker({
       name={newName}
       kind={newKind}
       places={places}
-      label={`Name of the place for ${slot} on ${date}`}
+      label={`Name of the place for ${slot} on ${spokenDay(date)}`}
       onName={setNewName}
       onKind={setNewKind}
       onSave={addPlace}
@@ -501,7 +502,7 @@ export function MealPicker({
         <footer className="modal-foot meal-pick-foot">
           <ConfirmButton
             className="btn subtle danger"
-            confirmLabel="Remove?"
+            confirmLabel="Tap again to remove"
             ariaLabel={`Remove ${meal.title}`}
             onConfirm={() => {
               onRemove()

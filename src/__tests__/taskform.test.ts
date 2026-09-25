@@ -8,6 +8,7 @@ import {
   cardUrl,
   commitStep,
   costsVisible,
+  dayOf,
   descriptionLinks,
   formReducer,
   formValues,
@@ -15,6 +16,7 @@ import {
   isDirty,
   isEmpty,
   isGithubCardUrl,
+  joinLocal,
   linkLabel,
   mergeOnto,
   money,
@@ -22,6 +24,7 @@ import {
   peopleSearch,
   pendingRenames,
   relinkGithub,
+  timeOf,
   unlinkGithub,
   urlsIn,
   versionNote,
@@ -521,5 +524,27 @@ describe('the Versions list', () => {
     expect(versionNote(lost)).toBe('Lost to a newer edit · ')
     expect(versionNote(older)).toBe('')
     expect(versionNote({ ...older, reason: 'stale' })).toBe('')
+  })
+})
+
+describe('a day, and a time if it has one', () => {
+  it('reads the day and the time out of the form’s one value, a day alone having no time', () => {
+    expect(dayOf('2026-09-30T18:05')).toBe('2026-09-30')
+    expect(timeOf('2026-09-30T18:05')).toBe('18:05')
+    expect(timeOf('2026-09-30T00:00')).toBe('')
+    expect(dayOf('')).toBe('')
+    expect(timeOf('')).toBe('')
+  })
+
+  it('writes a day alone as its local midnight, which saves as the day with no time', () => {
+    expect(joinLocal('2026-09-30', '', '2026-09-25')).toBe('2026-09-30T00:00')
+    expect(formValues({ ...initForm(task()), dueAt: joinLocal('2026-09-30', '', '2026-09-25') }, task(), false).dueAt).toBe(new Date(2026, 8, 30).toISOString())
+  })
+
+  it('puts a time on the day, takes one picked before any day as today’s, and makes nothing of neither', () => {
+    expect(joinLocal('2026-09-30', '14:30', '2026-09-25')).toBe('2026-09-30T14:30')
+    expect(joinLocal('', '14:30', '2026-09-25')).toBe('2026-09-25T14:30')
+    expect(joinLocal('', '', '2026-09-25')).toBe('')
+    expect(joinLocal('not a day', '', '2026-09-25')).toBe('')
   })
 })

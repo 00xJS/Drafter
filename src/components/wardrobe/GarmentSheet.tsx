@@ -11,7 +11,7 @@ import { costLine, garmentStats, outfitLabel, renamed, showingBack, starred, sug
 import { Bars } from '../bits'
 import { ConfirmButton } from '../ConfirmButton'
 import { Icon } from '../Icon'
-import { Modal, ModalHead } from '../Modal'
+import { Modal, ModalCancel, ModalHead } from '../Modal'
 import { CutoutLater, keptOffline } from './CutoutLater'
 import { GarmentView, hasBack, mainSide, type Side } from './GarmentPhoto'
 import { OccasionChoice, PieceDetails } from './PieceDetails'
@@ -279,13 +279,10 @@ function AddPiece({ preset, userId, onCreate, onClose }: { preset?: GarmentType;
     setSaving(false)
   }
   // a photo made ready and not saved is the one thing here worth asking about
-  const close = () => {
-    if ((ready || back.ready) && !window.confirm('Discard this photo?')) return
-    onClose()
-  }
+  const unsaved = !!(ready || back.ready)
 
   return (
-    <Modal onClose={close} className="modal narrow garment-sheet">
+    <Modal onClose={onClose} dirty={unsaved} className="modal narrow garment-sheet">
       <ModalHead title={queue.length > 1 ? `Add clothing · ${at + 1} of ${queue.length}` : 'Add clothing'}>
         {queue.length > 1 && (
           <button type="button" className="btn subtle" onClick={() => next()}>
@@ -408,9 +405,7 @@ function AddPiece({ preset, userId, onCreate, onClose }: { preset?: GarmentType;
       </div>
       <footer className="modal-foot">
         <span className="spacer" />
-        <button type="button" className="btn" onClick={close}>
-          Cancel
-        </button>
+        <ModalCancel />
         <button type="button" className="btn primary" disabled={waiting} onClick={() => void save()}>
           Save
         </button>

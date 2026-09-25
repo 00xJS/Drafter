@@ -185,7 +185,7 @@ export function ConnectionRow({
       >
         Rename
       </button>
-      <ConfirmButton className="btn subtle danger" confirmLabel="Revoke?" onConfirm={onRevoke}>
+      <ConfirmButton className="btn subtle danger" confirmLabel="Tap again to revoke" onConfirm={onRevoke}>
         Revoke
       </ConfirmButton>
     </li>

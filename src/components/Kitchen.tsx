@@ -63,13 +63,14 @@ import { fillRunDone, fillRunWithDraft, newFillRun, recipeWithDraft, splitDraft 
 import type { DraftIngredient, DraftSplit, FillRun, RecipeDraft } from '../recipefill'
 import { useDayKey } from '../useDayKey'
 import { haptic, openExternal } from '../native'
+import { lockAxis } from '../pull'
 import { ConfirmButton } from './ConfirmButton'
 import { RecipeCapture, draftNote, linkHost } from './kitchen/RecipeCapture'
 import type { CaptureMode } from './kitchen/RecipeCapture'
 import { RecipeFillFlow } from './kitchen/RecipeFillFlow'
 import { Icon } from './Icon'
 import { MealDayCard } from './kitchen/MealCards'
-import { Modal, ModalHead } from './Modal'
+import { Modal, ModalHead, useChanged } from './Modal'
 import { MealPlanSheet, mealsForPicks, type MealPick } from './MealPlanSheet'
 import { RecipeSuggestions } from './RecipeSuggestions'
 import { KitchenStats } from './planner/lazy'
@@ -501,9 +502,9 @@ export function Kitchen({ myId = null, nameOf, inHousehold, members = NO_MEMBERS
       {/* four segments on one row: a phone narrows their thumbs and caps their
           labels (.kitchen-seg), as Home's four are */}
       <div className="people-tab-seg kitchen-seg">
-        <span className="segmented">
+        <span className="segmented" role="group" aria-label="Kitchen view">
           {KITCHEN_TABS.map(t => (
-            <button key={t.key} className={seg === t.key ? 'seg on' : 'seg'} onClick={() => setTab(t.key)}>
+            <button key={t.key} type="button" aria-pressed={seg === t.key} className={seg === t.key ? 'seg on' : 'seg'} onClick={() => setTab(t.key)}>
               {t.label}
             </button>
           ))}
@@ -879,7 +880,8 @@ function WeekPlan({
   // while you meant to look at Friday.
   const land = (want: string | null | undefined) => (want && keys.includes(want) ? want : keys.includes(today) ? today : keys[0])
   const [picked, setPicked] = useState(() => land(focusDay))
-  const swipeFrom = useRef<number | null>(null)
+  /** A touch on the day's cards: where it began, and which way it has committed (lockAxis), once it has. */
+  const swipe = useRef<{ x: number; y: number; axis: 'x' | 'y' | null } | null>(null)
   // week.start is the week on screen (the page's memo, so it is a new one only
   // when the week is moved); a new week or a Stats day replaces the open letter
   const [pickedFor, setPickedFor] = useState({ start: week.start, focusDay })
@@ -961,14 +963,28 @@ function WeekPlan({
           id={`meal-day-${picked}`}
           className={'meal-day' + (picked === today ? ' today' : '') + ' picked'}
           onTouchStart={e => {
-            swipeFrom.current = e.changedTouches[0].clientX
+            const t = e.changedTouches[0]
+            swipe.current = { x: t.clientX, y: t.clientY, axis: null }
+          }}
+          // the same dead zone and tie-break as Home's swipe rows and the
+          // pull-down: a scroll down the cards that drifts sideways is still a
+          // scroll, and never turns the day
+          onTouchMove={e => {
+            const s = swipe.current
+            if (!s || s.axis) return
+            const t = e.changedTouches[0]
+            s.axis = lockAxis(t.clientX - s.x, t.clientY - s.y)
+          }}
+          onTouchCancel={() => {
+            swipe.current = null
           }}
           onTouchEnd={e => {
-            const from = swipeFrom.current
-            swipeFrom.current = null
-            if (from == null) return
-            const dx = e.changedTouches[0].clientX - from
-            if (Math.abs(dx) < 48) return
+            const s = swipe.current
+            swipe.current = null
+            if (!s) return
+            const t = e.changedTouches[0]
+            const dx = t.clientX - s.x
+            if ((s.axis ?? lockAxis(dx, t.clientY - s.y)) !== 'x' || Math.abs(dx) < 48) return
             stepDay(dx < 0 ? 1 : -1)
           }}
         >
@@ -1188,9 +1204,9 @@ function GroceryPane({
       ) : (
         <>
           <div className="grocery-filter-row">
-            <div className="segmented">
+            <div className="segmented" role="group" aria-label="Show">
               {(['need', 'have', 'done', 'all'] as const).map(f => (
-                <button key={f} className={filter === f ? 'seg on' : 'seg'} onClick={() => changeFilter(f)}>
+                <button key={f} type="button" className={filter === f ? 'seg on' : 'seg'} aria-pressed={filter === f} onClick={() => changeFilter(f)}>
                   {f === 'all' ? `All ${counts.all}` : `${GROCERY_STATE_META[f].label} ${counts[f]}`}
                 </button>
               ))}
@@ -1258,7 +1274,7 @@ function GroceryPane({
                   {/* two-step like every delete: the first tap arms it, a
                       second within four seconds takes the line off. The name
                       is in the button for a screen reader ("Remove Milk"). */}
-                  <ConfirmButton className="btn subtle grocery-remove" confirmLabel="Remove?" onConfirm={() => remove(line.id)}>
+                  <ConfirmButton className="btn subtle grocery-remove" confirmLabel="Tap again to remove" onConfirm={() => remove(line.id)}>
                     <span aria-hidden="true">✕</span>
                     <span className="grocery-sr">Remove {line.name}</span>
                   </ConfirmButton>
@@ -1626,7 +1642,7 @@ function DraftSpare({ spare, onIngredients, onSteps, onDismiss }: { spare: Draft
   )
 }
 
-function RecipeForm({
+export function RecipeForm({
   recipe,
   capture,
   draft,
@@ -1683,6 +1699,7 @@ function RecipeForm({
   const [spare, setSpare] = useState<DraftSplit['spare'] | null>(start.spare)
 
   const has = { ingredients: ingredients.some(i => i.name.trim() !== ''), steps: steps.trim() !== '' }
+  const dirty = useChanged({ name, emoji, servings, ingredients, qtyText, steps, tags, notes, sourceUrl })
   // an answer arrives after an await: it lands on what the fields hold then
   const now = useRef({ has, servings })
   useLayoutEffect(() => {
@@ -1778,8 +1795,12 @@ function RecipeForm({
   const servingCount = Number(servings)
 
   return (
-    <Modal onClose={onClose}>
-      <ModalHead title={recipe ? `Edit ${recipe.name}` : 'New recipe'} />
+    <Modal onClose={onClose} dirty={dirty}>
+      <ModalHead title={recipe ? `Edit ${recipe.name}` : 'New recipe'} variant="compose">
+        <button type="button" className="btn primary" onClick={save} disabled={!name.trim()}>
+          Save
+        </button>
+      </ModalHead>
       <div className="modal-body">
         <RecipeCapture
           name={name}
@@ -1814,7 +1835,9 @@ function RecipeForm({
         </div>
         <div className="field">
           <span>Ingredients</span>
-          {ingredients.map(ing => (
+          {ingredients.map((ing, n) => (
+            // three boxes a row with only placeholders to say what they are:
+            // each is named, with its row, for a screen reader
             <div key={ing.id} className="ing-row">
               <input
                 className="ing-qty"
@@ -1823,13 +1846,15 @@ function RecipeForm({
                 value={qtyText[ing.id] ?? (ing.qty != null ? String(ing.qty) : '')}
                 onChange={e => typeQty(ing.id, e.target.value)}
                 placeholder="1"
+                aria-label={`Ingredient ${n + 1}: amount`}
               />
-              <input className="ing-unit" value={ing.unit ?? ''} onChange={e => setIng(ing.id, { unit: e.target.value })} placeholder="cup" />
+              <input className="ing-unit" value={ing.unit ?? ''} onChange={e => setIng(ing.id, { unit: e.target.value })} placeholder="cup" aria-label={`Ingredient ${n + 1}: unit`} />
               <input
                 className="ing-name"
                 value={ing.name}
                 onChange={e => setIng(ing.id, { name: e.target.value })}
                 placeholder="onion"
+                aria-label={`Ingredient ${n + 1}: what it is`}
               />
             </div>
           ))}
@@ -1859,20 +1884,13 @@ function RecipeForm({
           </div>
         )}
       </div>
-      <footer className="modal-foot">
-        {recipe && onDelete && (
-          <ConfirmButton className="btn subtle danger" confirmLabel="Click again to remove" onConfirm={() => onDelete(recipe.id)}>
+      {recipe && onDelete && (
+        <footer className="modal-foot">
+          <ConfirmButton className="btn subtle danger" confirmLabel="Tap again to delete" onConfirm={() => onDelete(recipe.id)}>
             Delete
           </ConfirmButton>
-        )}
-        <span className="spacer" />
-        <button className="btn" onClick={onClose}>
-          Cancel
-        </button>
-        <button className="btn primary" onClick={save} disabled={!name.trim()}>
-          Save
-        </button>
-      </footer>
+        </footer>
+      )}
     </Modal>
   )
 }

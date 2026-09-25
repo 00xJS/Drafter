@@ -135,7 +135,8 @@ describe('the cards under an answer', () => {
       />,
     )
     expect(html).toContain('value="Call the plumber"')
-    expect(html).toContain('value="2026-09-25T00:00"')
+    // the day, with no time: a day field and a time field, the time left empty
+    expect(html).toMatch(/<input type="date" class="when-date"[^>]*value="2026-09-25"\/><input type="time" class="when-time" aria-label="Due time" value=""\/>/)
     expect(html).toContain('Only you can see this task')
   })
 })

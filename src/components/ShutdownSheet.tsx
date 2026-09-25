@@ -135,7 +135,7 @@ export function ShutdownSheet({
 
   return (
     // routine ticks and the journal are saved as they are made; only the choices below wait for Close the day
-    <Modal onClose={onClose} className="modal narrow plan-sheet shutdown-sheet" closeOnBackdrop={!dirty}>
+    <Modal onClose={onClose} className="modal narrow plan-sheet shutdown-sheet" dirty={dirty}>
       <ModalHead title="Shut down" variant="compose">
         <button type="button" className="btn primary" onClick={() => onApply(result)}>
           Close the day

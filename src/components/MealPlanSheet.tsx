@@ -10,7 +10,7 @@ import { useDayKey } from '../useDayKey'
 import { useNow } from '../useNow'
 import { aiFailureText } from './AskSheet'
 import { MealPicker } from './MealPicker'
-import { Modal, ModalHead } from './Modal'
+import { Modal, ModalCancel, ModalHead, useChanged } from './Modal'
 
 // "Plan this week's meals" on the Kitchen tab: a pick for every empty dinner
 // (and lunch, when asked) from the kitchen's own ranking in shared/weekplan.mts,
@@ -350,6 +350,8 @@ export function MealPlanSheet({ week, items, events, recipes, places, meals, myI
     )
 
   const picks: MealPick[] = rows.filter(r => r.on && r.choice).map(r => ({ date: r.date, slot: r.slot, choice: r.choice! }))
+  // a pick changed, a night ticked off or a request typed: what closing would lose
+  const dirty = useChanged({ rows: rows.map(r => [r.key, r.on, r.choice]), request })
   const apply = () => {
     const res = onApply(picks)
     if (!res) {
@@ -397,7 +399,7 @@ export function MealPlanSheet({ week, items, events, recipes, places, meals, myI
     )
 
   return (
-    <Modal onClose={onClose} className="modal meal-plan-sheet">
+    <Modal onClose={onClose} dirty={dirty} className="modal meal-plan-sheet">
       <ModalHead title="Plan this week’s meals" />
       <div className="modal-body">
         <p className="week-plan-sub">
@@ -529,9 +531,7 @@ export function MealPlanSheet({ week, items, events, recipes, places, meals, myI
       </div>
       <footer className="modal-foot">
         <span className="spacer" />
-        <button className="btn" onClick={onClose}>
-          Cancel
-        </button>
+        <ModalCancel />
         <button className="btn primary" disabled={picks.length === 0} onClick={apply}>
           Plan {picks.length} meal{picks.length === 1 ? '' : 's'}
         </button>

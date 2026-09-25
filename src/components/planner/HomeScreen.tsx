@@ -1,5 +1,5 @@
 import { memberName } from '../../household'
-import { newerStamp } from '../../itemops'
+import { newerStamp, trashedLine } from '../../itemops'
 import { localDayKey } from '../../journal'
 import { Today } from '../Today'
 import type { PlannerCtx } from './ctx'
@@ -63,7 +63,7 @@ export function HomeScreen({ p }: { p: PlannerCtx }) {
           onSaveJournal={e => upsert(e)}
           onDeleteJournal={id => {
             remove(id)
-            showToast('Journal entry removed', () => restore([id]))
+            showToast(trashedLine(null, 'Journal entry'), () => restore([id]))
           }}
           onOpenJournal={() => openJournal(localDayKey())}
           name={household.info?.me.displayName ?? undefined}
@@ -72,14 +72,16 @@ export function HomeScreen({ p }: { p: PlannerCtx }) {
           habits={store.habits}
           onSaveHabit={h => upsert(h)}
           onDeleteHabit={id => {
+            const habit = store.habits.find(h => h.id === id)
             remove(id)
-            showToast('Habit removed', () => restore([id]))
+            showToast(trashedLine(habit?.name, 'Habit'), () => restore([id]))
           }}
           routines={store.routines}
           onSaveRoutine={r => upsert(r)}
           onDeleteRoutine={id => {
+            const routine = store.routines.find(r => r.id === id)
             remove(id)
-            showToast('Routine removed', () => restore([id]))
+            showToast(trashedLine(routine?.name, 'Routine'), () => restore([id]))
           }}
           // the daily routines: whose focus is whose, each focus task's time
           // block, the strip's Plan my day / Shut down, Sunday's Plan next

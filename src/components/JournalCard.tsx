@@ -269,7 +269,7 @@ export function JournalEditor({ entry, date, people, onSave, onDelete, autoFocus
         {showDelete && (entry || createdHere) && onDelete && (
           <ConfirmButton
             className="btn subtle danger"
-            confirmLabel="Click again to delete"
+            confirmLabel="Tap again to delete"
             onConfirm={() => {
               window.clearTimeout(timer.current)
               const id = (entry ?? created.current)!.id

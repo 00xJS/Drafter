@@ -1,4 +1,5 @@
 import { memberName } from '../../household'
+import { trashedLine } from '../../itemops'
 import type { PlannerCtx } from './ctx'
 import { Kitchen } from './lazy'
 
@@ -22,8 +23,10 @@ export function KitchenScreen({ p }: { p: PlannerCtx }) {
       onCreateRecipe={createRecipeInline}
       onSave={item => upsert(item)}
       onDelete={id => {
+        // a recipe, from its form: said by its name, as every move to the Trash is
+        const recipe = store.recipes.find(r => r.id === id)
         remove(id)
-        showToast('Removed', () => restore([id]))
+        showToast(trashedLine(recipe?.name, 'Recipe'), () => restore([id]))
       }}
       openRecipe={kitchenRecipe}
       onOpenRecipeConsumed={() => setKitchenRecipe(null)}

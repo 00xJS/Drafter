@@ -1,15 +1,37 @@
+import { useEffect, useState } from 'react'
 import { memberName } from '../../household'
 import { Icon } from '../Icon'
-import { inTrash, newerStamp } from '../../itemops'
+import { inTrash, newerStamp, trashedLine } from '../../itemops'
 import type { Account } from '../../types'
 import type { PlannerCtx } from './ctx'
 import { Board, Finance, NotesView, TasksTable } from './lazy'
 import { TASKS_TABS } from './routes'
 
+/** Set once this device has shown the line that says what Tasks is. */
+export const TASKS_NOTE_KEY = 'drafter:tasks-note-seen'
+
+// Read and written out here: the React Compiler leaves a component with a try
+// in it as written. Storage that cannot be read counts as seen — the line is
+// a welcome, not something to repeat on every visit.
+function tasksNoteSeen(): boolean {
+  try {
+    return localStorage.getItem(TASKS_NOTE_KEY) === '1'
+  } catch {
+    return true
+  }
+}
+function markTasksNoteSeen(): void {
+  try {
+    localStorage.setItem(TASKS_NOTE_KEY, '1')
+  } catch {
+    /* ignore */
+  }
+}
+
 /** Tasks: the list, the board, Finance and the project notes, four segments of one tab. */
 export function TasksScreen({ p }: { p: PlannerCtx }) {
   const { store, upsert, remove, restore, household, projectMap, inHousehold } = p
-  const { tasksTab, setTasksTab, notesProjectId, setNotesProjectId, setTrashOpen, noteOpenId, setNoteOpenId, financeCheckIn, setFinanceCheckIn } = p
+  const { tasksTab, setTasksTab, notesProjectId, setNotesProjectId, setTrashOpen, noteOpenId, setNoteOpenId, financeCheckIn, setFinanceCheckIn, financeBill, setFinanceBill, taskShown, setTaskShown } = p
   const { openTask, newTask, deleteTask, changeStatus, applyStatus, showToast } = p
   // a change of an account's with an Undo that puts back the account as it was (or takes a new one away)
   const undoAccount = (before: Account | null, after: Account) => () => (before ? upsert({ ...before, updatedAt: newerStamp(after.updatedAt) }) : remove(after.id))
@@ -17,6 +39,13 @@ export function TasksScreen({ p }: { p: PlannerCtx }) {
   // segment row now. `inTrash` is the Trash's own rule, imported rather than
   // repeated, so the badge and the list always say the same number.
   const trashCount = store.visibleItems.filter(inTrash).length
+  // the Finance segment tapped while Finance is up: Finance goes back to its pay periods
+  const [financeHome, setFinanceHome] = useState(0)
+  // what Tasks is, said on this device's first visit and not on every one after
+  const [firstVisit] = useState(() => !tasksNoteSeen())
+  useEffect(() => {
+    if (firstVisit) markTasksNoteSeen()
+  }, [firstVisit])
 
   // a map lookup so an id whose project was deleted degrades to the index
   const notesProject = notesProjectId ? projectMap.get(notesProjectId) : undefined
@@ -26,11 +55,21 @@ export function TasksScreen({ p }: { p: PlannerCtx }) {
       {/* one workspace, four lenses on the same project data — the list, the
           board, the money (bills, paydays and accounts) and the project notes.
           Finance opens on what is safe to spend, not on this line about tasks. */}
-      {tasksTab !== 'bills' && <p className="field-hint tasks-home-note">The day is on Home. This is every task — the list, the board, the money and the notes.</p>}
+      {firstVisit && tasksTab !== 'bills' && <p className="field-hint tasks-home-note">The day is on Home. This is every task — the list, the board, the money and the notes.</p>}
       <div className="people-tab-seg with-trash">
         <span className="segmented" role="tablist" aria-label="Tasks view">
           {TASKS_TABS.map(t => (
-            <button key={t.key} type="button" role="tab" aria-selected={tasksTab === t.key} className={tasksTab === t.key ? 'seg on' : 'seg'} onClick={() => setTasksTab(t.key)}>
+            <button
+              key={t.key}
+              type="button"
+              role="tab"
+              aria-selected={tasksTab === t.key}
+              className={tasksTab === t.key ? 'seg on' : 'seg'}
+              onClick={() => {
+                if (t.key === 'bills' && tasksTab === 'bills') setFinanceHome(n => n + 1)
+                setTasksTab(t.key)
+              }}
+            >
               {t.label}
             </button>
           ))}
@@ -60,6 +99,8 @@ export function TasksScreen({ p }: { p: PlannerCtx }) {
           inHousehold={inHousehold}
           myId={household.myId}
           nameOf={id => memberName(household.info, id)}
+          reveal={taskShown}
+          onRevealed={() => setTaskShown(null)}
         />
       )}
       {tasksTab === 'board' && (
@@ -101,7 +142,7 @@ export function TasksScreen({ p }: { p: PlannerCtx }) {
           onArchiveTask={(t, archive) => {
             const change = applyStatus(t.id, archive ? 'canceled' : 'todo')
             if (!change) return
-            showToast(`${archive ? 'Archived' : 'Restored'} “${t.title || 'Untitled'}”`, () => {
+            showToast(`${archive ? 'Archived' : 'Unarchived'} “${t.title || 'Untitled'}”`, () => {
               upsert({ ...change.prev, updatedAt: newerStamp(change.next.updatedAt) })
               if (change.spawnedId) remove(change.spawnedId)
             })
@@ -111,8 +152,9 @@ export function TasksScreen({ p }: { p: PlannerCtx }) {
             showToast(message, undoAccount(before, after))
           }}
           onRemoveAccount={id => {
+            const account = store.accounts.find(a => a.id === id)
             remove(id)
-            showToast('Account removed', () => restore([id]))
+            showToast(trashedLine(account?.name, 'Account'), () => restore([id]))
           }}
           onCheckIn={(changes, done) => {
             for (const c of changes) upsert(c.after)
@@ -134,6 +176,9 @@ export function TasksScreen({ p }: { p: PlannerCtx }) {
           }}
           checkIn={financeCheckIn}
           onCheckInOpened={() => setFinanceCheckIn(false)}
+          addBill={financeBill}
+          onAddBillOpened={() => setFinanceBill(false)}
+          home={financeHome}
         />
       )}
       {tasksTab === 'notes' && (
@@ -156,7 +201,7 @@ export function TasksScreen({ p }: { p: PlannerCtx }) {
           onDeleteNote={id => {
             const note = store.notes.find(x => x.id === id)
             remove(id)
-            showToast(`“${note?.title || 'Untitled note'}” moved to Trash`, () => restore([id]))
+            showToast(trashedLine(note?.title, 'Untitled note'), () => restore([id]))
           }}
           // a note picked in the palette's search opens once, then is forgotten
           openNoteId={noteOpenId ?? undefined}

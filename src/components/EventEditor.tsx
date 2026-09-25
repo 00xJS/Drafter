@@ -1,10 +1,12 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { CalendarEntry, Person, WORK_MODES, WORK_MODE_META, WorkMode, isWorkingMode } from '../types'
 import { newerStamp } from '../itemops'
+import { dayOf, joinLocal, timeOf } from '../taskform'
 import { uid } from '../utils'
 import { expandWorkDays } from '../calendars'
-import { Modal, ModalHead } from './Modal'
+import { Modal, ModalHead, useChanged } from './Modal'
 import { PeoplePicker } from './PeoplePicker'
+import { WhenFields } from './taskeditor/DueFields'
 
 // The one thing a task cannot express: a block of time with a start AND an end.
 // Everything else on the calendar marks a moment (a due time, a meal, an
@@ -12,7 +14,7 @@ import { PeoplePicker } from './PeoplePicker'
 // attached — home or the office, and their working hours, or Off / a holiday
 // as the whole day.
 
-/** 'YYYY-MM-DDTHH:MM' in local time, which is what <input type="datetime-local"> speaks. */
+/** 'YYYY-MM-DDTHH:MM' in local time: Starts and Ends as their day and time fields hold them together (WhenFields). */
 function toLocalInput(iso: string): string {
   const d = new Date(iso)
   if (isNaN(d.getTime())) return ''
@@ -24,14 +26,20 @@ function fromLocalInput(v: string): string | null {
   return isNaN(d.getTime()) ? null : d.toISOString()
 }
 
-/** The day after a YYYY-MM-DD key. All-day ends are exclusive, per the ICS convention. */
-function nextDayKey(key: string): string {
+/** The day `n` days after a YYYY-MM-DD key (before, for a negative n). */
+function addDays(key: string, n: number): string {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(key)
   if (!m) return key
   const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])))
-  d.setUTCDate(d.getUTCDate() + 1)
+  d.setUTCDate(d.getUTCDate() + n)
   return d.toISOString().slice(0, 10)
 }
+
+/** The day after a YYYY-MM-DD key. All-day ends are exclusive, per the ICS convention. */
+const nextDayKey = (key: string) => addDays(key, 1)
+
+/** Whole days from one YYYY-MM-DD key to another. */
+const daysFrom = (a: string, b: string) => Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86_400_000)
 
 const pad = (n: number) => String(n).padStart(2, '0')
 
@@ -158,6 +166,8 @@ export function EventEditor({
   const [notes, setNotes] = useState(entry?.notes ?? '')
   const [peopleIds, setPeopleIds] = useState<string[]>(entry?.peopleIds ?? [])
   const [error, setError] = useState('')
+  const ids = useId()
+  const dirty = useChanged({ work, title, allDay, startLocal, endLocal, startDay, workDay, from, to, repeatDays, repeatWeeks, location, notes, peopleIds })
 
   const build = (f: { title: string; start: string; end: string; allDay: boolean }, keepId: boolean): CalendarEntry =>
     buildEntry(entry, f, { location, notes, work, peopleIds }, keepId)
@@ -231,9 +241,11 @@ export function EventEditor({
       end = nextDayKey(startDay)
     } else {
       const s = fromLocalInput(startLocal)
-      const e = fromLocalInput(endLocal)
+      // an end with no time on the start's own day says no more than "that
+      // day": it takes the hour an end left out always has
+      const e = timeOf(endLocal) || dayOf(endLocal) !== dayOf(startLocal) ? fromLocalInput(endLocal) : null
       if (!s) {
-        setError('Pick a start time.')
+        setError('Pick the day it starts.')
         return
       }
       // An end before the start would draw a backwards block. Say so rather
@@ -249,6 +261,15 @@ export function EventEditor({
     onClose()
   }
 
+  /** A new start, with the end's day moved along with it: the same number of days on, so a day's event stays that day's. */
+  const moveStart = (next: string) => {
+    const was = dayOf(startLocal)
+    const now = dayOf(next)
+    const end = dayOf(endLocal)
+    if (was && now && end && was !== now) setEndLocal(joinLocal(addDays(end, daysFrom(was, now)), timeOf(endLocal), ''))
+    setStartLocal(next)
+  }
+
   const save = () => (work ? saveWork(work) : saveEvent())
   const onEnter = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') save()
@@ -256,8 +277,12 @@ export function EventEditor({
   const heading = entry ? (work ? 'Edit work day' : 'Edit event') : work ? 'New work day' : 'New event'
 
   return (
-    <Modal onClose={onClose} className="modal event-modal">
-      <ModalHead title={heading} />
+    <Modal onClose={onClose} dirty={dirty} className="modal event-modal">
+      <ModalHead title={heading} variant="compose">
+        <button type="button" className="btn primary" onClick={save}>
+          Save
+        </button>
+      </ModalHead>
 
       <div className="modal-body">
         {!entry && (
@@ -359,15 +384,17 @@ export function EventEditor({
                 <input type="date" value={startDay} onChange={e => setStartDay(e.target.value)} />
               </label>
             ) : (
+              // a day and a time each, never one date-and-time field: an iPhone
+              // can leave that one empty when only its date is picked
               <>
-                <label className="field">
-                  <span>Starts</span>
-                  <input type="datetime-local" value={startLocal} onChange={e => setStartLocal(e.target.value)} />
-                </label>
-                <label className="field">
-                  <span>Ends</span>
-                  <input type="datetime-local" value={endLocal} onChange={e => setEndLocal(e.target.value)} />
-                </label>
+                <div className="field">
+                  <span id={`${ids}-starts`}>Starts</span>
+                  <WhenFields value={startLocal} onChange={moveStart} labelId={`${ids}-starts`} timeLabel="Start time" />
+                </div>
+                <div className="field">
+                  <span id={`${ids}-ends`}>Ends</span>
+                  <WhenFields value={endLocal} onChange={setEndLocal} labelId={`${ids}-ends`} timeLabel="End time" />
+                </div>
               </>
             )}
 
@@ -400,9 +427,10 @@ export function EventEditor({
         {error && <p className="form-error">{error}</p>}
       </div>
 
-      <footer className="modal-foot">
-        {entry && onDelete && (
+      {entry && onDelete && (
+        <footer className="modal-foot">
           <button
+            type="button"
             className="btn danger"
             onClick={() => {
               onDelete(entry.id)
@@ -411,15 +439,8 @@ export function EventEditor({
           >
             Delete
           </button>
-        )}
-        <span className="spacer" />
-        <button className="btn subtle" onClick={onClose}>
-          Cancel
-        </button>
-        <button className="btn primary" onClick={save}>
-          Save
-        </button>
-      </footer>
+        </footer>
+      )}
     </Modal>
   )
 }

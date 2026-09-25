@@ -108,7 +108,7 @@ export function AssignFields({ form, set, members, candidates, taskId, myId, own
           <span>Who can see it</span>
           {mine ? (
             <>
-              <div className="segmented">
+              <div className="segmented" role="group" aria-label="Who can see it">
                 <button type="button" className={shared ? 'seg on' : 'seg'} aria-pressed={shared} onClick={() => set({ shared: true })}>
                   👥 Shared
                 </button>
@@ -145,9 +145,9 @@ export function AssignFields({ form, set, members, candidates, taskId, myId, own
         <>
       <div className="field">
         <span>Status</span>
-        <div className="segmented wrap">
+        <div className="segmented wrap" role="group" aria-label="Status">
           {pickerStatuses(status).map(s => (
-            <button key={s} type="button" className={status === s ? 'seg on' : 'seg'} onClick={() => set({ status: s })}>
+            <button key={s} type="button" className={status === s ? 'seg on' : 'seg'} aria-pressed={status === s} onClick={() => set({ status: s })}>
               {STATUS_META[s].label}
             </button>
           ))}
@@ -156,9 +156,16 @@ export function AssignFields({ form, set, members, candidates, taskId, myId, own
 
       <div className="field">
         <span>Priority</span>
-        <div className="segmented">
+        <div className="segmented" role="group" aria-label="Priority">
           {PRIORITIES.map(p => (
-            <button key={p} type="button" className={priority === p ? 'seg on' : 'seg'} onClick={() => set({ priority: p })} style={priority === p ? { color: PRIORITY_META[p].color } : undefined}>
+            <button
+              key={p}
+              type="button"
+              className={priority === p ? 'seg on' : 'seg'}
+              aria-pressed={priority === p}
+              onClick={() => set({ priority: p })}
+              style={priority === p ? { color: PRIORITY_META[p].color } : undefined}
+            >
               {PRIORITY_META[p].label}
             </button>
           ))}

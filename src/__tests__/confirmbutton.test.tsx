@@ -28,18 +28,18 @@ describe('ConfirmButton can be given a name', () => {
   it('keeps the name while armed and adds the confirm step, which a screen reader would otherwise never hear', () => {
     armed.on = true
     const html = renderToStaticMarkup(
-      <ConfirmButton ariaLabel="Delete Milk" confirmLabel="Sure?" onConfirm={() => {}}>
+      <ConfirmButton ariaLabel="Delete Milk" confirmLabel="Tap again to delete" onConfirm={() => {}}>
         ✕
       </ConfirmButton>,
     )
-    expect(html).toBe('<button type="button" class="btn danger armed" aria-label="Delete Milk: Sure?">Sure?</button>')
+    expect(html).toBe('<button type="button" class="btn danger armed" aria-label="Delete Milk: Tap again to delete">Tap again to delete</button>')
   })
 
   it('adds no aria-label when it is not given one, armed or not', () => {
     expect(renderToStaticMarkup(<ConfirmButton onConfirm={() => {}}>Delete</ConfirmButton>)).toBe('<button type="button" class="btn danger">Delete</button>')
     armed.on = true
     expect(renderToStaticMarkup(<ConfirmButton onConfirm={() => {}}>Delete</ConfirmButton>)).toBe(
-      '<button type="button" class="btn danger armed">Click again to delete</button>',
+      '<button type="button" class="btn danger armed">Tap again to delete</button>',
     )
   })
 })

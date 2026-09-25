@@ -114,7 +114,7 @@ describe('the task editor', () => {
     expect(html).not.toContain('aria-label="Close"')
     expect(html).not.toContain('✕')
     expect(html).toContain('<span>Title</span>')
-    expect(html).toContain('<span>Due</span>')
+    expect(html).toMatch(/<span id="[^"]*">Due<\/span>/)
     expect(html).toContain('>More details</button>')
     expect(html).not.toContain('<span>Checklist')
     expect(html).not.toContain('<span>Status</span>')

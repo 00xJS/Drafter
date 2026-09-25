@@ -4,14 +4,14 @@ interface Props {
   onConfirm(): void
   /** Idle label. */
   children: React.ReactNode
-  /** Label while armed (second click confirms). */
+  /** Label while armed: "Tap again to …" (the second tap confirms). */
   confirmLabel?: string
   className?: string
   title?: string
   /**
    * The button's accessible name, for when its text alone does not say what it
    * acts on (a bare ✕). While armed the confirm step follows it ("Delete Milk:
-   * Click again to delete"), or a screen reader would never hear that step.
+   * Tap again to delete"), or a screen reader would never hear that step.
    */
   ariaLabel?: string
   /**
@@ -23,10 +23,11 @@ interface Props {
 }
 
 /**
- * Two-step destructive button: the first click arms it, a second click within
- * 4 seconds confirms. Clicking elsewhere, pressing a key or waiting disarms it.
+ * Two-step destructive button: the first tap arms it, and its label says
+ * "Tap again to …" — the one wording every confirm step uses; a second tap
+ * within 4 seconds confirms. A tap elsewhere, a key or waiting disarms it.
  */
-export function ConfirmButton({ onConfirm, children, confirmLabel = 'Click again to delete', className = 'btn danger', title, ariaLabel, tip, stopPropagation }: Props) {
+export function ConfirmButton({ onConfirm, children, confirmLabel = 'Tap again to delete', className = 'btn danger', title, ariaLabel, tip, stopPropagation }: Props) {
   const [armed, setArmed] = useState(false)
   const timer = useRef<number | undefined>(undefined)
   const name = ariaLabel ?? tip

@@ -12,8 +12,9 @@ import { fromLocalInput, toLocalInput } from './utils'
  */
 
 /**
- * Every field the editor edits, as its input holds it: dates as datetime-local
- * text, tags and money as typed. A task's old `notes` and `link` are not here:
+ * Every field the editor edits, as its inputs hold it: dates as datetime-local
+ * text (a day field and a time field together, joinLocal), tags and money as
+ * typed. A task's old `notes` and `link` are not here:
  * the editor shows them inside the description (see foldedDescription), and
  * the Task type and the sanitizer keep both for older clients and legacy rows.
  */
@@ -131,6 +132,40 @@ export function formReducer(form: TaskForm, action: FormAction): TaskForm {
       return next
     }
   }
+}
+
+// ---- a day, and a time if it has one ------------------------------------------------
+//
+// The editor asks for a due date (and when it was done) as a date field and a
+// time field, never one date-and-time field: on an iPhone that one can be left
+// holding no value at all when only its date is picked, which is how two
+// paydays were saved with no date. The form still keeps one datetime-local
+// value, so what a save writes is what it always was.
+
+const DAY = /^\d{4}-\d{2}-\d{2}$/
+const HM = /^\d{2}:\d{2}/
+
+/** The day half of a datetime-local value, '' when there is none. */
+export function dayOf(local: string): string {
+  const day = local.slice(0, 10)
+  return DAY.test(day) ? day : ''
+}
+
+/** Its time, '' for a day with no time: local midnight, which is how every due date reads a day alone (hasDueTime). */
+export function timeOf(local: string): string {
+  const time = local.slice(11, 16)
+  return HM.test(time) && time !== '00:00' ? time : ''
+}
+
+/**
+ * A datetime-local value from the two fields. A day alone is its local
+ * midnight, as money's days are; a time picked before any day is today's
+ * (`today`, a YYYY-MM-DD), as iOS Reminders takes one; neither is nothing.
+ */
+export function joinLocal(day: string, time: string, today: string): string {
+  const d = DAY.test(day) ? day : HM.test(time) && DAY.test(today) ? today : ''
+  if (!d) return ''
+  return `${d}T${HM.test(time) ? time.slice(0, 5) : '00:00'}`
 }
 
 // ---- the checklist -----------------------------------------------------------

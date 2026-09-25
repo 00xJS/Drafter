@@ -14,6 +14,7 @@ import {
   useGooglePush,
   useMicrosoftSync,
 } from '../../calendarstate'
+import { trashedLine } from '../../itemops'
 import { flushPendingMedia } from '../../media'
 import { requestWeatherRefresh } from '../../weather'
 import type { useToast } from './useToast'
@@ -131,7 +132,7 @@ export function useCalendarSync({ store, household, showToast }: Deps) {
   }
   const deleteEvent = (id: string) => {
     const gone = removeEvent(id)
-    showToast('Event deleted', () => {
+    showToast(trashedLine(gone?.title, 'Event'), () => {
       store.restore([id])
       // Undo has to put it back on the mirrors too, or it lives only in Drafter
       if (gone) mirrorEvent(gone, { revive: true })

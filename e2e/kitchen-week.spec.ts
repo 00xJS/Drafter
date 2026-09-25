@@ -42,7 +42,7 @@ test('This week: an idea, the picker, Leftovers and a star', async ({ page, app 
   await expect(cookRows.nth(1)).toContainText('At home, nothing new to cook')
   await picker.getByRole('tab', { name: 'Eat out' }).click()
   await picker.getByRole('button', { name: 'Somewhere new…' }).click()
-  await picker.getByRole('textbox', { name: `Name of the place for dinner on ${app.today}` }).fill('Luna’s Pizza')
+  await picker.getByRole('textbox', { name: `Name of the place for dinner on ${app.spokenToday}` }).fill('Luna’s Pizza')
   await picker.getByRole('radio', { name: 'Restaurant' }).click()
   await picker.getByRole('button', { name: 'Save', exact: true }).click()
   await expect(picker).toBeHidden()

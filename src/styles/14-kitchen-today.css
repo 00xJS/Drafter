@@ -487,7 +487,7 @@
 
 /* ---------- Grocery: taking a line off the list ---------- */
 /* The ✕ at the end of a line: quiet until its first tap arms it (.btn.armed
-   paints it red and it reads "Remove?"); a second tap within four seconds takes
+   paints it red and it reads "Tap again to remove"); a second tap within four seconds takes
    the line off. flex: none, so the name gives way to it rather than the row. */
 .grocery-remove {
   flex: none;
@@ -588,7 +588,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* the chip's ✕: quiet until its first tap arms it (.btn.armed reads "Remove?"),
+/* the chip's ✕: quiet until its first tap arms it (.btn.armed reads "Tap again to remove"),
    like the grocery line's */
 .meal-side-remove {
   flex: none;
@@ -682,29 +682,6 @@
    in 11-people-review-search.css); these are the Kitchen's own
    pieces. The grocery list's rules are not in this block.
    ============================================================ */
-.meal-plan-cta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px 12px;
-  margin: 0 0 12px;
-  padding: 12px 14px;
-  border: 1px solid var(--accent-ring);
-  border-radius: var(--radius);
-  background: var(--accent-soft);
-}
-.meal-plan-cta p {
-  flex: 1;
-  min-width: 12rem;
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.meal-plan-cta small {
-  color: var(--text-2);
-  font-size: 0.8125rem;
-}
 .meal-plan-lunch {
   display: inline-flex;
   align-items: center;
@@ -801,14 +778,10 @@
   .recipe-suggest-actions .btn {
     flex: 1;
   }
-  .meal-plan-cta .btn {
-    width: 100%;
-  }
 }
 @media (pointer: coarse) {
   .recipe-suggest-actions .btn,
   .recipe-suggest .chart-head .btn,
-  .meal-plan-cta .btn,
   .meal-plan-ai .btn {
     min-height: 44px;
   }

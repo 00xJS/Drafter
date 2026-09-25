@@ -46,7 +46,7 @@ export function OtherCalendars({ store, calendars }: SettingsCtx) {
                   <small>{calendars.events.filter(e => e.sourceId === c.id).length} events</small>
                 )}
               </span>
-              <ConfirmButton className="btn subtle danger" confirmLabel="Sure?" onConfirm={() => store.remove(c.id)}>
+              <ConfirmButton className="btn subtle danger" confirmLabel="Tap again to remove" onConfirm={() => store.remove(c.id)}>
                 Remove
               </ConfirmButton>
             </li>

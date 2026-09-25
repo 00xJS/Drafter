@@ -77,8 +77,9 @@ function elements(names: string) {
 }
 
 describe('every dialog is a Modal', () => {
-  // an attribute, not PullToRefresh's `[role="dialog"]` selector
-  const ROLE_DIALOG = /\srole=\{?["'`]dialog["'`]\}?/
+  // an attribute, not PullToRefresh's `[role="dialog"]` selector: written
+  // out, or worked out in braces, and an alert dialog is one as much as any
+  const ROLE_DIALOG = /\srole=(?:\{?["'`](?:alert)?dialog["'`]\}?|\{[^}]*["'`](?:alert)?dialog["'`][^}]*\})/
 
   it('writes role="dialog" by hand only in Modal and the lock screen', () => {
     // LockGate is a gate: Escape must never close it, so it is not a Modal
@@ -148,5 +149,12 @@ describe('the dialog shell and the top bar stay quiet', () => {
       }
       expect(readFileSync(path, 'utf8'), rel).not.toMatch(/haptic\(/)
     }
+  })
+})
+
+describe('Reduce Motion', () => {
+  it('is asked by every scroll a component starts (scrollBehavior): none is smooth by hand', () => {
+    const byHand = files.filter(f => /behavior:\s*['"]smooth['"]/.test(f.src)).map(f => f.path)
+    expect(byHand).toEqual([])
   })
 })

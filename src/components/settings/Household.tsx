@@ -64,7 +64,7 @@ export function Household({ store, household, supabaseOn }: SettingsCtx) {
             <strong>{household.info.household.name}</strong>
             <small className="muted">{household.info.members.length} member{household.info.members.length === 1 ? '' : 's'}</small>
             <span className="spacer" />
-            <ConfirmButton className="btn subtle danger" confirmLabel="Leave household?" onConfirm={() => runHh(() => householdAction('leave'))}>
+            <ConfirmButton className="btn subtle danger" confirmLabel="Tap again to leave" onConfirm={() => runHh(() => householdAction('leave'))}>
               Leave
             </ConfirmButton>
           </p>
@@ -76,7 +76,7 @@ export function Household({ store, household, supabaseOn }: SettingsCtx) {
                   {m.displayName} <small>· {m.email}{m.role === 'owner' ? ' · owner' : ''}{m.id === household.myId ? ' · you' : ''}</small>
                 </span>
                 {m.id !== household.myId && household.info?.members.find(x => x.id === household.myId)?.role === 'owner' && (
-                  <ConfirmButton className="btn subtle danger" confirmLabel="Remove?" onConfirm={() => runHh(() => householdAction('remove', { userId: m.id }))}>
+                  <ConfirmButton className="btn subtle danger" confirmLabel="Tap again to remove" onConfirm={() => runHh(() => householdAction('remove', { userId: m.id }))}>
                     Remove
                   </ConfirmButton>
                 )}

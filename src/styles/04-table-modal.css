@@ -109,6 +109,29 @@
   justify-self: end;
 }
 
+/* "Discard changes?" (Modal's DiscardPrompt): a small card over the sheet that
+   asks, never a sheet of its own size. It has no title bar, so no grab handle:
+   a question is answered, not dragged away. */
+.modal.discard-prompt {
+  width: 360px;
+}
+.discard-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px;
+}
+.discard-body h2 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+.discard-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .editor-more {
   align-self: flex-start;
 }

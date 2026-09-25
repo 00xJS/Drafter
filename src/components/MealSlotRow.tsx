@@ -8,6 +8,7 @@ import {
   mealLabel,
   mealPicked,
   mealSides,
+  mealsForSlot,
   mealWithSide,
   mealWithoutSide,
   recipeByName,
@@ -16,6 +17,7 @@ import {
   type VisitIndex,
 } from '../kitchen'
 import { placeEmoji } from '../places'
+import { spokenDay } from '../utils'
 import { ConfirmButton } from './ConfirmButton'
 import { Icon } from './Icon'
 import { MealPicker, type MealChoice } from './MealPicker'
@@ -100,7 +102,7 @@ export function MealSides({
           type="button"
           className="btn subtle meal-side-add"
           aria-expanded={open}
-          aria-label={`Add a side to ${slotName} on ${date}`}
+          aria-label={`Add a side to ${slotName} on ${spokenDay(date)}`}
           onClick={() => {
             setName('')
             setOpen(o => !o)
@@ -114,7 +116,7 @@ export function MealSides({
           <span className="meal-sides-with" aria-hidden="true">
             with
           </span>
-          <ul aria-label={`Sides with ${slotName} on ${date}`}>
+          <ul aria-label={`Sides with ${slotName} on ${spokenDay(date)}`}>
             {sides.map((s, i) => (
               <li key={`${i}:${s.recipeId ?? s.title}`} className="meal-side">
                 <span className="meal-side-name">
@@ -123,7 +125,7 @@ export function MealSides({
                 </span>
                 {/* two steps like every ✕: the first tap arms it */}
                 {editable && (
-                  <ConfirmButton className="btn subtle meal-side-remove" confirmLabel="Remove?" ariaLabel={`Remove ${s.title}`} onConfirm={() => onSave(mealWithoutSide(meal, i))}>
+                  <ConfirmButton className="btn subtle meal-side-remove" confirmLabel="Tap again to remove" ariaLabel={`Remove ${s.title}`} onConfirm={() => onSave(mealWithoutSide(meal, i))}>
                     <span aria-hidden="true">✕</span>
                   </ConfirmButton>
                 )}
@@ -143,7 +145,7 @@ export function MealSides({
                 const r = recipes.find(x => x.id === e.target.value)
                 if (r) addSide({ recipeId: r.id, title: r.name })
               }}
-              aria-label={`A recipe to have with ${slotName} on ${date}`}
+              aria-label={`A recipe to have with ${slotName} on ${spokenDay(date)}`}
             >
               <option value="">Pick a recipe…</option>
               {sideChoices.map(r => (
@@ -167,7 +169,7 @@ export function MealSides({
               if (e.key === 'Escape') setOpen(false)
             }}
             placeholder={sideChoices.length > 0 ? 'or type one' : 'Garlic bread, salad…'}
-            aria-label={`A side to have with ${slotName} on ${date}, by name`}
+            aria-label={`A side to have with ${slotName} on ${spokenDay(date)}, by name`}
           />
           <button className="btn" onClick={addTyped} disabled={!name.trim()}>
             Add
@@ -179,6 +181,63 @@ export function MealSides({
       )}
     </>
   )
+}
+
+/** What the picker on one slot needs: the day, the slot, what can be chosen and where a pick is written. */
+interface SlotPickerProps {
+  date: string
+  slot: MealSlot
+  /** The slot's meal as it stands: a pick replaces your own, and never builds on somebody else's (mealPicked). */
+  meal?: Meal
+  inHousehold?: boolean
+  myId?: string | null
+  members?: readonly KitchenMember[]
+  recipes: Recipe[]
+  places: Place[]
+  meals?: readonly Meal[]
+  cooked?: CookedIndex
+  visited?: VisitIndex
+  mainOnly?: boolean
+  /** Who a new plan is for, when the slot has a say in it: false for a plan of your own beside one the household shares. */
+  startShared?: boolean
+  onSave(m: Meal): void
+  onClear(id: string): void
+  onCreatePlace(name: string, category: PlaceCategory): Place
+  onCreateRecipe?(name: string): Recipe
+  onStar?(recipe: Recipe): void
+  onClose(): void
+}
+
+/**
+ * The meal picker on one slot of one day, and the one way its pick is written
+ * (mealPicked): the row's Choose… and Plan my own, and the calendar's + → Meal,
+ * which opens it straight onto that day's dinner.
+ */
+export function SlotPicker({ date, slot, meal, myId, onSave, onClear, onClose, ...rest }: SlotPickerProps) {
+  // only ever your own row is written: another member's is named, never built on
+  const own = !meal?.ownerId || !myId || meal.ownerId === myId ? meal : undefined
+  const pick = (choice: MealChoice) => onSave(mealPicked(own, { date, slot }, choice.main, { userId: myId, now: new Date().toISOString(), shared: choice.shared, cookId: choice.cookId }))
+  return (
+    <MealPicker
+      {...rest}
+      date={date}
+      slot={slot}
+      meal={own}
+      onPick={pick}
+      onAdjust={change => own && onSave(mealAdjusted(own, change))}
+      onRemove={own ? () => onClear(own.id) : undefined}
+      onClose={onClose}
+    />
+  )
+}
+
+/**
+ * The slot a + → Meal opens on a day: its dinner — yours, or a plan of your
+ * own when the household already shares one — as the day sheet's row would.
+ */
+export function dinnerPick(meals: readonly Meal[], date: string, myId: string | null | undefined): { meal?: Meal; startShared?: boolean } {
+  const { mine, theirs } = mealsForSlot(meals, date, 'dinner', myId)
+  return mine ? { meal: mine } : { startShared: theirs.some(mealIsShared) ? false : undefined }
 }
 
 export function MealSlotRow({
@@ -245,8 +304,6 @@ export function MealSlotRow({
   const slotName = meta.label.toLowerCase()
   // only ever your own row is written: another member's is named, never built on (mealPicked)
   const mine = !meal?.ownerId || !myId || meal.ownerId === myId
-  const own = mine ? meal : undefined
-  const pick = (choice: MealChoice) => onSave(mealPicked(own, { date, slot }, choice.main, { userId: myId, now: new Date().toISOString(), shared: choice.shared, cookId: choice.cookId }))
   // A dinner they already shared is tonight's dinner. The empty picker made it
   // look like the slot still needed an answer, and Share sat on both rows.
   const household = !meal ? theirs?.find(mealIsShared) : undefined
@@ -276,7 +333,7 @@ export function MealSlotRow({
           type="button"
           className={meal ? 'meal-slot-choose set' : 'meal-slot-choose'}
           aria-haspopup="dialog"
-          aria-label={`${meta.label} on ${date}: ${chosen || 'choose'}`}
+          aria-label={`${meta.label} on ${spokenDay(date)}: ${chosen || 'choose'}`}
           onClick={() => setPicking('slot')}
         >
           {meal && shownMark ? (
@@ -307,7 +364,7 @@ export function MealSlotRow({
           </span>
           <Segmented
             role="group"
-            label={`Who ${slotName} on ${date} is for`}
+            label={`Who ${slotName} on ${spokenDay(date)} is for`}
             className="meal-audience-seg"
             items={[
               { key: 'both', label: 'Both of us' },
@@ -333,10 +390,11 @@ export function MealSlotRow({
       {shown?.out && !shown.quick && <span className="meal-out-chip">🥡 Out</span>}
       {meal && !mainOnly && <MealSides meal={meal} date={date} slot={slot} recipes={recipes} cooked={cooked} editable={mine} onSave={onSave} />}
       {picking && (
-        <MealPicker
+        <SlotPicker
           date={date}
           slot={slot}
-          meal={picking === 'slot' ? own : undefined}
+          meal={picking === 'slot' ? meal : undefined}
+          myId={myId}
           recipes={recipes}
           places={places}
           meals={meals}
@@ -346,9 +404,8 @@ export function MealSlotRow({
           members={members}
           startShared={picking === 'own' ? false : undefined}
           mainOnly={mainOnly}
-          onPick={pick}
-          onAdjust={change => own && onSave(mealAdjusted(own, change))}
-          onRemove={own ? () => onClear(own.id) : undefined}
+          onSave={onSave}
+          onClear={onClear}
           onCreatePlace={onCreatePlace}
           onCreateRecipe={onCreateRecipe}
           onStar={onStar}

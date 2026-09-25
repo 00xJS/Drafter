@@ -356,3 +356,13 @@ export function pullSince(cursor: string | null): string | null {
  * Home, and a deleted one is gone.
  */
 export const inTrash = (i: Item): boolean => !!i.deletedAt && !i.purged && i.kind !== 'snooze' && i.kind !== 'chat' && i.kind !== 'notice'
+
+/**
+ * The one toast for a record just moved to the Trash, whatever it is, beside
+ * the Undo that brings it back: “Fix the gate” moved to Trash — or, for one
+ * with no name of its own, `what` ("Journal entry moved to Trash").
+ */
+export function trashedLine(name: string | null | undefined, what: string): string {
+  const named = name?.trim()
+  return named ? `“${named}” moved to Trash` : `${what} moved to Trash`
+}
