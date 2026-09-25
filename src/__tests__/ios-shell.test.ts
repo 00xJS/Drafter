@@ -152,3 +152,12 @@ describe('a notification tap that starts the app reaches the page', () => {
     }
   })
 })
+
+describe('Siri’s captures reach the page from the main thread', () => {
+  it('hops there before telling the page: CaptureQueue posts from wherever the intent ran', () => {
+    const plugin = read('ios/App/App/WidgetBridgePlugin.swift')
+    expect(swiftFunc(plugin, 'captureQueued')).toMatch(/DispatchQueue\.main\.async \{ \[weak self\] in\s*self\?\.notifyListeners\("capturesQueued", data: \[:\]\)/)
+    // the intents' appends are what post it, off the main thread
+    expect(read('ios/App/App/DrafterIntents.swift')).toMatch(/func perform\(\) async throws[\s\S]*?try CaptureQueue\.append/)
+  })
+})

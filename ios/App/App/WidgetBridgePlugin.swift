@@ -28,8 +28,12 @@ public class WidgetBridgePlugin: CAPPlugin, CAPBridgedPlugin {
         NotificationCenter.default.addObserver(self, selector: #selector(captureQueued), name: CaptureQueue.queued, object: nil)
     }
 
+    /// CaptureQueue posts on whatever thread Siri's intent ran on; the page is
+    /// told on the main one, where the bridge's calls into the web view belong.
     @objc private func captureQueued() {
-        notifyListeners("capturesQueued", data: [:])
+        DispatchQueue.main.async { [weak self] in
+            self?.notifyListeners("capturesQueued", data: [:])
+        }
     }
 
     @objc func setSnapshot(_ call: CAPPluginCall) {
