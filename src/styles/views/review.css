@@ -50,11 +50,23 @@
   }
 }
 /* You said: last week's Top 3 — set on Home, or here — to tick. Each line
-   reads from the left beside its box; the row's space-between had pushed a
-   short goal to the far edge of a phone */
+   reads from the left beside its box, and a long one wraps inside the card:
+   the row's space-between had pushed a short goal to the far edge of a
+   phone, and the phone's one-line titles pushed a long one past it */
 .you-said .dash-main {
   flex: 1;
   min-width: 0;
+}
+.you-said .dash-title {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+/* the next Top 3's lines: a field gives way to its → task, never the other way */
+.review-top-row input {
+  min-width: 0;
+}
+.review-top-row > .btn {
+  flex: none;
 }
 
 /* ---------- from 09-tasks-today.css ---------- */

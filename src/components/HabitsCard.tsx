@@ -114,7 +114,8 @@ export function HabitsCard({ habits, today, onSave, onDelete }: { habits: Habit[
                 </button>
                 <button type="button" className="habit-name" onClick={() => openEdit(h)} title="Edit habit">
                   {h.emoji ? <span className="habit-emoji">{h.emoji}</span> : null}
-                  <span>{h.name}</span>
+                  {/* the ellipsis goes on the words: a flex box does not draw one for its items */}
+                  <span className="habit-name-text">{h.name}</span>
                 </button>
                 <span className="habit-streak">{isDueOn(h, now) ? (streakOf(h, now) > 0 ? `🔥 ${streakOf(h, now)}` : '') : 'Rest day'}</span>
               </li>

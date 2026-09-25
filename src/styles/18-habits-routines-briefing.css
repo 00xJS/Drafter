@@ -11,7 +11,7 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 8px 6px;
+  padding: 0 6px;
   border-radius: 10px;
 }
 .habit-row:hover {
@@ -29,6 +29,7 @@
 }
 /* the tick: an outlined ring in the habit's colour that fills when done today */
 .habit-tick {
+  position: relative;
   flex: none;
   width: 26px;
   height: 26px;
@@ -49,9 +50,18 @@
 .habit-tick:active {
   transform: scale(0.88);
 }
+/* a 44pt target round the 26px ring, drawn as it was: measured from inside
+   its 2px border, 22px across, so 11px out on every side */
+.habit-tick::before {
+  content: '';
+  position: absolute;
+  inset: -11px;
+}
 .habit-name {
   flex: 1;
   min-width: 0;
+  /* the row's height: a 44pt target, which the row's padding used to make up */
+  min-height: 44px;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -62,8 +72,16 @@
   padding: 0;
   font: inherit;
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* the name ellipsises; the emoji before it keeps its width */
+.habit-name-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.habit-name > .habit-emoji {
+  flex: none;
 }
 .habit-name:hover,
 .habit-row.rest .habit-name:hover {
@@ -338,8 +356,13 @@
   flex-direction: column;
   gap: 1px;
   min-width: 0;
+  /* never wider than its tile: on the phone the tile is a centred column,
+     where a line of text takes its own width unless something stops it, and
+     the ellipsis below never engaged */
+  max-width: 100%;
 }
 .briefing-main {
+  max-width: 100%;
   color: var(--text);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
