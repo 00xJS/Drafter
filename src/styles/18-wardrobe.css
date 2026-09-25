@@ -437,6 +437,15 @@
   margin: 0;
   padding: 0;
 }
+/* Under a finger: the days fill their seven columns and clip their photos,
+   so no target can reach past a day's edge, and at 375pt a day was 42pt wide.
+   A 1pt gap between them, not 3, gives each its width. */
+@media (pointer: coarse) {
+  .photo-cal-head,
+  .photo-cal {
+    gap: 1px;
+  }
+}
 .photo-cal-cell,
 .photo-cal-pad {
   min-width: 0;

@@ -91,3 +91,59 @@ describe('Check in on a phone', () => {
     expect(phone('.checkin-name')).toMatch(/white-space:\s*normal/)
   })
 })
+
+const COARSE = '(pointer: coarse)'
+/** …in a touch-screen block. */
+const touch = (selector: string) => media(COARSE).map(b => rule(b, selector)).join(';')
+
+describe('a finger’s 44pt round the small controls', () => {
+  // measured with hit-tests in the sweep: an 18pt task tick, 26pt swatches (18pt
+  // in Settings → Calendars), a Stats card's 28pt names and its 32pt ‹ ›, and
+  // the buttons that sit in a line of prose at 34-36pt
+  const SMALL = ['.tcheck', '.swatch', '.hbars button.stats-hbar-label', '.hbars button.wardrobe-hbar-label', '.chart-head .segmented > .seg', '.period-bar > .btn', '.notes-tool', '.versions > summary', 'p > .btn.subtle', '.person-journal .btn', '.empty .btn']
+
+  it('grows each one’s target to a 44pt square round its middle, and leaves the look alone', () => {
+    const block = media(COARSE).find(b => b.includes('.tcheck::after')) ?? ''
+    expect(block, 'no touch block for the hit areas').not.toBe('')
+    const areas = rule(block, SMALL.map(s => `${s}::after`).join(',\n  '))
+    expect(areas).toMatch(/content:\s*''/)
+    expect(areas).toMatch(/position:\s*absolute/)
+    expect(areas).toMatch(/inset:\s*min\(0px, calc\(50% - 22px\)\)/)
+    expect(rule(block, SMALL.join(',\n  '))).toMatch(/position:\s*relative/)
+    // only the target grows: nothing in that rule draws
+    expect(areas).not.toMatch(/background|border|box-shadow/)
+  })
+
+  it('spaces neighbours that would share a square, so a tap never lands on the wrong one', () => {
+    expect(touch('.swatches')).toMatch(/gap:\s*18px/)
+    expect(touch('.swatches.small .swatch')).toMatch(/width:\s*26px/)
+    expect(touch('.hbars.stats-hbars,\n  .hbars.wardrobe-hbars')).toMatch(/gap:\s*16px/)
+    // the photo calendar's days clip their photos, so their gap gives them the width
+    expect(touch('.photo-cal-head,\n  .photo-cal')).toMatch(/gap:\s*1px/)
+    // …each after the rule it changes, which a bare class only outranks by coming later
+    const at = (text: string) => css.indexOf(text)
+    expect(at('gap: 18px')).toBeGreaterThan(at('.swatches.small .swatch {\n  width: 18px'))
+    expect(at('.photo-cal-head,\n.photo-cal {\n  display: grid')).toBeGreaterThan(-1)
+    expect(at('.photo-cal {\n    gap: 1px')).toBeGreaterThan(at('.photo-cal-head,\n.photo-cal {\n  display: grid'))
+  })
+
+  it('floors the palette’s rows and the tick rows at 44pt under a finger', () => {
+    expect(touch('.search-hit')).toMatch(/min-height:\s*var\(--touch\)/)
+    expect(touch('.notes-tool')).toMatch(/min-width:\s*var\(--touch\)/)
+    expect(css.lastIndexOf('.notes-tool {\n    min-width: var(--touch)')).toBeGreaterThan(css.indexOf('.notes-tool {\n  font-weight: 700'))
+    expect(touch('.cal-add')).toMatch(/row-gap:\s*10px/)
+    expect(touch('.fin-weekly-on')).toMatch(/min-height:\s*44px/)
+    expect(touch('.bill-field > .field-inline,\n  .bill-fields .field-inline')).toMatch(/min-height:\s*44px/)
+    expect(touch('.board-add::after')).toMatch(/inset:\s*min\(0px, calc\(50% - 22px\)\)/)
+  })
+
+  it('draws a select itself in the app, so it takes the 44pt floor and keeps a ▾', () => {
+    const select = phone('html.native select:not([multiple]):not([size])')
+    expect(select).toMatch(/-webkit-appearance:\s*none/)
+    expect(select).toMatch(/(?<!-)appearance:\s*none/)
+    expect(select).toMatch(/min-height:\s*var\(--touch\)/)
+    // the ▾ is two gradients in a token, never an image with a colour in it
+    expect(select).toMatch(/linear-gradient\(45deg, transparent 50%, var\(--muted\) 50%\)/)
+    expect(select).not.toMatch(/url\(/)
+  })
+})

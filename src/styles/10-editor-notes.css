@@ -297,6 +297,18 @@
   width: 18px;
   height: 18px;
 }
+/* A row of swatches under a finger: 18pt between them, so each 26pt one has a
+   44pt square of its own to be tapped in (08-responsive.css draws the square),
+   and the small ones in Settings → Calendars at the sheets' size. */
+@media (pointer: coarse) {
+  .swatches {
+    gap: 18px;
+  }
+  .swatches.small .swatch {
+    width: 26px;
+    height: 26px;
+  }
+}
 .settings-section h4 {
   margin: 16px 0 6px;
   font-size: 0.8125rem;
@@ -424,6 +436,12 @@
   font-size: 0.75rem;
 }
 /* an icon on the bar (the checklist, Task's +) sits on the letters' line */
+/* a tool under a finger is 44pt wide: at 42 its square met the next tool's */
+@media (pointer: coarse) {
+  .notes-tool {
+    min-width: var(--touch);
+  }
+}
 .notes-tool svg {
   vertical-align: -0.2em;
 }

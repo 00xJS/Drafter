@@ -827,6 +827,12 @@
   gap: 8px;
   font-weight: 600;
 }
+/* Check in weekly is its label: 24pt of it under a finger was not a row to tap */
+@media (pointer: coarse) {
+  .fin-weekly-on {
+    min-height: 44px;
+  }
+}
 .fin-weekly-when {
   display: flex;
   flex-wrap: wrap;

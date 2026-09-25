@@ -411,6 +411,27 @@
     padding: 10px 12px;
     border-radius: 10px;
   }
+  /* A select WebKit draws as its own menu button keeps the height that button
+     wants, whatever min-height says: the Mac's WebKit drew every one at 23pt
+     under the 44pt floor above. In the app the sheet draws it instead — no
+     system button, the floor, room at its end, and a ▾ of its own in the muted
+     ink (two gradients, so a token and not an image). `html` and the two
+     attributes outrank a component's own `background` shorthand, which would
+     otherwise take the ▾ away. */
+  html.native select:not([multiple]):not([size]) {
+    -webkit-appearance: none;
+    appearance: none;
+    min-height: var(--touch);
+    padding-right: 32px;
+    background-image:
+      linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+      linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+    background-position:
+      calc(100% - 18px) 50%,
+      calc(100% - 13px) 50%;
+    background-size: 5px 5px;
+    background-repeat: no-repeat;
+  }
 
   /* Tall enough for what is IN it: the 22px the grab handle takes above, a
      44pt button, and the 14px under it. At `min-height: var(--touch)` the
