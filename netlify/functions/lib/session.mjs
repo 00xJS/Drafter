@@ -20,6 +20,11 @@ export async function getUser(req) {
   const res = await fetch(`${supabaseUrl}/auth/v1/user`, { headers: userHeaders(anonKey, token) })
   if (!res.ok) return { user: null, response: Response.json({ error: 'invalid session' }, { status: 401 }) }
   const u = await res.json()
+  // Disabled in Admin (a Supabase Auth ban): a session signed in before the
+  // ban lives on for up to an hour, and would have let the account turn its
+  // push, feed link or email-in address straight back on. Refused here.
+  const bannedUntil = Date.parse(u?.banned_until ?? '')
+  if (Number.isFinite(bannedUntil) && bannedUntil > Date.now()) return { user: null, response: Response.json({ error: 'This account is disabled.' }, { status: 403 }) }
   // off unless the owner turned it on: Drafter alone sends reminders
   return { user: { id: u.id, email: u.email ?? '', copiesRemind: u.user_metadata?.[COPY_REMINDERS_KEY] === true }, response: null }
 }

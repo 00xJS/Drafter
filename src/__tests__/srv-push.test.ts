@@ -166,4 +166,19 @@ describe('POST /api/push subscribe', () => {
     expect(await res.json()).toEqual({ error: 'invalid subscription' })
     expect(saved).toEqual([])
   })
+
+  // Admin → Disable clears an account's devices; a session it signed in with
+  // before the ban lives on for up to an hour, and must not add one back
+  it('refuses a session of an account disabled in Admin, and saves nothing', async () => {
+    account = { id: USER, email: 'me@example.test', banned_until: '2126-08-20T08:00:00.000Z' }
+    const res = await subscribe(web(FCM))
+    expect(res.status).toBe(403)
+    expect(await res.json()).toEqual({ error: 'This account is disabled.' })
+    expect(saved).toEqual([])
+  })
+
+  it('takes one whose ban has run out', async () => {
+    account = { id: USER, email: 'me@example.test', banned_until: '2020-01-01T00:00:00.000Z' }
+    expect((await subscribe(web(FCM))).status).toBe(200)
+  })
 })

@@ -601,7 +601,10 @@ describe('the draft leaves an account disabled in Admin alone', () => {
     }
   })
 
-  it('still sends a disabled account its digest, ending with the summary it wrote', async () => {
+  // Admin → Disable clears the account's push devices and email digest
+  // (admin.mjs), so the digest has nowhere to go; a ban made some other way,
+  // in the Supabase dashboard, leaves them, and the digest goes on as before
+  it('a ban made outside Admin still gets its digest, ending with the summary it wrote', async () => {
     settings = [withPush(PEER), quiet(OWNER, { timezone: 'UTC' })]
     const theirs = row(PEER, { kind: 'review', id: 'theirs', period: 'week', key: '2026-W36', top: [], summary: 'You kept all three. The boiler is serviced.' })
     rows = [doneLastWeek(OWNER, 'fence', 'Fixed the fence'), theirs]

@@ -509,7 +509,8 @@ export function Admin({ initialGroup = 'users', initial }: Props) {
             <p className="field-hint">
               Deleting an account hands their shared records (tasks, projects, people, places, the kitchen, events) to you and deletes their personal ones (journal,
               reviews, calendar subscriptions, habits, routines, snoozes) together with their history. Backup snapshots already taken are left as they are. Disable
-              instead if you only want to lock someone out.
+              instead if you only want to lock someone out: it also turns off their push, email digest, calendar feed link and email-in address, which they turn on
+              again in Settings once you Enable them.
             </p>
           </details>
           {users ? (
