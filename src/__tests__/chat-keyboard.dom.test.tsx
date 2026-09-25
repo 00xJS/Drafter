@@ -135,3 +135,19 @@ describe('the chat, as the keyboard comes up', () => {
     expect(page.top).toBe(page.full - 450)
   })
 })
+
+describe('the chat’s message box', () => {
+  it('grows a line at a time with what is typed, and back when it is sent', () => {
+    mount()
+    const box = document.querySelector('.chat-composer textarea') as HTMLTextAreaElement
+    // the text's height as WebKit lays it out: one line, then two once it wraps
+    Object.defineProperty(box, 'scrollHeight', { configurable: true, get: () => (box.value.length > 30 ? 66 : 43) })
+    fireEvent.change(box, { target: { value: 'Running late' } })
+    expect(box.style.height).toBe('43px')
+    fireEvent.change(box, { target: { value: 'Running ten minutes late — can you start the oven?' } })
+    // it showed half of the second line in a box one line tall
+    expect(box.style.height).toBe('66px')
+    fireEvent.change(box, { target: { value: '' } })
+    expect(box.style.height).toBe('43px')
+  })
+})

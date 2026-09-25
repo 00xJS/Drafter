@@ -153,6 +153,16 @@ function Composer({
 }) {
   const [draft, setDraft] = useState('')
   const box = useRef<HTMLTextAreaElement>(null)
+  // The box grows with what is typed, a line at a time, up to its 40vh cap
+  // (chat.css), as every message box does. It stayed one line tall, and a
+  // question that wrapped showed half of its second line.
+  useLayoutEffect(() => {
+    const el = box.current
+    if (!el) return
+    el.style.height = 'auto'
+    // scrollHeight is the text and the padding; the height is set with the border too
+    el.style.height = `${el.scrollHeight + el.offsetHeight - el.clientHeight}px`
+  }, [draft])
   const send = () => {
     const text = draft.trim()
     if (!text || disabled || busy) return
