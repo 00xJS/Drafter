@@ -395,7 +395,13 @@
 
 /* ---------- a page pushed over the Highlights ----------
    Its head — whose log, and the window where one governs — sits under the
-   pushed screen's own sticky ‹ Back, so here it scrolls with the page. */
+   pushed screen's own sticky ‹ Back, so here it scrolls with the page. A page
+   of figures reads down one column, and on a wide screen that column stops at
+   a width a chart's labels and a month's calendar still read at, rather than
+   stretching a 12-month chart's ticks to the size of a heading. */
+.stats-page {
+  max-width: 900px;
+}
 .stats-page > .stats-bar {
   position: static;
   padding: 0;
