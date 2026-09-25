@@ -124,6 +124,24 @@ const fullDate = (d: Date) => d.toLocaleDateString(undefined, { weekday: 'long',
 /** An event that has started by `now` (ms): the row offers Who was there? rather than a plan. */
 const isPast = (ev: CalendarEvent, now: number) => new Date(ev.allDay ? ev.start + 'T00:00' : ev.start).getTime() < now
 
+/**
+ * Whether a task can be dragged to another day here. The hint under the
+ * toolbar says it can — and in the app on an iPhone there is no drag to make,
+ * so the hint promised one that never came. An iPad's shell drags (its web
+ * view says it is a Mac, or an iPad), and so does every browser.
+ */
+export function dragsHere(): boolean {
+  if (typeof document === 'undefined' || typeof navigator === 'undefined') return true
+  return !(document.documentElement.classList.contains('native') && /\b(iPhone|iPod)\b/.test(navigator.userAgent))
+}
+
+/** The line under the toolbar: what a tap does, and a drag where there is one. */
+export function calendarHint(view: CalendarView, drags: boolean): string {
+  if (view === 'day') return 'This day’s tasks, events and meals'
+  if (view === 'week') return drags ? 'Tap a day header for everything on it · drag a task to move its due date' : 'Tap a day header for everything on it'
+  return drags ? 'Tap a day to expand it · drag a pill to move its due date' : 'Tap a day to expand it'
+}
+
 export function Calendar({
   view,
   tasks,
@@ -672,13 +690,7 @@ export function Calendar({
         <button className="btn period-end" onClick={() => setCursor(dayStart(new Date()))}>
           Today
         </button>
-        <span className="cal-hint">
-          {view === 'day'
-            ? 'This day’s tasks, events and meals'
-            : view === 'week'
-              ? 'Tap a day header for everything on it · drag a task to move its due date'
-              : 'Tap a day to expand it · drag a pill to move its due date'}
-        </span>
+        <span className="cal-hint">{calendarHint(view, dragsHere())}</span>
       </div>
 
       {view === 'day' ? (
