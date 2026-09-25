@@ -366,6 +366,8 @@ describe('the order and the nightly limit', () => {
     await job([JOE, MARIA], at(0, 2))
     expect(ai.asks).toHaveLength(NIGHTLY_LIMIT)
     expect(rows.filter(r => r.data.kind === 'recipedraft')).toHaveLength(NIGHTLY_LIMIT)
+    // runs that found nothing to do leave the record of the one that drafted
+    expect(jobRuns.get('recipe-drafts')).toMatchObject({ ok: true, ran_at: NIGHT, counts: { drafted: NIGHTLY_LIMIT, waiting: 3 } })
     // the next night, the three left
     const next = await job([JOE], at(1))
     expect(next.counts).toMatchObject({ asked: 3, drafted: 3, waiting: 0 })
@@ -554,10 +556,10 @@ describe('the hourly digest starts it', () => {
       ['recipe-drafts', '2026-09-25T12:00:00.000Z'],
     ])
     expect(started[0].userIds.sort()).toEqual([JOE, MARIA].sort())
-    // the first drafted both; the others found nothing left to do
+    // the first drafted both; the others found nothing left to do, and left its record
     expect(ai.asks).toHaveLength(2)
     expect([drafted('chili')!.user_id, drafted('tacos')!.user_id]).toEqual([JOE, MARIA])
-    expect(jobRuns.get('recipe-drafts')).toMatchObject({ ok: true })
+    expect(jobRuns.get('recipe-drafts')).toMatchObject({ ok: true, ran_at: '2026-09-25T10:00:00.000Z', counts: { drafted: 2 } })
     expect(jobRuns.get('digest')).toMatchObject({ ok: true })
   })
 

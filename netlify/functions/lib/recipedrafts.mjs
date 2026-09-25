@@ -38,8 +38,9 @@
 // before the model is asked and again before anything is written, and a recipe
 // filled in, deleted or skipped meanwhile is stepped aside from. A draft whose
 // recipe was deleted, or has ingredients now, is removed: a content-free
-// tombstone, written as the draft's own owner. Each run is kept in job_runs
-// ('recipe-drafts').
+// tombstone, written as the draft's own owner. Each run that did something is
+// kept in job_runs ('recipe-drafts'); one that found nothing to do leaves the
+// record of the one that did.
 //
 // Before the v3.35 migration the database refuses the kind, so a run that
 // finds it missing (record_kind_allowed) asks the model nothing and says so
@@ -369,7 +370,8 @@ export async function runRecipeDrafts(job, deps = {}) {
   /** @type {string[]} */
   const failures = []
   const finish = async () => {
-    await recordJobRun(read, 'recipe-drafts', { ok: failures.length === 0, counts, failures }, new Date(now()))
+    // a run that found nothing to do — most nights' 4am and 5am runs — leaves the record of the one that did
+    if (counts.asked || counts.removed || failures.length) await recordJobRun(read, 'recipe-drafts', { ok: failures.length === 0, counts, failures }, new Date(now()))
     return { counts, failures }
   }
   const ids = [...new Set((Array.isArray(job?.userIds) ? job.userIds : []).filter(id => typeof id === 'string' && id))].slice(0, MAX_ACCOUNTS)
