@@ -3,7 +3,7 @@ import { relativeDayLabel } from './journal'
 import { isNative, localRemindersEnabled } from './native'
 import { notificationPermission } from './notify'
 import { firedReminders, type FiredReminder, type ReminderTarget } from './reminders'
-import type { CalendarEntry, Meal, Notice, NoticeType, Person, Place, Task } from './types'
+import { NOTICE_TARGET_KINDS, type CalendarEntry, type Meal, type Notice, type NoticeTarget, type NoticeType, type Person, type Place, type Task } from './types'
 import { useNow } from './useNow'
 import { dateKey } from './utils'
 
@@ -97,12 +97,29 @@ export interface HubRow {
   unread: boolean
   /** The notice itself, which a tap marks read; none for a reminder. */
   notice?: Notice
-  /** What a tap opens: a notice's target, or what a reminder was about. */
-  target?: Notice['target'] | ReminderTarget
+  /** What a tap opens: a notice's (noticeOpens), or what a reminder was about. */
+  target?: NoticeTarget | ReminderTarget
 }
 
 /** A notice not yet opened, here or on the reader's other devices. */
 export const unreadNotice = (n: Notice): boolean => !n.readAt && !n.deletedAt
+
+const OPENS = new Set<string>(NOTICE_TARGET_KINDS)
+/** A monthly recap's notice names its month: `notice~<user>~recap~YYYY-MM` (lib/recap.mjs recapNoticeId). */
+const RECAP_MONTH = /~recap~(\d{4}-(?:0[1-9]|1[0-2]))$/
+
+/**
+ * What a tap on a notice opens: its target, when it is of a kind this build
+ * opens. A monthly recap that a build-16 phone marked read has lost its target
+ * — that build kept only the kinds it knew, and wrote the row back without
+ * one — so a recap with none opens Insights on the month its id names, as its
+ * push does. A kind from a newer build opens nothing here.
+ */
+export function noticeOpens(n: Pick<Notice, 'id' | 'target'>): NoticeTarget | undefined {
+  if (n.target) return OPENS.has(n.target.kind) ? (n.target as NoticeTarget) : undefined
+  const month = RECAP_MONTH.exec(n.id)?.[1]
+  return month ? { kind: 'insights', id: month } : undefined
+}
 
 /**
  * The unread message notices a household thread has shown everything of,
@@ -122,7 +139,7 @@ export function hubRows(notices: readonly Notice[], reminders: readonly FiredRem
   const rows: HubRow[] = [
     ...notices
       .filter(n => !n.deletedAt)
-      .map(n => ({ key: n.id, at: Date.parse(n.at), type: n.type, title: n.title, lines: n.lines ?? [], unread: unreadNotice(n), notice: n, target: n.target })),
+      .map(n => ({ key: n.id, at: Date.parse(n.at), type: n.type, title: n.title, lines: n.lines ?? [], unread: unreadNotice(n), notice: n, target: noticeOpens(n) })),
     ...reminders.map(r => ({ key: r.key, at: r.at.getTime(), type: 'reminder' as const, title: r.title, lines: [], unread: seenAt === null || r.at.getTime() > seenAt, target: r.target })),
   ]
   return rows.sort((a, b) => b.at - a.at || a.key.localeCompare(b.key))

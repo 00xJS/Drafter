@@ -1063,6 +1063,15 @@ export const SNOOZE_OPTIONS: { days: number; label: string; short: string }[] = 
 export type NoticeType = 'assigned' | 'progress' | 'done' | 'comment' | 'changed' | 'message' | 'digest' | 'alarm'
 export const NOTICE_TYPES: NoticeType[] = ['assigned', 'progress', 'done', 'comment', 'changed', 'message', 'digest', 'alarm']
 
+/** The kinds of thing a notice opens that this build knows how to open (src/components/planner/hubRouting.ts). */
+export type NoticeTargetKind = 'task' | 'event' | 'review' | 'message' | 'insights'
+export const NOTICE_TARGET_KINDS: readonly NoticeTargetKind[] = ['task', 'event', 'review', 'message', 'insights']
+/** A notice's target of a kind this build opens. */
+export interface NoticeTarget {
+  kind: NoticeTargetKind
+  id: string
+}
+
 /**
  * One entry in the notification hub (v3.32): "Maria finished “Take bins
  * out”", "Maria sent a message", this morning's digest, an alarm. PERSONAL:
@@ -1091,10 +1100,13 @@ export interface Notice extends Owned {
   /**
    * What a tap opens: a message's is the household's thread, whichever
    * message it names; the monthly recap's (`insights`) is Insights'
-   * Highlights on the period its id names (`2026-09`). A build from before
-   * a kind drops the target and keeps the notice, which then opens nothing.
+   * Highlights on the period its id names (`2026-09`). A kind from a newer
+   * build, one this build does not know (NOTICE_TARGET_KINDS), is kept on the
+   * row as it came and opens nothing here: marking a notice read writes the
+   * row back whole, and build 16, which kept only the kinds it knew, stripped
+   * the recap's link from it for every device that way.
    */
-  target?: { kind: 'task' | 'event' | 'review' | 'message' | 'insights'; id: string }
+  target?: { kind: NoticeTargetKind | (string & Record<never, never>); id: string }
   /** The headline, as the lock screen said it: "Maria finished “Take bins out”". */
   title: string
   /** What happened, a line each, oldest first; at most eight. */

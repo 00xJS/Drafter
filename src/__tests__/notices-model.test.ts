@@ -79,9 +79,16 @@ describe('sanitizeNotice', () => {
     expect(sanitizeItem(tomb)).toMatchObject({ kind: 'notice', id: notice().id, deletedAt: '2026-10-24T03:00:00.000Z', purged: true })
   })
 
-  it('drops a target it cannot open', () => {
-    expect(sanitizeNotice({ ...notice(), target: { kind: 'journal', id: 'x' } })?.target).toBeUndefined()
+  it('keeps a target of a kind it does not know, as it came, so marking it read here never strips it', () => {
+    // a newer build's: build 16 dropped the recap's Insights link this way, for every device
+    const later = { ...notice(), target: { kind: 'journal', id: '2026-09-24' } }
+    expect(sanitizeNotice(later)?.target).toEqual({ kind: 'journal', id: '2026-09-24' })
+    const read = { ...sanitizeItem(later)!, readAt: '2026-09-23T17:00:00.000Z' }
+    expect(sanitizeItem(JSON.parse(JSON.stringify(read)))).toMatchObject({ target: { kind: 'journal', id: '2026-09-24' } })
+    // …while one with no id, or no kind, is no target at all
     expect(sanitizeNotice({ ...notice(), target: { kind: 'task' } })?.target).toBeUndefined()
+    expect(sanitizeNotice({ ...notice(), target: { kind: ' ', id: 'x' } })?.target).toBeUndefined()
+    expect(sanitizeNotice({ ...notice(), target: 'task' })?.target).toBeUndefined()
   })
 
   it('keeps the monthly recap whole: the digest’s kind, and Insights on its month to open', () => {
