@@ -2,11 +2,12 @@ import { expect, inLocalCopy, test } from './fixtures'
 
 // Kitchen → This week, levelled up, on a phone in the iOS look and on a
 // desktop: an empty dinner planned from an idea in one tap, changed through
-// the meal picker to somewhere to eat out, a lunch answered with Leftovers,
-// and a recipe starred for the Favourites rotation. Local mode, so no
-// household: For and Who's cooking are the DOM tests' (kitchen-week.dom.test.tsx).
+// the meal picker (Cook and Eat out, Leftovers first on Cook) to somewhere to
+// eat out, a lunch answered with Leftovers, the last of its ideas, and a
+// recipe starred for the Favourites rotation. Local mode, so no household:
+// For and Who's cooking are the DOM tests' (kitchen-week.dom.test.tsx).
 
-test('This week: an idea, the picker, a quick pick and a star', async ({ page, app }) => {
+test('This week: an idea, the picker, Leftovers and a star', async ({ page, app }) => {
   await app.open()
   await app.go('Keep')
   await page.getByRole('tab', { name: 'Kitchen' }).click()
@@ -33,6 +34,12 @@ test('This week: an idea, the picker, a quick pick and a star', async ({ page, a
   await dinner.getByRole('button', { name: 'Change dinner' }).click()
   const picker = page.getByRole('dialog', { name: / · Dinner$/ })
   await expect(picker.getByRole('button', { name: /^Tacos/, pressed: true })).toBeVisible()
+  // two tabs, and Leftovers on Cook, straight after Something new…
+  await expect(picker.getByRole('tab')).toHaveText(['Cook', 'Eat out'])
+  const cookRows = picker.getByRole('list', { name: 'Recipes' }).locator('.meal-pick-row')
+  await expect(cookRows.nth(0)).toHaveText('Something new…')
+  await expect(cookRows.nth(1)).toContainText('Leftovers')
+  await expect(cookRows.nth(1)).toContainText('At home, nothing new to cook')
   await picker.getByRole('tab', { name: 'Eat out' }).click()
   await picker.getByRole('button', { name: 'Somewhere new…' }).click()
   await picker.getByRole('textbox', { name: `Name of the place for dinner on ${app.today}` }).fill('Luna’s Pizza')
@@ -43,9 +50,11 @@ test('This week: an idea, the picker, a quick pick and a star', async ({ page, a
   await expect(dinner.getByText('Eat out')).toBeVisible()
   await expect(dinner.getByRole('button', { name: 'Start cooking' })).toHaveCount(0)
 
-  // lunch: Leftovers, one tap
+  // lunch: Leftovers, one tap, the last of its ideas
   const lunch = page.getByRole('region', { name: 'Lunch' })
-  await lunch.getByRole('group', { name: 'Quick picks for lunch' }).getByRole('button', { name: /Leftovers/ }).click()
+  const lunchIdeas = lunch.getByRole('group', { name: 'Ideas for lunch' }).getByRole('button')
+  await expect(lunchIdeas.last()).toHaveText('🍲 Leftovers')
+  await lunchIdeas.last().click()
   await expect(lunch.getByText('Leftovers', { exact: true })).toBeVisible()
   await expect(lunch.getByText('Nothing to cook')).toBeVisible()
 

@@ -351,30 +351,11 @@
 .meal-chip-star {
   color: var(--accent-text);
 }
-/* the three quick picks, one line of three whatever the width: a long name
-   takes two lines of its own tile rather than pushing Takeout under the rest */
-.meal-card-quick {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 6px;
-  /* three tiles, not three stripes across a desktop */
-  max-width: 30rem;
-}
-.meal-chip.quick {
-  justify-content: center;
+/* Leftovers, last among the ideas: no recipe, so an outline beside the dishes */
+.meal-chip.leftovers {
   gap: 4px;
-  max-width: none;
-  padding: 6px;
-  border-radius: 12px;
   background: transparent;
   color: var(--text-2);
-  font-size: 0.8125rem;
-  line-height: 1.2;
-  text-align: center;
-  white-space: normal;
-  /* between words only: "Leftovers" never loses its s to the next line */
-  overflow-wrap: normal;
-  word-break: normal;
 }
 @media (pointer: coarse) {
   .meal-chip,

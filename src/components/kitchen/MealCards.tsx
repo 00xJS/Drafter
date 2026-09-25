@@ -2,7 +2,6 @@ import { useState } from 'react'
 import type { RotationPick } from '../../../shared/weekplan.mts'
 import { initials } from '../../household'
 import {
-  QUICK_PICKS,
   QUICK_PICK_META,
   daysAgo,
   daysBetween,
@@ -27,7 +26,10 @@ import { Segmented } from '../stats/Segmented'
 // Kitchen → This week, the day open under the strip: a card for each meal.
 // A planned one says what it is, big, who it is for and who cooks it, with
 // Start cooking and its sides; an empty one offers the Favourites rotation's
-// ideas and the quick picks, one tap each, and Choose… for the meal picker.
+// ideas and Leftovers, one tap each, and Choose… for the meal picker.
+
+/** Leftovers, the one-tap answer at the end of an empty card's ideas. */
+const LEFTOVERS = QUICK_PICK_META.leftovers
 
 /** Who's cooking, J or M: the household's members as one track. The one cooking, tapped again, is nobody. */
 function CookToggle({ meal, members, onChange }: { meal: Meal; members: readonly KitchenMember[]; onChange(cookId: string): void }) {
@@ -94,8 +96,8 @@ interface CardProps {
  * title, who it is for and how it comes ("Both of you · Maria cooks"), who is
  * cooking a shared dish, Start cooking on a recipe, and its sides and notes;
  * a meal someone else shared keeps "Plan my own" for a night you are eating
- * something else. Empty: a dashed card of one-tap ideas and quick picks, and
- * Choose… for the picker.
+ * something else. Empty: a dashed card of one-tap ideas, Leftovers the last of
+ * them, and Choose… for the picker.
  */
 export function MealDayCard({
   date,
@@ -184,26 +186,21 @@ export function MealDayCard({
             Choose…
           </button>
         </header>
-        {ideas.length > 0 && (
-          <div className="meal-card-chips" role="group" aria-label={`Ideas for ${slotName}`}>
-            {ideas.map(i => (
-              <button key={i.recipe.id} type="button" className={i.favourite ? 'meal-chip idea fav' : 'meal-chip idea'} title={why(i)} onClick={() => plan({ recipeId: i.recipe.id, title: i.recipe.name }, fresh)}>
-                {i.favourite && (
-                  <span className="meal-chip-star" aria-hidden="true">
-                    ★
-                  </span>
-                )}
-                {i.recipe.name}
-              </button>
-            ))}
-          </div>
-        )}
-        <div className="meal-card-quick" role="group" aria-label={`Quick picks for ${slotName}`}>
-          {QUICK_PICKS.map(k => (
-            <button key={k} type="button" className="meal-chip quick" onClick={() => plan(quickMain(k), fresh)}>
-              <span aria-hidden="true">{QUICK_PICK_META[k].emoji}</span> {QUICK_PICK_META[k].label}
+        {/* the rotation's ideas, and Leftovers last: one row, with or without ideas */}
+        <div className="meal-card-chips" role="group" aria-label={`Ideas for ${slotName}`}>
+          {ideas.map(i => (
+            <button key={i.recipe.id} type="button" className={i.favourite ? 'meal-chip idea fav' : 'meal-chip idea'} title={why(i)} onClick={() => plan({ recipeId: i.recipe.id, title: i.recipe.name }, fresh)}>
+              {i.favourite && (
+                <span className="meal-chip-star" aria-hidden="true">
+                  ★
+                </span>
+              )}
+              {i.recipe.name}
             </button>
           ))}
+          <button type="button" className="meal-chip leftovers" title={LEFTOVERS.hint} onClick={() => plan(quickMain('leftovers'), fresh)}>
+            <span aria-hidden="true">{LEFTOVERS.emoji}</span> {LEFTOVERS.label}
+          </button>
         </div>
         {others}
         {picker}

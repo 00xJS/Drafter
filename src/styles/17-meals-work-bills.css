@@ -203,8 +203,8 @@
   font-weight: 400;
   color: var(--muted);
 }
-/* a quick pick's name and what it means, one over the other */
-.meal-pick-row.quick .meal-pick-name {
+/* Leftovers' name and what it means, one over the other */
+.meal-pick-row.leftovers .meal-pick-name {
   display: flex;
   flex-direction: column;
   white-space: normal;

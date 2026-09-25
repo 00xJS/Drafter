@@ -357,7 +357,7 @@ export function Kitchen({ myId = null, nameOf, inHousehold, members = NO_MEMBERS
   const star = (r: Recipe) => onSave(recipeStarred(r, !r.favourite))
 
   /**
-   * A meal chosen on This week — a pick, an idea, a quick pick — through the
+   * A meal chosen on This week — a pick, an idea, Leftovers — through the
    * planner's own path, and said in the toast. Its Undo puts back what the slot
    * held (`before`), or clears it when it held nothing; a slot changed again
    * since is left as it is now.

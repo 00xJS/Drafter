@@ -3,7 +3,6 @@ import { weekDayKeys } from '../../shared/weeks.mts'
 import { favouritesRotation } from '../../shared/weekplan.mts'
 import { initials } from '../household'
 import {
-  QUICK_PICKS,
   QUICK_PICK_META,
   dayAndSlot,
   daysAgo,
@@ -18,7 +17,7 @@ import {
   recipeMatchesQuery,
   weekdayShort,
 } from '../kitchen'
-import type { CookedIndex, KitchenMember, MealMain, QuickPick, VisitIndex } from '../kitchen'
+import type { CookedIndex, KitchenMember, MealMain, VisitIndex } from '../kitchen'
 import { findsPlace, placeByName, placeEmoji, placeFor } from '../places'
 import type { Meal, MealSlot, Place, PlaceCategory, Recipe } from '../types'
 import { useDayKey } from '../useDayKey'
@@ -125,19 +124,21 @@ export interface MealChoice {
   cookId?: string
 }
 
-type Tab = 'cook' | 'out' | 'quick'
+type Tab = 'cook' | 'out'
 const TABS: readonly { key: Tab; label: string }[] = [
   { key: 'cook', label: 'Cook' },
   { key: 'out', label: 'Eat out' },
-  { key: 'quick', label: 'Quick' },
 ]
+
+/** Leftovers: the Cook list's first answer, after Something new…, and nothing to cook. */
+const LEFTOVERS = QUICK_PICK_META.leftovers
 
 /** No meals, and nobody to cook with: the defaults, one array each so a memo on them holds. */
 const NO_MEALS: readonly Meal[] = []
 const NO_MEMBERS: readonly KitchenMember[] = []
 
-/** Which tab a meal is on: a quick pick's, eating out's, or cooking's. */
-const tabOf = (meal: Meal | undefined): Tab => (meal?.quick ? 'quick' : meal?.out ? 'out' : 'cook')
+/** Which tab a meal is on: eating out's, or cooking's, where Leftovers is too. */
+const tabOf = (meal: Meal | undefined): Tab => (meal?.out ? 'out' : 'cook')
 
 interface Props {
   date: string
@@ -157,7 +158,7 @@ interface Props {
   members?: readonly KitchenMember[]
   /** A new meal's For: Both of us or Just me. Unsaid, dinner is for both of you and breakfast and lunch for you. */
   startShared?: boolean
-  /** A planning sheet's Pick…: the main and nothing else — no For, no cook, no quick picks. */
+  /** A planning sheet's Pick…: a recipe or a place and nothing else — no For, no cook, no Leftovers. */
   mainOnly?: boolean
   /** A choice tapped. The sheet closes after it. */
   onPick(choice: MealChoice): void
@@ -176,11 +177,11 @@ interface Props {
 /**
  * The meal picker: a bottom sheet headed "Thu 24 · Lunch". For — Both of us or
  * Just me — and, for a shared dish, who's cooking; a search over recipes and
- * places; and three tabs. Cook lists the recipes in the Favourites rotation's
- * order, each with when it was last had; Eat out the saved places, each with
- * when you last went; Quick the three one-tap answers. A tap on any of them
- * saves and closes. Something new… and Somewhere new… save a new recipe or
- * place from here, as the old picker did.
+ * places; and two tabs. Cook lists Leftovers, then the recipes in the
+ * Favourites rotation's order, each with when it was last had; Eat out the
+ * saved places, each with when you last went. A tap on any of them saves and
+ * closes. Something new… and Somewhere new… save a new recipe or place from
+ * here, as the old picker did.
  */
 export function MealPicker({
   date,
@@ -204,7 +205,7 @@ export function MealPicker({
   onClose,
 }: Props) {
   const today = useDayKey()
-  const [tab, setTab] = useState<Tab>(() => (mainOnly && meal?.quick ? 'cook' : tabOf(meal)))
+  const [tab, setTab] = useState<Tab>(() => tabOf(meal))
   // a meal keeps its own For; a new one starts where the slot usually is
   const [forBoth, setForBoth] = useState(() => (meal ? mealIsShared(meal) : (startShared ?? slot === 'dinner')))
   const [cook, setCook] = useState(() => meal?.cookId ?? '')
@@ -312,19 +313,19 @@ export function MealPicker({
       </li>
     )
   }
-  const quickRow = (k: QuickPick) => {
-    const main = quickMain(k)
+  /** Leftovers, with what it means under its name: a planning sheet's Pick… has none (mainOnly). */
+  const leftoversRow = () => {
+    const main = quickMain('leftovers')
     const on = current(main)
-    const meta = QUICK_PICK_META[k]
     return (
-      <li key={`q:${k}`} className="meal-pick-item">
-        <button type="button" className={on ? 'meal-pick-row quick on' : 'meal-pick-row quick'} aria-pressed={on} onClick={() => choose(main)}>
+      <li key="leftovers" className="meal-pick-item">
+        <button type="button" className={on ? 'meal-pick-row leftovers on' : 'meal-pick-row leftovers'} aria-pressed={on} onClick={() => choose(main)}>
           <span className="meal-pick-mark" aria-hidden="true">
-            {meta.emoji}
+            {LEFTOVERS.emoji}
           </span>
           <span className="meal-pick-name">
-            {meta.label}
-            <small className="meal-pick-hint">{meta.hint}</small>
+            {LEFTOVERS.label}
+            <small className="meal-pick-hint">{LEFTOVERS.hint}</small>
           </span>
           {on && <Icon name="check" size={16} strokeWidth={2.5} className="meal-pick-tick" />}
         </button>
@@ -385,13 +386,12 @@ export function MealPicker({
 
   const query = q.trim()
   const needle = query.toLowerCase()
-  const shownTabs = mainOnly ? TABS.filter(t => t.key !== 'quick') : TABS
   const found = {
+    leftovers: !!query && !mainOnly && LEFTOVERS.label.toLowerCase().includes(needle),
     recipes: query ? rotation.filter(x => recipeMatchesQuery(x.recipe, query)) : [],
     places: query ? eatingPlaces.filter(p => findsPlace(p, needle)) : [],
-    quick: query && !mainOnly ? QUICK_PICKS.filter(k => QUICK_PICK_META[k].label.toLowerCase().includes(needle)) : [],
   }
-  const nothingFound = query && !found.recipes.length && !found.places.length && !found.quick.length
+  const nothingFound = query && !found.leftovers && !found.recipes.length && !found.places.length
 
   return (
     <Modal onClose={onClose} className="modal meal-pick-sheet">
@@ -441,30 +441,27 @@ export function MealPicker({
           className="meal-pick-search"
           value={q}
           onChange={e => setQ(e.target.value)}
-          placeholder={mainOnly ? 'Search recipes and places' : 'Search recipes, places and quick picks'}
+          placeholder="Search recipes and places"
           aria-label="Search recipes and places"
           enterKeyHint="search"
         />
-        {!query && <Segmented<Tab> items={shownTabs} value={tab} onChange={setTab} label="What kind of meal" className="meal-pick-tabs" />}
+        {!query && <Segmented<Tab> items={TABS} value={tab} onChange={setTab} label="What kind of meal" className="meal-pick-tabs" />}
 
         {query ? (
           <div className="meal-pick-found">
-            {found.recipes.length > 0 && (
+            {(found.leftovers || found.recipes.length > 0) && (
               <section aria-label="Recipes that match">
                 <h3 className="meal-pick-group">Cook</h3>
-                <ul className="meal-pick-list">{found.recipes.map(recipeRow)}</ul>
+                <ul className="meal-pick-list">
+                  {found.leftovers && leftoversRow()}
+                  {found.recipes.map(recipeRow)}
+                </ul>
               </section>
             )}
             {found.places.length > 0 && (
               <section aria-label="Places that match">
                 <h3 className="meal-pick-group">Eat out</h3>
                 <ul className="meal-pick-list">{found.places.map(placeRow)}</ul>
-              </section>
-            )}
-            {found.quick.length > 0 && (
-              <section aria-label="Quick picks that match">
-                <h3 className="meal-pick-group">Quick</h3>
-                <ul className="meal-pick-list">{found.quick.map(quickRow)}</ul>
               </section>
             )}
             {nothingFound && <p className="meal-pick-empty">Nothing here matches “{query}”.</p>}
@@ -484,11 +481,12 @@ export function MealPicker({
             {adding === 'recipe' && recipeForm}
             <ul className="meal-pick-list" aria-label="Recipes">
               {onCreateRecipe && adding !== 'recipe' && newRow('recipe', 'Something new…')}
+              {!mainOnly && leftoversRow()}
               {rotation.map(recipeRow)}
             </ul>
             {rotation.length === 0 && !onCreateRecipe && <p className="meal-pick-empty">No recipes yet: add one on Kitchen → Recipes.</p>}
           </>
-        ) : tab === 'out' ? (
+        ) : (
           <>
             {adding === 'place' && placeForm}
             <ul className="meal-pick-list" aria-label="Places">
@@ -496,10 +494,6 @@ export function MealPicker({
               {eatingPlaces.map(placeRow)}
             </ul>
           </>
-        ) : (
-          <ul className="meal-pick-list" aria-label="Quick picks">
-            {QUICK_PICKS.map(quickRow)}
-          </ul>
         )}
       </div>
       {meal && onRemove && (

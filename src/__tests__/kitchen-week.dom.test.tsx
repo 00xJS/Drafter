@@ -7,9 +7,10 @@ import { MealSlotRow } from '../components/MealSlotRow'
 import type { GroceryList, Item, Meal, Place, PlaceCategory, Recipe } from '../types'
 
 // Kitchen → This week as a thumb uses it, in a household of two: the open
-// day's cards, planned and empty; an idea planning a dinner in one tap; the
-// meal picker's For, Who's cooking, tabs, search and Remove; the Cooking
-// toggle on a card; and a recipe starred — with what each writes.
+// day's cards, planned and empty; an idea planning a dinner in one tap, and
+// Leftovers last among the ideas; the meal picker's For, Who's cooking, its
+// two tabs, Leftovers, search and Remove; the Cooking toggle on a card; and a
+// recipe starred — with what each writes.
 
 const T0 = '2026-09-01T12:00:00.000Z'
 const JOE = 'joe'
@@ -126,12 +127,18 @@ describe('the open day’s cards', () => {
     expect(within(dinner).queryByRole('button', { name: /Change/ })).toBeNull()
     // her private lunch is nowhere, and the slot is empty for Joe
     expect(screen.queryByText('CFA NOT COOKING')).toBeNull()
+    // Leftovers is the last of an empty card's ideas, and there with no idea
+    // at all: nothing has been breakfast yet, and the one lunch idea is new
+    const offered = { Breakfast: ['🍲 Leftovers'], Lunch: ['Enchiladas', '🍲 Leftovers'] }
     for (const slot of ['Breakfast', 'Lunch'] as const) {
       const empty = card(slot)
       expect(empty.className).toContain('empty')
       expect(within(empty).getByRole('button', { name: 'Choose…' })).toBeTruthy()
-      const quick = within(empty).getByRole('group', { name: `Quick picks for ${slot.toLowerCase()}` })
-      expect(within(quick).getAllByRole('button').map(b => b.textContent?.trim())).toEqual(['🍲 Leftovers', '🤷 Fend for yourself', '🥡 Takeout'])
+      const ideas = within(empty).getByRole('group', { name: `Ideas for ${slot.toLowerCase()}` })
+      expect(within(ideas).getAllByRole('button').map(b => b.textContent?.trim())).toEqual(offered[slot])
+      // one row of chips, and no other one-tap answers
+      expect(within(empty).getAllByRole('group').length).toBe(1)
+      expect(within(empty).queryByText(/Fend for yourself|Takeout/)).toBeNull()
     }
     // the week keeps its strip, each day's letter over a dot for every meal planned
     expect(day(/^Thu/).getAttribute('aria-label')).toBe('Thu Hot Dogs, 1 meal planned')
@@ -146,7 +153,7 @@ describe('the open day’s cards', () => {
     openKitchen()
     fireEvent.click(day(/^Fri/))
     const ideas = within(card('Dinner')).getByRole('group', { name: 'Ideas for dinner' })
-    expect(within(ideas).getAllByRole('button').map(b => b.textContent)).toEqual(['★Spaghetti', '★Chicken Parm', 'Enchiladas'])
+    expect(within(ideas).getAllByRole('button').map(b => b.textContent)).toEqual(['★Spaghetti', '★Chicken Parm', 'Enchiladas', '🍲 Leftovers'])
   })
 
   it('plans a dinner from an idea in one tap, in Joe’s own row and for both of them, and Undo takes it back', () => {
@@ -165,7 +172,7 @@ describe('the open day’s cards', () => {
 
   it('answers a lunch with Leftovers in one tap: a meal with nothing to cook, just Joe’s', () => {
     const k = openKitchen()
-    fireEvent.click(within(card('Lunch')).getByRole('button', { name: /Leftovers/ }))
+    fireEvent.click(within(within(card('Lunch')).getByRole('group', { name: 'Ideas for lunch' })).getByRole('button', { name: 'Leftovers' }))
     // today's lunch: Maria's private legacy row under meal~2026-09-24~lunch is not touched
     expect(k.savedMeals.at(-1)).toMatchObject({ id: 'meal~2026-09-24~lunch~joe', slot: 'lunch', quick: 'leftovers', title: 'Leftovers', shared: false })
     expect(k.savedMeals.some(m => m.id === 'meal~2026-09-24~lunch')).toBe(false)
@@ -213,7 +220,7 @@ describe('the meal picker', () => {
     // the Cook list: the rotation's order — ★ ones not had lately, longest
     // since first; then never had; then the rest — each with when it was last had
     const list = within(picker).getByRole('list', { name: 'Recipes' })
-    const rows = [...list.querySelectorAll('.meal-pick-row:not(.new)')].map(b => [b.querySelector('.meal-pick-name')?.textContent, b.querySelector('.meal-pick-when')?.textContent])
+    const rows = [...list.querySelectorAll('.meal-pick-row:not(.new):not(.leftovers)')].map(b => [b.querySelector('.meal-pick-name')?.textContent, b.querySelector('.meal-pick-when')?.textContent])
     expect(rows).toEqual([
       ['Spaghetti', '2 weeks ago'],
       ['Chicken Parm', '11 days ago'],
@@ -260,12 +267,45 @@ describe('the meal picker', () => {
     fireEvent.click(within(card('Dinner')).getByRole('button', { name: 'Plan my own' }))
     const picker = sheet(/Thu 24 · Dinner/)
     expect(within(within(picker).getByRole('group', { name: 'Who this meal is for' })).getByRole('button', { name: 'Just me' }).getAttribute('aria-pressed')).toBe('true')
-    fireEvent.click(within(picker).getByRole('tab', { name: 'Quick' }))
-    fireEvent.click(within(picker).getByRole('button', { name: /^Takeout/ }))
-    expect(k.savedMeals.at(-1)).toMatchObject({ id: 'meal~2026-09-24~dinner~joe', quick: 'takeout', out: true, shared: false })
-    // his is the card now, and hers is named under it
-    expect(within(card('Dinner')).getByText('Takeout')).toBeTruthy()
+    fireEvent.click(within(within(picker).getByRole('list', { name: 'Recipes' })).getByRole('button', { name: /^Leftovers/ }))
+    expect(k.savedMeals.at(-1)).toMatchObject({ id: 'meal~2026-09-24~dinner~joe', quick: 'leftovers', title: 'Leftovers', shared: false })
+    expect(k.savedMeals.at(-1)).not.toHaveProperty('out')
+    // his is the card now, with nothing to cook, and hers is named under it
+    expect(within(card('Dinner')).getByText('Leftovers')).toBeTruthy()
+    expect(within(card('Dinner')).getByText('Nothing to cook · just you')).toBeTruthy()
     expect(within(card('Dinner')).getByText(/Maria: Hot Dogs/)).toBeTruthy()
+  })
+
+  it('has two tabs, Cook and Eat out, with Leftovers the Cook list’s first row after Something new…, and a search for it finds it', () => {
+    const k = openKitchen()
+    fireEvent.click(day(/^Fri/))
+    fireEvent.click(within(card('Dinner')).getByRole('button', { name: 'Choose…' }))
+    const picker = sheet(/Fri 25 · Dinner/)
+    // no Quick tab
+    expect(within(within(picker).getByRole('tablist', { name: 'What kind of meal' })).getAllByRole('tab').map(t => t.textContent)).toEqual(['Cook', 'Eat out'])
+    expect(within(picker).queryByRole('tab', { name: 'Quick' })).toBeNull()
+    const search = within(picker).getByRole('searchbox', { name: 'Search recipes and places' })
+    expect(search.getAttribute('placeholder')).toBe('Search recipes and places')
+    // Something new…, then Leftovers with what it means, then the rotation
+    const rows = [...within(picker).getByRole('list', { name: 'Recipes' }).querySelectorAll<HTMLElement>('.meal-pick-row')]
+    expect(rows.slice(0, 3).map(r => r.querySelector('.meal-pick-name')?.firstChild?.textContent)).toEqual(['Something new…', 'Leftovers', 'Spaghetti'])
+    expect(rows[1].querySelector('.meal-pick-mark')?.textContent).toBe('🍲')
+    expect(within(rows[1]).getByText('At home, nothing new to cook')).toBeTruthy()
+    expect(rows[1].getAttribute('aria-pressed')).toBe('false')
+    // a search for "left" finds it among what to cook
+    fireEvent.change(search, { target: { value: 'left' } })
+    const cook = within(picker).getByRole('region', { name: 'Recipes that match' })
+    fireEvent.click(within(cook).getByRole('button', { name: /^Leftovers/ }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    // a dinner, so for both of them, and nobody cooks it
+    expect(k.savedMeals.at(-1)).toMatchObject({ id: 'meal~2026-09-25~dinner~joe', quick: 'leftovers', title: 'Leftovers', shared: true })
+    expect(k.savedMeals.at(-1)).not.toHaveProperty('cookId')
+    expect(within(card('Dinner')).getByText('Nothing to cook · both of you')).toBeTruthy()
+    // opened again, it is on Cook, ticked
+    fireEvent.click(within(card('Dinner')).getByRole('button', { name: 'Change dinner' }))
+    const again = sheet(/Fri 25 · Dinner/)
+    expect(within(again).getByRole('tab', { name: 'Cook' }).getAttribute('aria-selected')).toBe('true')
+    expect(within(again).getByRole('button', { name: /^Leftovers/, pressed: true })).toBeTruthy()
   })
 })
 
@@ -297,7 +337,7 @@ describe('starring a recipe', () => {
     fireEvent.click(screen.getByRole('button', { name: 'This week' }))
     fireEvent.click(day(/^Fri/))
     const ideas = within(card('Dinner')).getByRole('group', { name: 'Ideas for dinner' })
-    expect(within(ideas).getAllByRole('button').map(b => b.textContent)).toEqual(['★Spaghetti', '★Beef Stew', '★Chicken Parm'])
+    expect(within(ideas).getAllByRole('button').map(b => b.textContent)).toEqual(['★Spaghetti', '★Beef Stew', '★Chicken Parm', '🍲 Leftovers'])
     fireEvent.click(within(card('Dinner')).getByRole('button', { name: 'Choose…' }))
     const picker = sheet(/Fri 25 · Dinner/)
     fireEvent.click(within(picker).getByRole('button', { name: 'Favourite: Chicken Parm' }))
