@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { householdAction } from '../../household'
 import { deleteMedia, imageFiles, saveMedia } from '../../media'
+import { prepareFace } from '../../photo'
 import { getSupabase } from '../../supabase'
 import { MemberFace } from '../MemberFace'
 import type { SettingsCtx } from './context'
@@ -13,32 +14,19 @@ import { useAsyncAction } from './useAsyncAction'
 // there was no picture at all, so every surface that had to draw you took the
 // first two letters of your name.
 
-/** The longest side a picture is kept at. A face in a 28px circle needs no more, and it has to sync. */
-const FACE_PX = 512
 /** Supabase's own floor. Saying so beforehand beats a server error after the tap. */
 const MIN_PASSWORD = 8
 
 /**
- * Square, downscaled and re-encoded as JPEG. A phone photo is several
- * megabytes of a scene the app draws at 28 pixels across; uploading that
- * whole would cost the other member's device a slow first paint for nothing.
- * Falls back to the file as picked if the canvas is unavailable.
+ * Square, downscaled and re-encoded as JPEG (prepareFace in src/photo.ts,
+ * upright as the camera held it). A phone photo is several megabytes of a
+ * scene the app draws at 28 pixels across; uploading that whole would cost
+ * the other member's device a slow first paint for nothing. Falls back to the
+ * file as picked if it cannot be decoded here.
  */
 async function toFace(file: File): Promise<Blob> {
   try {
-    const bitmap = await createImageBitmap(file)
-    const side = Math.min(bitmap.width, bitmap.height)
-    const size = Math.min(side, FACE_PX)
-    const canvas = document.createElement('canvas')
-    canvas.width = size
-    canvas.height = size
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return file
-    // centre crop: a face is usually in the middle of the frame, and a circle shows the middle anyway
-    ctx.drawImage(bitmap, (bitmap.width - side) / 2, (bitmap.height - side) / 2, side, side, 0, 0, size, size)
-    bitmap.close?.()
-    const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.85))
-    return blob ?? file
+    return await prepareFace(file)
   } catch {
     return file
   }

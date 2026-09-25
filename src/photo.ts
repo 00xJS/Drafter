@@ -112,6 +112,45 @@ export function keepsAsIs(type: string, width: number, height: number, cutout: b
   return cutout && type === 'image/jpeg' && Math.max(width, height) <= PHOTO_EDGE
 }
 
+// ---- a profile picture
+
+/** A face picture's side, at most: a face in a 28px circle needs no more, and it has to sync. */
+export const FACE_EDGE = 512
+
+/** The square a face is cut from — the middle of the picture, its shorter side across — and the side it is drawn at. */
+export function faceCrop(w: number, h: number, edge: number): { sx: number; sy: number; side: number; size: number } {
+  const side = Math.min(w, h)
+  return { sx: (w - side) / 2, sy: (h - side) / 2, side, size: Math.max(1, Math.min(side, edge)) }
+}
+
+/**
+ * A profile picture: the middle square of the photo (a face is usually in the
+ * middle, and a circle shows the middle anyway), at most FACE_EDGE across, as
+ * a JPEG (0.85) on white. Through the one decode every photo here takes, an
+ * <img>, so it comes out the way the camera held it — createImageBitmap could
+ * leave an iPhone photo lying on its side. Throws PhotoUnreadable when the
+ * browser cannot decode the file.
+ */
+export async function prepareFace(file: Blob, edge = FACE_EDGE): Promise<Blob> {
+  const { img, release } = await decode(file)
+  try {
+    const { sx, sy, side, size } = faceCrop(img.naturalWidth, img.naturalHeight, edge)
+    const canvas = document.createElement('canvas')
+    canvas.width = size
+    canvas.height = size
+    const ctx = canvas.getContext('2d')
+    if (!ctx) throw new PhotoUnreadable()
+    ctx.fillStyle = 'white'
+    ctx.fillRect(0, 0, size, size)
+    ctx.drawImage(img, sx, sy, side, side, 0, 0, size, size)
+    const face = await jpeg(canvas, 0.85)
+    canvas.width = canvas.height = 0
+    return face
+  } finally {
+    release()
+  }
+}
+
 // ---- a task's or a note's picture
 //
 // Pictures on a task or in a note were saved as they were picked: the
