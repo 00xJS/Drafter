@@ -1349,6 +1349,11 @@
   .tpl-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
+  /* a sheet with no foot ends on its body: its last choice clear of the
+     home indicator, as a foot is (19-native-shell.css .modal-foot) */
+  .native .fin-sheet .modal-body {
+    padding-bottom: calc(16px + var(--safe-b));
+  }
 }
 /* A row with no date puts its field on a line of its own where the name and
    the field would not both fit beside the amount: a phone, or a narrow column. */
