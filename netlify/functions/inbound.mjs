@@ -55,7 +55,10 @@ export const RATE_WINDOW_MS = 10 * 60_000
 
 // per token, counted across instances (lib/ratelimit.mjs, v3.33): enough to
 // stop a forwarding loop or a leaked address filing hundreds of tasks, and
-// asking the model hundreds of times — spread over cold starts as well
+// asking the model hundreds of times — spread over cold starts as well. Only
+// a token someone holds is counted: the shared count is a row per subject, so
+// counting every key anyone makes up wrote a row for each, and every count
+// then swept a table they had filled.
 const perToken = sharedWindow({ bucket: 'inbound', limit: RATE_LIMIT, windowMs: RATE_WINDOW_MS })
 
 /** What the limit counts a token under: its hash, so the address itself is never written to the limits table. */
@@ -174,17 +177,18 @@ export default async req => {
   const url = new URL(req.url)
   const key = url.searchParams.get('key') ?? ''
   if (key.length < 16) return new Response('Not found', { status: 404 })
-  // before anything is looked up: a flood costs this instance nothing more
-  const slot = await perToken.take(tokenSubject(key))
-  if (!slot.ok) return new Response('Too many emails — try again later', { status: 429, headers: { 'retry-after': String(Math.max(1, Math.ceil(slot.retryAfterMs / 1000))) } })
   let row
   try {
+    // one lookup on a unique column, which is less than counting the key would cost
     row = await withTimeout(left(), signal => settingsFind('inbound_token', key, { signal }))
   } catch {
     // a slow or unreachable store means "try again later", not "no such address"
     return new Response('Temporarily unavailable', { status: 503 })
   }
+  // a key nobody holds is not counted: it would be a row of its own in rate_limits
   if (!row) return new Response('Not found', { status: 404 })
+  const slot = await perToken.take(tokenSubject(key))
+  if (!slot.ok) return new Response('Too many emails — try again later', { status: 429, headers: { 'retry-after': String(Math.max(1, Math.ceil(slot.retryAfterMs / 1000))) } })
 
   const { subject, text, from, messageId } = await parseBody(req)
   const body = text.toString().replace(/\r\n/g, '\n').trim().slice(0, MAX_BODY)

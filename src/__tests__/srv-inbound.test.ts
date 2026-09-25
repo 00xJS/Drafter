@@ -20,7 +20,7 @@ const SUPABASE = 'https://db.example.test'
 const JOBS_URL = 'https://site.test/.netlify/functions/ai-jobs-background'
 const OWNER = 'user-one'
 
-type Route = 'settings' | 'read' | 'write-as' | 'store' | 'claim' | 'job' | 'ai' | 'job_runs'
+type Route = 'settings' | 'read' | 'write-as' | 'store' | 'claim' | 'job' | 'ai' | 'job_runs' | 'limit'
 let slow: Set<Route>
 let failing: Map<Route, number>
 let calls: Route[]
@@ -35,6 +35,8 @@ let writeAsMissing = false
 let claims: Record<string, any>[]
 /** The account each sync_posts_as call wrote as. */
 let writtenAs: string[]
+/** The subject of each shared rate-limit count (rate_limit_take), each one a row in rate_limits. */
+let counted: string[]
 /** The posts table as far as these tests need it: id -> { user_id, data }. */
 let posts: Map<string, { user_id: string; data: Record<string, any> }>
 /** Each job the webhook started. */
@@ -72,6 +74,7 @@ beforeEach(() => {
   writeAsMissing = false
   claims = []
   writtenAs = []
+  counted = []
   posts = new Map()
   started = []
   prompts = []
@@ -96,6 +99,8 @@ beforeEach(() => {
               ? 'read'
               : url.includes('/rest/v1/job_runs')
                 ? 'job_runs'
+                : url.endsWith('/rpc/rate_limit_take')
+                  ? 'limit'
                 : url === JOBS_URL
                   ? 'job'
                   : url.startsWith('https://integrate.api.nvidia.com/')
@@ -103,7 +108,7 @@ beforeEach(() => {
                     : (() => {
                         throw new Error(`unexpected fetch ${url}`)
                       })()
-      if (route !== 'job_runs') calls.push(route)
+      if (route !== 'job_runs' && route !== 'limit') calls.push(route)
       const body = init?.body ? JSON.parse(String(init.body)) : null
       if (slow.has(route)) return hang(init)
       if ((failing.get(route) ?? 0) > 0) {
@@ -111,7 +116,12 @@ beforeEach(() => {
         return new Response('unavailable', { status: 503 })
       }
       const id = decodeURIComponent(url.split('id=eq.')[1]?.split('&')[0] ?? '')
-      if (route === 'settings') return Response.json([settingsRow])
+      if (route === 'limit') {
+        counted.push(body.p_subject)
+        return Response.json({ allowed: true, remaining: RATE_LIMIT - 1, retry_after_ms: 0 })
+      }
+      // the token finds its row; any other key finds nothing
+      if (route === 'settings') return Response.json(url.includes(`inbound_token=eq.${encodeURIComponent(String(settingsRow.inbound_token))}&`) ? [settingsRow] : [])
       if (route === 'read') return Response.json(posts.has(id) ? [structuredClone(posts.get(id))] : [])
       if (route === 'write-as') {
         if (writeAsMissing) return Response.json({ code: 'PGRST202', message: 'Could not find the function public.sync_posts_as(incoming, p_owner) in the schema cache' }, { status: 404 })
@@ -385,16 +395,35 @@ describe('whose task it is', () => {
 })
 
 describe('one token files so many emails', () => {
-  it('past its limit a token is told to try later, before anything is looked up; another token is not', async () => {
+  it('past its limit a token is told to try later, before anything is stored; another token is not', async () => {
     for (let i = 0; i < RATE_LIMIT; i++) expect((await answer(email())).res.status).toBe(200)
     calls = []
     const refused = (await answer(email())).res
     expect(refused.status).toBe(429)
     expect(Number(refused.headers.get('retry-after'))).toBeGreaterThan(0)
-    expect(calls).toEqual([])
+    expect(calls).toEqual(['settings'])
     const other = `other-${KEY}`
     settingsRow.inbound_token = other
     expect((await answer(email(undefined, other))).res.status).toBe(200)
+  })
+
+  it('counts a token under its hash, never the address itself', async () => {
+    await answer(email())
+    expect(counted).toHaveLength(1)
+    expect(counted[0]).toMatch(/^[0-9a-f]{32}$/)
+    expect(counted[0]).not.toContain(KEY)
+  })
+
+  // The shared count is a row per subject, and email-in counted each key
+  // before looking it up: every key anyone made up was a row in rate_limits,
+  // and rate_limit_take swept that whole table on every call.
+  it('a key nobody holds is looked up, refused and never counted', async () => {
+    for (let i = 0; i < 5; i++) {
+      const { res } = await answer(email(undefined, `made-up-${i}-${'x'.repeat(24)}`))
+      expect(res.status).toBe(404)
+    }
+    expect(counted).toEqual([])
+    expect(calls).toEqual(['settings', 'settings', 'settings', 'settings', 'settings'])
   })
 })
 

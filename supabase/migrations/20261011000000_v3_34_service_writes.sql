@@ -1,4 +1,5 @@
--- v3.34: a write the server makes for an account is that account's.
+-- v3.34: a write the server makes for an account is that account's, and the
+-- rate limits' sweep has an index.
 --
 -- ## 1. sync_posts_as
 --
@@ -34,6 +35,15 @@
 -- setting from a request). The plain sync_posts under the service key (the
 -- bot, the sync canary) is unchanged: it writes, and loses, as the site
 -- owner, which is who the bot acts for.
+--
+-- ## 2. rate_limits (window_start)
+--
+-- rate_limit_take (v3.33) deletes every window over for a day on each call,
+-- and nothing indexed window_start, so each call read the whole table. Email-
+-- in counted every key it was sent before looking it up, so a flood of made-up
+-- keys was a row each, and every count after it swept all of them. The
+-- function no longer counts a key nobody holds; this index keeps the sweep a
+-- lookup however many rows there are.
 --
 -- ## Deploy
 --
@@ -148,3 +158,6 @@ $$;
 
 revoke execute on function public.sync_posts_as(uuid, jsonb) from public, anon, authenticated;
 grant execute on function public.sync_posts_as(uuid, jsonb) to service_role;
+
+-- ------------------------------------------------------ rate_limits' sweep
+create index if not exists rate_limits_window_start_idx on public.rate_limits (window_start);

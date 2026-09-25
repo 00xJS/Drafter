@@ -3788,5 +3788,27 @@ begin
   raise notice 'ok v3.34-5: sync_posts_as is the service role''s alone; posts_history_record_loss keeps its grants';
 end $$;
 
+-- ------------- v3.34-6. the rate limits' day-old sweep reads an index, not the whole table
+begin;
+set local enable_seqscan = off;
+do $$
+declare
+  plan text := '';
+  line text;
+begin
+  if not exists (select 1 from pg_indexes where schemaname = 'public' and tablename = 'rate_limits' and indexname = 'rate_limits_window_start_idx') then
+    raise exception 'FAIL v3.34-6: rate_limits has no index on window_start';
+  end if;
+  -- the statement rate_limit_take runs on every call
+  for line in execute 'explain delete from public.rate_limits r where r.window_start < now() - interval ''1 day''' loop
+    plan := plan || line || E'\n';
+  end loop;
+  if plan not like '%rate_limits_window_start_idx%' then
+    raise exception 'FAIL v3.34-6: the sweep does not use the index: %', plan;
+  end if;
+  raise notice 'ok v3.34-6: rate_limits is indexed on window_start, and the day-old sweep reads it';
+end $$;
+rollback;
+
 delete from public.posts_history where id like 'v334-%';
 delete from public.posts where id like 'v334-%';
