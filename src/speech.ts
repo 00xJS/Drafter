@@ -10,8 +10,8 @@
  * It costs nothing and sends nothing of ours anywhere. The Web Speech API is
  * the browser's, and where it is missing this reports so rather than reaching
  * for a service: on the iPhone the keyboard's own 🎤 key already dictates into
- * any field, which is why there is no plugin here and no microphone permission
- * in the iOS shell.
+ * any field, which is why there is no plugin here and no speech recognition in
+ * the iOS shell.
  */
 
 import { isNative } from './native'
@@ -32,9 +32,10 @@ type Ctor = new () => Recogniser
 
 /**
  * Safari and Chrome ship it prefixed; Firefox ships nothing. Never inside the
- * iOS shell, whatever the web view exposes: the app declares no microphone or
- * speech-recognition use to iOS (Info.plist has no usage description for
- * either), so a recogniser started there could only be refused.
+ * iOS shell, whatever the web view exposes: the app declares no
+ * speech-recognition use to iOS (Info.plist has no usage description for it;
+ * its microphone one is for recording a video to attach), so a recogniser
+ * started there could only be refused.
  */
 function ctor(): Ctor | null {
   if (isNative()) return null

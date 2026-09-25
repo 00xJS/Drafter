@@ -43,6 +43,10 @@
 	<string>Unlock Drafter with Face ID so only you can see your planner on this iPhone.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Drafter uses your location to show today's forecast and to log which of your places you are at. The forecast stays on this iPhone. A pin on a place is saved with that place.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Drafter uses the microphone only when you record a video to attach.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Drafter adds a photo to your library only when you choose Save to Photos or Save Image.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
