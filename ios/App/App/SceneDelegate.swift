@@ -26,6 +26,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options connectionOptions: UIScene.ConnectionOptions) {
         guard let windowScene = scene as? UIWindowScene else { return }
 
+        // The scene's one window, built here: Info.plist names no storyboard, so
+        // UIKit makes none of its own, with a bridge of its own inside it.
         window = UIWindow(windowScene: windowScene)
         // Settings → Appearance, before anything is drawn: the status bar, the
         // keyboard, pickers, alerts and the web view's own prefers-color-scheme

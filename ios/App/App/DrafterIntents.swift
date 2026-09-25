@@ -133,9 +133,11 @@ final class TodayLink: NSObject {
         NotificationCenter.default.post(name: .capacitorOpenURL, object: ["url": Self.url, "options": [String: Any]()])
     }
 
+    /// Any of the app's windows, not the first: which one comes first is iOS's
+    /// to decide, and a window of its own (an alert's, a sheet's) can be it.
     private static var bridgeIsUp: Bool {
         UIApplication.shared.connectedScenes.contains { scene in
-            ((scene as? UIWindowScene)?.windows.first?.rootViewController as? CAPBridgeViewController)?.bridge != nil
+            (scene as? UIWindowScene)?.windows.contains { ($0.rootViewController as? CAPBridgeViewController)?.bridge != nil } ?? false
         }
     }
 }

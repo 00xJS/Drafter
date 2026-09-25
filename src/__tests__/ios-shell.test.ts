@@ -187,3 +187,12 @@ describe('capacitor.config.ts', () => {
     expect(delegation).toMatch(/scrollViewWillBeginZooming[\s\S]*?pinchGestureRecognizer\?\.isEnabled = false/)
   })
 })
+
+describe('Siri’s Open Today finds the bridge in any of the app’s windows', () => {
+  it('looks through them all, not the first iOS lists', () => {
+    const intents = read('ios/App/App/DrafterIntents.swift')
+    const bridgeIsUp = /private static var bridgeIsUp: Bool \{([\s\S]*?)\n {4}\}/.exec(intents)?.[1] ?? ''
+    expect(bridgeIsUp).toMatch(/\.windows\.contains \{ \(\$0\.rootViewController as\? CAPBridgeViewController\)\?\.bridge != nil \}/)
+    expect(bridgeIsUp).not.toMatch(/windows\.first/)
+  })
+})
