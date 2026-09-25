@@ -246,9 +246,11 @@ describe('the open day under a thumb', () => {
 })
 
 describe('Plan this week’s meals, from the week’s header', () => {
-  it('plans the dinners it proposes for both of them, as the picker starts a dinner, in Joe’s own rows', () => {
+  it('plans the dinners it proposes for both of them, as the picker starts a dinner, in Joe’s own rows', async () => {
     const k = openKitchen()
     fireEvent.click(screen.getByRole('button', { name: 'Plan this week’s meals' }))
+    // the sheet loads on its first tap, from a chunk of its own: a moment after
+    await screen.findByRole('dialog', { name: /Plan this week’s meals/ })
     const plan = sheet(/Plan this week’s meals/)
     fireEvent.click(within(plan).getByRole('button', { name: /^Plan \d meals?$/ }))
     // Saturday's is the week's something new; Friday has nothing cooled down enough to offer

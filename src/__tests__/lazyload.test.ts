@@ -326,3 +326,24 @@ describe('the screens and the wardrobe card load on demand', () => {
     }
   })
 })
+
+/*
+ * Finance's sheets and the Kitchen's two big ones — planning the week's meals,
+ * filling recipes in — open on a tap, and each loads then, from a chunk of
+ * its own: none comes with its view (finance-sheets.dom.test.tsx and
+ * kitchen-week.dom.test.tsx open one on its first tap).
+ */
+describe('Finance’s and the Kitchen’s sheets load on their first open', () => {
+  it('are loaded where they are drawn, and neither view reaches them statically', () => {
+    const finance = readFileSync(component('Finance'), 'utf8')
+    const sheets = ['AddSheet', 'CheckInSheet', 'BillSheet', 'PaydaySheet', 'GoalSheet', 'AccountSheet', 'LineSheet']
+    for (const sheet of sheets) expect(finance).toContain(`import('./finance/${sheet}')`)
+    const financeReach = reachable([component('Finance')])
+    expect(sheets.map(s => component(`finance/${s}`)).filter(f => financeReach.has(f)).map(f => f.slice(SRC.length))).toEqual([])
+    const kitchen = readFileSync(component('Kitchen'), 'utf8')
+    expect(kitchen).toContain("import('./MealPlanSheet')")
+    expect(kitchen).toContain("import('./kitchen/RecipeFillFlow')")
+    const kitchenReach = reachable([component('Kitchen')])
+    expect([component('MealPlanSheet'), component('kitchen/RecipeFillFlow')].filter(f => kitchenReach.has(f)).map(f => f.slice(SRC.length))).toEqual([])
+  })
+})

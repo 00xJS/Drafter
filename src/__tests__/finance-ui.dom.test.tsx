@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { act, fireEvent, render, screen, within } from './dom'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { Finance } from '../components/Finance'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { Finance, preloadFinanceSheets } from '../components/Finance'
 import { DueFields } from '../components/taskeditor/DueFields'
 import { CHECK_IN_PREFIX } from '../../shared/domain.mts'
 import { withBalance } from '../finance'
@@ -73,6 +73,12 @@ const props = (over: Partial<FinanceProps> = {}): FinanceProps => ({
   ...over,
 })
 
+// Each sheet loads from a chunk of its own on its first tap; here they are
+// loaded before anything is drawn, so a tap draws its sheet at once, and what
+// follows is about the sheets (finance-sheets.dom.test.tsx has the first tap).
+beforeAll(async () => {
+  await preloadFinanceSheets()
+})
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(NOW)

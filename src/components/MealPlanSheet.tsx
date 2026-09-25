@@ -3,7 +3,7 @@ import { favouritesRotation, mealHistory, mealIdeasFor, proposeWeek, targetWeek 
 import type { MealHistory } from '../../shared/weekplan.mts'
 import { weekDayKeys } from '../../shared/weeks.mts'
 import { MealAssist, MealAssistInput, MealSuggestion, mealAssistInput, suggestMeals } from '../ai'
-import { cookedIndex, visitIndex, daysAgo, daysBetween, mealAt, mealId, mealLabel, mealRecipeIds, nextSwap, recipeByName } from '../kitchen'
+import { cookedIndex, visitIndex, daysAgo, daysBetween, mealId, mealLabel, mealRecipeIds, nextSwap } from '../kitchen'
 import { CalendarEvent, MEAL_SLOTS, MEAL_SLOT_META, Meal, MealSlot, Place, PlaceCategory, Recipe, Task } from '../types'
 import { dateKey } from '../utils'
 import { useDayKey } from '../useDayKey'
@@ -11,6 +11,7 @@ import { useNow } from '../useNow'
 import { aiFailureText } from './AskSheet'
 import { MealPicker } from './MealPicker'
 import { Modal, ModalCancel, ModalHead, useChanged } from './Modal'
+import type { MealPick, SlotChoice } from './kitchen/mealpicks'
 
 // "Plan this week's meals" on the Kitchen tab: a pick for every empty dinner
 // (and lunch, when asked) from the kitchen's own ranking in shared/weekplan.mts,
@@ -18,16 +19,10 @@ import { Modal, ModalCancel, ModalHead, useChanged } from './Modal'
 // Nothing is planned until "Plan N meals" — then every meal goes through the
 // Kitchen's own save path in one go, with an Undo.
 
-/** What a slot will be: a recipe, a place you eat at, out with no place, or a dish that is not a recipe yet. */
-export interface SlotChoice {
-  kind: 'recipe' | 'place' | 'out' | 'new'
-  /** The recipe's or the place's id. */
-  id?: string
-  title: string
-  why?: string
-  /** From the ✨ assistant rather than the ranking. */
-  ai?: boolean
-}
+// What a pick is, and the meals the accepted picks become, live on their own
+// (kitchen/mealpicks.ts): the Kitchen applies them, and this sheet loads only
+// when it is opened. Re-exported here, where they were.
+export { mealsForPicks, type MealPick, type SlotChoice } from './kitchen/mealpicks'
 
 export interface MealPlanRow {
   /** `${date}|${slot}` */
@@ -39,12 +34,6 @@ export interface MealPlanRow {
   options: SlotChoice[]
   /** The event across the dinner hour, when there is one: the row starts unticked. */
   busy: string | null
-}
-
-export interface MealPick {
-  date: string
-  slot: MealSlot
-  choice: SlotChoice
 }
 
 const NEW_WHY = 'Something new: saved, never cooked'
@@ -169,50 +158,6 @@ function ideasFrom(suggestions: readonly MealSuggestion[], ids: Record<string, {
     if (choice) ideas[`${s.date}|${s.slot}`] = choice
   }
   return ideas
-}
-
-/**
- * The meals the accepted picks become. A slot planned meanwhile (another
- * device, the calendar) is never overwritten; a pick whose record has gone is
- * skipped; a new dish reuses a recipe of the same name, or becomes a recipe
- * stub with just its name, like the picker's "Something new…".
- */
-export function mealsForPicks(
-  picks: readonly MealPick[],
-  d: { recipes: Recipe[]; places: Place[]; meals: Meal[]; createRecipe(name: string): Recipe; now: Date; myId?: string | null },
-): { meals: Meal[]; created: Recipe[] } {
-  const stamp = d.now.toISOString()
-  const taken = new Set(d.meals.filter(m => !m.deletedAt).map(m => `${m.date}|${m.slot}`))
-  const known = d.recipes.filter(r => !r.deletedAt)
-  const created: Recipe[] = []
-  const out: Meal[] = []
-  for (const { date, slot, choice } of picks) {
-    if (taken.has(`${date}|${slot}`)) continue
-    let fields: Pick<Meal, 'recipeId' | 'out' | 'placeId' | 'title'> | null = null
-    if (choice.kind === 'recipe') {
-      const r = known.find(x => x.id === choice.id)
-      if (r) fields = { recipeId: r.id, title: r.name }
-    } else if (choice.kind === 'place') {
-      const p = d.places.find(x => x.id === choice.id && !x.deletedAt)
-      if (p) fields = { out: true, placeId: p.id, title: p.name }
-    } else if (choice.kind === 'out') {
-      fields = { out: true, title: choice.title || 'Eating out' }
-    } else if (choice.title.trim()) {
-      let r = recipeByName(choice.title, known)
-      if (!r) {
-        r = d.createRecipe(choice.title.trim())
-        known.push(r)
-        created.push(r)
-      }
-      fields = { recipeId: r.id, title: r.name }
-    }
-    if (!fields) continue
-    taken.add(`${date}|${slot}`)
-    // a day that already has a row of mine keeps its id, legacy or not
-    const had = mealAt(d.meals, date, slot, d.myId)
-    out.push({ kind: 'meal', id: had?.id ?? mealId(date, slot, d.myId), date, slot, ...fields, createdAt: stamp, updatedAt: stamp })
-  }
-  return { meals: out, created }
 }
 
 const sameChoice = (a: SlotChoice | null, b: SlotChoice | null) => !!a && !!b && a.kind === b.kind && (a.id ?? a.title) === (b.id ?? b.title)
