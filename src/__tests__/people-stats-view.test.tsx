@@ -138,20 +138,18 @@ describe('with nobody on the list', () => {
 describe('with people, and nobody seen yet', () => {
   const page = () => stats({ tasks: [], entries: [] })
 
-  it('counts them, and zeros every other tile', () => {
+  it('counts them, and draws no tile for a figure of nothing', () => {
     const out = page()
-    expect(out).toContain('<div class="stat-tile kpi-wide"><div class="stat-label">People</div><div class="stat-value">8</div><div class="stat-sub">on your list</div></div>')
+    expect(out).toContain('<div class="stat-tile"><div class="stat-label">People</div><div class="stat-value">8</div><div class="stat-sub">on your list</div></div>')
+    // "Overdue 0", "Streak 0 days" and the rest were most of what the page was
+    for (const label of ['This month', 'Seen lately', 'Overdue', 'Due a catch-up', 'Streak', 'Best streak']) expect(out, label).not.toContain(`<div class="stat-label">${label}</div>`)
+    // the all-time card still says what all time has held, in its own words
     for (const [label, value] of [
-      ['This month', '0 of 14'],
-      ['Seen lately', '0 of 8'],
-      ['Overdue', '0'],
-      ['Due a catch-up', '0'],
       ['Days together', '0'],
       ['Occasions', '0'],
       ['People seen', '0'],
     ])
       expect(out, label).toContain(tile(label, value))
-    expect(out).toContain(`${tile('Streak', '0 days')}<div class="stat-sub">see someone to start one</div>`)
   })
 
   it('says each card is empty, stands nobody on the podium, and lists who was added a fortnight ago', () => {
@@ -202,10 +200,14 @@ describe('with a household’s visits', () => {
     expect(podium).toContain('aria-hidden="true">D</span>')
   })
 
-  it('ranks the most seen over 30 days, each bar in its colour moved to show on the card', () => {
+  it('ranks the most seen over 30 days, every bar in People’s one colour', () => {
     const bars = cardOf(stats(), 'Most seen')
     expect([...bars.matchAll(/stats-hbar-name">([^<]+)</g)].map(m => m[1])).toEqual(['Dad', 'Mum', 'Sam', 'Jo'])
-    expect(bars).toContain(`background:${graphicInk('#fbbf24', 'light')}`)
+    // not a rainbow of each person's own: their colour is their face beside the bar
+    const fills = [...bars.matchAll(/class="hbar-fill" style="width:[\d.]+%;background:([^"]+)"/g)].map(m => m[1])
+    expect(fills).toHaveLength(4)
+    expect(new Set(fills)).toEqual(new Set(['var(--area-ink, var(--viz-series-1))']))
+    expect(bars).not.toContain(`background:${graphicInk('#fbbf24', 'light')}`)
     expect(bars).toContain('aria-pressed="true" class="seg on">30 days</button>')
   })
 
@@ -363,11 +365,12 @@ describe('in the dark theme', () => {
     }
   })
 
-  it('keeps every bar and year-table dot in its own colour, which clears 3:1 on the dark card', () => {
+  it('keeps every year-table dot in its own colour, which clears 3:1 on the dark card, and the bars in People’s', () => {
     painted.theme = 'dark'
     const out = stats()
     for (const c of ['#fbbf24', '#10b981', '#8b5cf6', '#ef4444']) expect(graphicInk(c, 'dark'), c).toBe(c)
-    expect(cardOf(out, 'Most seen')).toContain('background:#fbbf24')
+    expect(cardOf(out, 'Most seen')).not.toContain('background:#fbbf24')
+    expect(cardOf(out, 'Most seen')).toContain('background:var(--area-ink, var(--viz-series-1))')
     expect(cardOf(out, 'The year with people')).toContain('<span class="pdot" style="background:#fbbf24"></span> Mum</td>')
   })
 })

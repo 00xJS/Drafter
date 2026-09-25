@@ -14,6 +14,12 @@ export const RETIRED_KEYS = [
   // that left the switch on Mine would otherwise keep hiding the household's
   // tasks with nothing on screen to turn it off.
   'drafter:mine-only',
+  // the Stats lens's nine segments, remembered: Insights → Stats opens on its
+  // Highlights now, and an area's figures are a page pushed over them that a
+  // tab tap leaves. A device left on Money would otherwise keep a value
+  // nothing reads, which is how a key comes back to mean something it no
+  // longer does.
+  'drafter:stats-tab',
 ] as const
 
 export function forgetRetiredKeys(): void {

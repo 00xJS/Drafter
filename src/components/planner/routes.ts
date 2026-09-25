@@ -1,4 +1,5 @@
 import type { IconName } from '../Icon'
+import type { InsightPeriod, Whose } from '../../../shared/insights.mts'
 
 // Five tabs, and each one answers a different question.
 //
@@ -254,24 +255,27 @@ export const VIEW_TO_WARDROBE: Record<string, WardrobeTab> = { 'wardrobe-stats':
 export const wardrobeTabOfView = (view: string | undefined): WardrobeTab | null => viewIn(VIEW_TO_WARDROBE, view)
 
 /**
- * The Stats lens's own segments — every figure the app keeps, in one tab.
+ * Insights → Stats: the Highlights, and each area's figures pushed over them.
  *
- * Overview reads across all of them. The rest are one per area: the four that
- * had nowhere else to be counted (what you finish, what you pay, what you keep
- * up, what you write) and the four that keep Stats of their own inside their
- * area too (People, Places, Kitchen, the Wardrobe). Those four are drawn HERE,
- * not linked to: the lens is where you go to look at figures, and being sent
- * to another tab to see half of them is the thing it exists to fix. They are
- * the same components their own areas draw, reading the same find boxes and
- * chips (useListFilters), so a figure here and the same figure there can never
- * disagree.
+ * It opened on a track of nine segments — Overview and eight areas — that
+ * scrolled off a phone's edge, over a column of tiles many of which said 0.
+ * It opens on the Highlights now: a few plain lines about the week, the month
+ * or the year (shared/insights.mts), each opening its area. An area's figures
+ * are a page you go into and come back from, with ‹ Back (PushedScreen), and
+ * the Overview's streaks, area cards and year of days are the This year page.
  *
- * Remembered like Tasks' and Kitchen's, on its own track only: a link or the
- * palette moves it for that visit alone.
+ * People, Places, Kitchen and the Wardrobe are drawn from THEIR OWN
+ * components there, the ones their areas draw, reading the same find boxes
+ * and chips (useListFilters), so a figure here and the same figure there can
+ * never disagree.
+ *
+ * Which page is up is not remembered: a tap on the tab lands on the
+ * Highlights, as a tab tap lands on the root of any pushed page. A link or the
+ * palette opens an area for that visit.
  */
-export type StatsTab = 'overview' | 'tasks' | 'money' | 'people' | 'places' | 'kitchen' | 'wardrobe' | 'habits' | 'journal'
-export const STATS_TABS: { key: StatsTab; label: string }[] = [
-  { key: 'overview', label: 'Overview' },
+export type StatsArea = 'tasks' | 'money' | 'people' | 'places' | 'kitchen' | 'wardrobe' | 'habits' | 'journal'
+/** The chips under the Highlights' head, one per area, in the order shared/insights.mts ranks a tie by. */
+export const STATS_AREAS: { key: StatsArea; label: string }[] = [
   { key: 'tasks', label: 'Tasks' },
   { key: 'money', label: 'Money' },
   { key: 'people', label: 'People' },
@@ -281,26 +285,24 @@ export const STATS_TABS: { key: StatsTab; label: string }[] = [
   { key: 'habits', label: 'Habits' },
   { key: 'journal', label: 'Journal' },
 ]
-export const STATS_TAB_KEY = 'drafter:stats-tab'
-export const storedStatsTab = (): StatsTab => {
-  try {
-    const saved = localStorage.getItem(STATS_TAB_KEY)
-    return STATS_TABS.find(t => t.key === saved)?.key ?? 'overview'
-  } catch {
-    return 'overview'
-  }
+/** What Insights → Stats shows: the Highlights, one area's figures, or the year. */
+export type StatsTab = 'highlights' | StatsArea | 'year'
+/** A pushed page's title. */
+export const STATS_PAGE_TITLES: Record<Exclude<StatsTab, 'highlights'>, string> = {
+  ...(Object.fromEntries(STATS_AREAS.map(a => [a.key, a.label])) as Record<StatsArea, string>),
+  year: 'This year',
 }
 /**
- * Links straight to one of the lens's segments, `stats-<segment>` for each.
+ * Links straight to one area's figures, `stats-<area>` for each, and
+ * `stats-year` to the year.
  *
  * The older `people-stats`, `places-stats`, `kitchen-stats` and
  * `wardrobe-stats` are NOT these: they were shipped pointing at the Stats each
  * area keeps inside itself, and they still land there, so no link already in a
  * Shortcut, a reminder or someone's notes changes where it goes. `?view=stats`
- * names no segment at all, so it opens the lens on the one last chosen — as
- * `?view=kitchen` does.
+ * names no page at all, so it opens the Highlights.
  */
-export const VIEW_TO_STATS: Record<string, StatsTab> = {
+export const VIEW_TO_STATS: Record<string, Exclude<StatsTab, 'highlights'>> = {
   'stats-tasks': 'tasks',
   'stats-money': 'money',
   'stats-people': 'people',
@@ -309,10 +311,49 @@ export const VIEW_TO_STATS: Record<string, StatsTab> = {
   'stats-wardrobe': 'wardrobe',
   'stats-habits': 'habits',
   'stats-journal': 'journal',
+  'stats-year': 'year',
 }
-/** The lens segment a link's view names, or null. Its own names only, so `?view=constructor` names none. */
-export const statsTabOfView = (view: string | undefined): StatsTab | null => viewIn(VIEW_TO_STATS, view)
+/** The Stats page a link's view names, or null. Its own names only, so `?view=constructor` names none. */
+export const statsTabOfView = (view: string | undefined): Exclude<StatsTab, 'highlights'> | null => viewIn(VIEW_TO_STATS, view)
 
-/** The eight areas' figures, one per chip under Insights' Highlights, in the order shared/insights.mts ranks a tie by. */
-export type StatsArea = 'tasks' | 'money' | 'people' | 'places' | 'kitchen' | 'wardrobe' | 'habits' | 'journal'
-export const STATS_AREAS: { key: StatsArea; label: string }[] = STATS_TABS.filter((t): t is { key: StatsArea; label: string } => t.key !== 'overview')
+/**
+ * The period a key names — `2026`, `2026-09`, `2026-W39` — or null for
+ * anything else: a notice's target is read with it. The page reads the day
+ * the period starts on itself (shared/insights.mts parsePeriodKey), which a
+ * week that does not exist fails.
+ */
+export function periodOfKey(key: string | null | undefined): InsightPeriod | null {
+  const k = String(key ?? '')
+  if (/^\d{4}$/.test(k)) return 'year'
+  if (/^\d{4}-(0[1-9]|1[0-2])$/.test(k)) return 'month'
+  return /^\d{4}-W(0[1-9]|[1-4]\d|5[0-3])$/.test(k) ? 'week' : null
+}
+
+/**
+ * The Highlights' Week · Month · Year, as last chosen on its own track. A link
+ * (the monthly recap's, `?insights=month&period=2026-09`) moves it for that
+ * visit alone.
+ */
+export const INSIGHTS_PERIOD_KEY = 'drafter:insights-period'
+export const storedInsightsPeriod = (): InsightPeriod => {
+  try {
+    const saved = localStorage.getItem(INSIGHTS_PERIOD_KEY)
+    return saved === 'month' || saved === 'year' ? saved : 'week'
+  } catch {
+    return 'week'
+  }
+}
+
+/**
+ * Mine · Both of us: whose log the shared areas count, remembered per device.
+ * Mine unless this device was told otherwise; the recap's link opens on Mine
+ * for its visit, as the recap itself counts only yours.
+ */
+export const INSIGHTS_WHOSE_KEY = 'drafter:insights-whose'
+export const storedWhose = (): Whose => {
+  try {
+    return localStorage.getItem(INSIGHTS_WHOSE_KEY) === 'both' ? 'both' : 'mine'
+  } catch {
+    return 'mine'
+  }
+}

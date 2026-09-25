@@ -35,6 +35,64 @@
   box-shadow: var(--shadow-sm);
 }
 
+/* ---------- one colour per area ----------
+
+   Each area's figures are drawn in one colour of its own — its bars, rings,
+   sparklines and the year of days — where People's used to draw every person
+   in their own colour, a rainbow in which no bar meant more than another. The
+   colour is a status tone (01-base.css): each clears 3:1 on a card in both
+   themes as a mark (theme-tokens.test.ts), and is a token, so Dark swaps it.
+   The four areas that keep Stats of their own take theirs on their own root,
+   so People → Stats in Keep and in Insights is one view in one colour. A
+   chart's "now" mark is the same colour drawn a step towards the text. The
+   Kitchen's is the chart series itself, the colour its cooked meals have
+   always been drawn in. */
+.ink-tasks {
+  --area-ink: var(--tone-blue);
+}
+.ink-money {
+  --area-ink: var(--tone-green);
+}
+.ink-people,
+.people-stats {
+  --area-ink: var(--tone-violet);
+}
+.ink-places,
+.place-stats {
+  --area-ink: var(--tone-sky);
+}
+.ink-kitchen,
+.kitchen-stats,
+.ink-year {
+  --area-ink: var(--viz-series-1);
+}
+.ink-wardrobe,
+.wardrobe-stats {
+  --area-ink: var(--tone-rose);
+}
+.ink-habits {
+  --area-ink: var(--tone-mint);
+}
+.ink-journal {
+  --area-ink: var(--tone-amber);
+}
+:is(.ink-tasks, .ink-money, .ink-people, .people-stats, .ink-places, .place-stats, .ink-kitchen, .kitchen-stats, .ink-year, .ink-wardrobe, .wardrobe-stats, .ink-habits, .ink-journal) {
+  --area-ink-hot: color-mix(in srgb, var(--area-ink) 72%, var(--text));
+}
+
+/* Insights' pages hold many figures: two tiles to a phone's row, and smaller,
+   where a column of 32px numbers each a card high was most of what the lens
+   used to be. Here rather than in the lens's own sheet, because a tile is the
+   shell's (bits.tsx) as well. */
+@media (max-width: 640px) {
+  .stats-lens .stat-tile {
+    padding: 11px 12px;
+  }
+  .stats-lens .stat-value {
+    font-size: 1.5rem;
+  }
+}
+
 /* ---------- Overview: one card per area ---------- */
 
 .area-list {
@@ -152,7 +210,7 @@
 }
 
 .ring-arc {
-  stroke: var(--viz-series-1);
+  stroke: var(--area-ink, var(--viz-series-1));
 }
 
 /* centred over the ring: the figure belongs in the hole, not under it */

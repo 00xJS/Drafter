@@ -4,7 +4,7 @@ import { habitsConsistency, isDueOn, streakOf } from './habits'
 import { isVisit } from './review'
 import { dayOffset } from './taskutils'
 import { journalDays, weekdayOf } from './journal'
-import { countDays, dayStreaks, monthBuckets, monthsAndTrend, recentTrend, topN, type DayWindow, type Dated, type Streaks } from './stats'
+import { countDays, dayStreaks, daysBetween, monthBuckets, monthsAndTrend, recentTrend, topN, type DayWindow, type Dated, type Streaks } from './stats'
 import { BILL_KIND_META, PRIORITY_META, STATUS_META, type Habit, type JournalEntry, type Priority, type Task, type TaskStatus } from './types'
 import { dateKey } from './utils'
 import { inWindow } from '../shared/stats.mts'
@@ -126,6 +126,24 @@ export function taskReport(tasks: readonly Task[], window: DayWindow, now: Date 
   }
 }
 
+/**
+ * Whether a day falls in the window BEFORE the one ending today: the 30 days
+ * before the last 30, the 12 months before the last 12. What a tile's ↑ or ↓
+ * is set against; 'all' has nothing before it.
+ */
+export function inWindowBefore(day: string, today: string, window: DayWindow): boolean {
+  if (window === 'all') return false
+  const ago = daysBetween(day, today)
+  return ago >= window && ago < 2 * window
+}
+
+/** What the window before this one finished: Finished's change, counted as Finished is. Null for All. */
+export function doneBefore(tasks: readonly Task[], window: DayWindow, now: Date = new Date()): number | null {
+  if (window === 'all') return null
+  const today = dateKey(now)
+  return doneMarks(tasks).filter(m => inWindowBefore(dateKey(new Date(m.at)), today, window)).length
+}
+
 /** Finished work by tag inside the window, most first; a task with no tag is not a row. */
 export function doneByTag(tasks: readonly Task[], window: DayWindow, now: Date = new Date(), n = 10): { key: string; name: string; count: number }[] {
   const today = dateKey(now)
@@ -234,6 +252,20 @@ export function moneyReport(tasks: readonly Task[], year: number, now: Date = ne
     dueNow: outstanding.length,
     dueNowTotal: Math.round(outstanding.reduce((a, t) => a + (t.estimateCost ?? 0), 0)),
   }
+}
+
+/**
+ * What was paid in `year` up to its month and day `upTo` (MM-DD), or in all of
+ * it: Paid's change on the year before is set against the same point in it,
+ * so September is never "down" on a whole year.
+ */
+export function paidToDate(tasks: readonly Task[], year: number, upTo?: string): number {
+  let total = 0
+  for (const m of paidMarks(tasks)) {
+    const day = dateKey(new Date(m.at))
+    if (Number(day.slice(0, 4)) === year && (!upTo || day.slice(5) <= upTo)) total += m.amount
+  }
+  return Math.round(total)
 }
 
 /* A bill kind's word is BILL_KIND_META's, the one the editor shows. It was a

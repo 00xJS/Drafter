@@ -398,6 +398,23 @@ describe('the inks changed in dark now read there (WCAG 2.x)', () => {
     }
   })
 
+  it('draws each area of Insights in a colour of its own, a token that holds 3:1 as a mark on every ground, in both themes', () => {
+    const lens = strip(partialSource('18-stats-lens.css'))
+    // .ink-tasks { --area-ink: var(--tone-blue) } and the rest, as the stylesheet sets them
+    const set = [...lens.matchAll(/([^{}]+)\{\s*--area-ink:\s*var\((--[\w-]+)\);\s*\}/g)].map(m => [m[1].trim(), m[2]] as const)
+    const areas = ['tasks', 'money', 'people', 'places', 'kitchen', 'wardrobe', 'habits', 'journal']
+    for (const area of areas) expect(set.some(([selector]) => selector.split(',').map(x => x.trim()).includes(`.ink-${area}`)), area).toBe(true)
+    // one each: no two areas share a colour
+    const byArea = areas.map(area => set.find(([selector]) => selector.split(',').map(x => x.trim()).includes(`.ink-${area}`))![1])
+    expect(new Set(byArea).size).toBe(areas.length)
+    for (const [name, palette] of [['light', light], ['dark', dark]] as const) {
+      const low = [...new Set(set.map(([, token]) => token))].flatMap(token =>
+        ['--bg', '--surface', '--surface-2'].map(g => [token, g, contrast(solid(token, palette), solid(g, palette))] as const).filter(([, , ratio]) => ratio < 3),
+      )
+      expect(low.map(([t, g, r]) => `${t} on ${g} in ${name}: ${r.toFixed(2)}`)).toEqual([])
+    }
+  })
+
   it('gives the mood chart’s scrub cursor and weekly-average line 3:1 on their own grounds, in both themes', () => {
     const journal = strip(partialSource('15-journal.css'))
     // the scrubbed day's lit rect is drawn after the cursor, so it lies over the line and its ground alike

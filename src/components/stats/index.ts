@@ -6,7 +6,7 @@
  * time, distinct days, streaks, a year's months, the 90-day trend, the top
  * few); the kit only draws them, and counts nothing of its own.
  *
- * - StatTile, StreakTiles: counters for a kpi-row.
+ * - StatTile, StreakTiles: counters for a kpi-row; DeltaBadge, a figure's change on the period before.
  * - ChartCard, with a Stepper (‹ year ›) or a WindowSwitch (30 days · 12 months · All) at its head.
  * - Segmented: one track with a thumb that slides, for a switch that swaps the panel under it.
  * - Ring: "13 of 15" as an arc. Sparkline: a series small enough to sit in a row.
@@ -32,6 +32,7 @@
 
 export { StatTile, StreakTiles, type StreakWords } from './StatTile'
 export { TrendBadge } from './TrendBadge'
+export { DeltaBadge } from './DeltaBadge'
 export { ChartCard, Stepper, WindowSwitch } from './ChartCard'
 export { RankedBars, type Ranked } from './RankedBars'
 export { Podium } from './Podium'

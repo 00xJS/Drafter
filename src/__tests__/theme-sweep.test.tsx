@@ -167,7 +167,7 @@ describe('the year in places gives a deep colour’s busiest cells their own ink
   })
 })
 
-describe('the wardrobe’s most worn deepens a pale piece so its bar still shows on white', () => {
+describe('the wardrobe’s year table deepens a pale piece so its dot still shows on white', () => {
   // the colour a white tee's photo suggests
   const tee: Garment = { kind: 'garment', id: 'tee', name: 'White tee', type: 'top', color: '#f2f2f2', createdAt: STAMP, updatedAt: STAMP }
   const worn = (date: string): Wear => ({ kind: 'wear', id: `wear~${date}~0000000000`, date, garmentIds: ['tee'], createdAt: STAMP, updatedAt: STAMP })
@@ -187,11 +187,13 @@ describe('the wardrobe’s most worn deepens a pale piece so its bar still shows
       ),
     )
 
-  it('the bar and the year table’s dot take the deepened colour, and its cells the heat the other tables use', () => {
+  it('the year table’s dot takes the deepened colour, its cells the heat the other tables use, and the bar the area’s own', () => {
     const ink = graphicInk('#f2f2f2', 'light')
     expect(ink).not.toBe('#f2f2f2')
     const html = stats()
-    expect(html).toContain(`class="hbar-fill" style="width:85%;background:${ink}"`)
+    // a bar is the Wardrobe's one colour (.wardrobe-stats), which holds 3:1 on a card
+    // as a token (theme-tokens.test.ts); the piece's own is its photo beside it
+    expect(html).toContain('class="hbar-fill" style="width:85%;background:var(--area-ink, var(--viz-series-1))"')
     expect(html).toContain(`class="pdot" style="background:${ink}"`)
     const cell = heatStyle(ink, 2, 'light')
     expect(html).toContain(`title="2 days" style="background:${cell.background}${cell.color ? `;color:${cell.color}` : ''}"`)

@@ -1,5 +1,7 @@
 /** Deep-link / share-target / drafter:// parsing — one entry point for every inbound URL. */
 
+import { periodOfKey } from './components/planner/routes'
+
 export interface ParsedLink {
   oauth?: { provider: 'google' | 'microsoft'; ok: boolean; reason?: string }
   view?: string
@@ -17,6 +19,12 @@ export interface ParsedLink {
   plan?: 'day' | 'shutdown' | 'week'
   /** The chat to open on its household thread: a household message's push. Opening it writes nothing. */
   chat?: 'household'
+  /**
+   * Insights' Highlights on a period: `?insights=month&period=2026-09`, the
+   * monthly recap's push and its row in the hub. `at` is the period's key, or
+   * absent for the one we are in. Opening it writes nothing.
+   */
+  insights?: { period: 'week' | 'month' | 'year'; at?: string }
 }
 
 const JOURNAL_MAX = 2000
@@ -136,6 +144,14 @@ export function parseLink(params: URLSearchParams, opts?: { host?: string; allow
     // …and so does a household message's push, the chat on its Household side
     // (netlify/functions/notify.mjs): that one value, and nothing it carries
     if (params.get('chat') === 'household') out.chat = 'household'
+    // …and the monthly recap's (netlify/functions/digest.mjs): the Highlights
+    // on its month. A period this app does not name, or a key that is not that
+    // period's, is left out — the page then opens on the one we are in
+    const insights = params.get('insights')
+    if (insights === 'week' || insights === 'month' || insights === 'year') {
+      const at = params.get('period')
+      out.insights = at && periodOfKey(at) === insights ? { period: insights, at } : { period: insights }
+    }
   }
 
   // A reminder's action button appends `&act=…` to that row's own link. It writes

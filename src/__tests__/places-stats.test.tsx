@@ -450,7 +450,8 @@ describe('Places → Stats, drawn', () => {
   it('with places and no outings, has every card say what it is waiting for', () => {
     const page = view({ tasks: [], meals: [] })
     expect(page).toContain('<div class="stat-label">Places</div><div class="stat-value">6</div>')
-    expect(page).toContain('<div class="stat-label">Outings this year</div><div class="stat-value">0</div>')
+    // no tile for a figure of nothing: no outings this year, this month, due back or new
+    for (const label of ['Outings this year', 'Outings this month', 'Been a while', 'New this year']) expect(page, label).not.toContain(`<div class="stat-label">${label}</div>`)
     expect(page).toContain('Each day’s places · no outings')
     expect(page).not.toContain('place-dots')
     expect(page).not.toContain('Top three')
@@ -486,8 +487,10 @@ describe('Places → Stats, drawn', () => {
     ])
       expect(page).toContain(`<div class="stat-label">${label}</div><div class="stat-value">${value}</div>`)
     expect(page).toContain('saved, every kind')
-    // the fifth spans the phone's 2-up row
-    expect(page).toContain('<div class="stat-tile kpi-wide"><div class="stat-label">New this year</div>')
+    // this month's and this year's outings, each against the same stretch before
+    expect(page).toMatch(/<div class="stat-label">Outings this month<\/div><div class="stat-value">4<\/div><div class="stat-trend"><span class="delta-line">/)
+    expect(page).toContain('on last month so far')
+    expect(page).toContain('on 2025 so far')
   })
 
   it('draws the month in places: each day’s places named in full, opening the Calendar', () => {
@@ -650,9 +653,13 @@ describe('what a press does', () => {
     expect(button(tree, 'Restaurant 2').props['aria-pressed']).toBe(true)
     expect(button(tree, 'All 6').props['aria-pressed']).toBe(false)
     expect(tile('Places')).toBe('2')
-    expect(tile('Outings this year')).toBe(String(report.reduce((n, r) => n + r.total, 0)))
-    expect(tile('Outings this month')).toBe(String(report.reduce((n, r) => n + r.months[8], 0)))
-    expect(tile('Been a while')).toBe(String(stats.filter(dueBack).length))
+    // a tile only for something there is, and each the table's own sum
+    const shown = (n: number) => (n > 0 ? String(n) : undefined)
+    expect(tile('Outings this year')).toBe(shown(report.reduce((n, r) => n + r.total, 0)))
+    expect(tile('Outings this month')).toBe(shown(report.reduce((n, r) => n + r.months[8], 0)))
+    // a tile only for something there is: none of the restaurants is due back
+    const due = stats.filter(dueBack).length
+    expect(tile('Been a while')).toBe(due > 0 ? String(due) : undefined)
     expect(tableRows(tree).map(r => r.key)).toEqual(report.map(r => r.place.id))
     expect(podiumTop(tree).map(r => r.key)).toEqual(mostVisited(stats, 'all', NOW, 3).map(r => r.key))
     const items = (title: string) => all.find(e => e.type === ListCard && e.props.title === title)!.props.items as PlaceStats[]

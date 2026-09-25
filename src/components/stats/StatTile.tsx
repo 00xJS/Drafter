@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { countOf } from '../../people'
 
 /**
@@ -19,6 +20,7 @@ export function StatTile({
   warn,
   className,
   onJump,
+  trend,
 }: {
   label: string
   value: string
@@ -26,11 +28,14 @@ export function StatTile({
   warn?: boolean
   className?: string
   onJump?: (() => void) | null
+  /** Its change on the period before (a DeltaBadge), under the figure. */
+  trend?: ReactNode
 }) {
   const body = (
     <>
       <div className="stat-label">{label}</div>
       <div className={warn ? 'stat-value stat-warn' : 'stat-value'}>{value}</div>
+      {trend && <div className="stat-trend">{trend}</div>}
       {sub && <div className="stat-sub">{sub}</div>}
     </>
   )

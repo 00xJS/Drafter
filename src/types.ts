@@ -1044,8 +1044,13 @@ export interface Notice extends Owned {
   type: NoticeType
   /** The member who did it; none for the digest or an alarm. */
   actorId?: string
-  /** What a tap opens: a message's is the household's thread, whichever message it names. */
-  target?: { kind: 'task' | 'event' | 'review' | 'message'; id: string }
+  /**
+   * What a tap opens: a message's is the household's thread, whichever
+   * message it names; the monthly recap's (`insights`) is Insights'
+   * Highlights on the period its id names (`2026-09`). A build from before
+   * a kind drops the target and keeps the notice, which then opens nothing.
+   */
+  target?: { kind: 'task' | 'event' | 'review' | 'message' | 'insights'; id: string }
   /** The headline, as the lock screen said it: "Maria finished “Take bins out”". */
   title: string
   /** What happened, a line each, oldest first; at most eight. */

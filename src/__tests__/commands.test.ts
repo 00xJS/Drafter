@@ -25,7 +25,6 @@ interface ShellState {
   rememberedPlacesView: InnerView
   rememberedCal: CalendarMode
   rememberedKitchen: KitchenTab
-  rememberedStats: StatsTab
   journalDate: string | null
   /** the one-shot way into Keep → Wardrobe, when a command made one */
   wardrobe: WardrobeOpen | null
@@ -33,7 +32,7 @@ interface ShellState {
   kitchenTab: KitchenTab | null
   /** Insights' own segment: the lens, the journal archive or the week */
   insightsTab: InsightsTab
-  /** the one-shot Stats lens segment, when a command named one */
+  /** the Stats page pushed over the Highlights, when a command named one; a tab tap lands on the Highlights */
   statsTab: StatsTab | null
   settingsOpen: boolean
   newTasks: unknown[][]
@@ -59,7 +58,6 @@ const STARTS: ShellState[] = [
     rememberedPlacesView: 'stats',
     rememberedCal: 'day',
     rememberedKitchen: 'grocery',
-    rememberedStats: 'money',
     journalDate: null,
     wardrobe: null,
     kitchenTab: null,
@@ -84,7 +82,6 @@ const STARTS: ShellState[] = [
     rememberedPlacesView: 'list',
     rememberedCal: 'month',
     rememberedKitchen: 'week',
-    rememberedStats: 'habits',
     journalDate: null,
     wardrobe: null,
     kitchenTab: null,
@@ -117,7 +114,8 @@ function shell(start: ShellState, now: Date = AFTERNOON) {
       if (v === 'tasks') s.tasksTab = s.rememberedTasks
       if (v === 'calendar') s.calMode = s.rememberedCal
       if (v === 'insights') {
-        s.statsTab = s.rememberedStats
+        // a tab tap lands on the Highlights: a page pushed over them is never remembered
+        s.statsTab = 'highlights'
         s.insightsTab = 'stats'
       }
       if (v === 'keep') {
@@ -162,7 +160,7 @@ function shell(start: ShellState, now: Date = AFTERNOON) {
       s.view = 'keep'
     },
     openLens: tab => {
-      if (tab) s.statsTab = tab
+      s.statsTab = tab ?? 'highlights'
       s.insightsTab = 'stats'
       s.view = 'insights'
     },
@@ -264,7 +262,9 @@ describe('the palette’s own commands', () => {
     ['go-places-stats', { view: 'insights', statsTab: 'places' }],
     ['go-kitchen-stats', { view: 'insights', statsTab: 'kitchen' }],
     ['go-wardrobe-stats', { view: 'insights', statsTab: 'wardrobe' }],
-    ['go-stats', { view: 'insights' }],
+    ['go-stats', { view: 'insights', statsTab: 'highlights' }],
+    // the Overview became the year's page, pushed over the Highlights
+    ['go-year-stats', { view: 'insights', statsTab: 'year' }],
     ['go-task-stats', { view: 'insights', statsTab: 'tasks' }],
     ['go-money-stats', { view: 'insights', statsTab: 'money' }],
     ['go-habit-stats', { view: 'insights', statsTab: 'habits' }],
@@ -290,7 +290,7 @@ describe('the palette’s own commands', () => {
     }
   })
 
-  it('opens the lens on a segment for the visit only, and the plain Stats where it was left', () => {
+  it('opens an area’s page for the visit only, and the plain Stats on its Highlights', () => {
     const stats = commands.find(c => c.id === 'go-money-stats')
     expect(stats).toMatchObject({ label: 'Money stats', icon: 'stats' })
     expect(stats?.quick).toBeFalsy()
@@ -298,11 +298,11 @@ describe('the palette’s own commands', () => {
     for (const start of STARTS) {
       // a lens segment moves nothing else
       expect(run('go-money-stats', start)).toMatchObject({ homeTab: start.homeTab, tasksTab: start.tasksTab, keepTab: start.keepTab, wardrobe: null, settingsOpen: false })
-      // and the plain Stats opens where it was last left, as a tab tap does, even straight after one of them
+      // and the plain Stats opens on the Highlights, as a tab tap does, even straight after one of them
       const { s: after, commands: cmds } = shell(start)
       cmds.find(c => c.id === 'go-money-stats')!.run()
       cmds.find(c => c.id === 'go-stats')!.run()
-      expect(after).toMatchObject({ view: 'insights', statsTab: start.rememberedStats })
+      expect(after).toMatchObject({ view: 'insights', statsTab: 'highlights' })
     }
   })
 

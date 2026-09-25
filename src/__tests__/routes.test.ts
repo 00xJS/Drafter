@@ -8,7 +8,10 @@ import {
   LEGACY_VIEW_TO_HOME,
   LEGACY_VIEW_TO_TASKS,
   PEOPLE_TAB_KEY,
-  STATS_TABS,
+  INSIGHTS_PERIOD_KEY,
+  INSIGHTS_WHOSE_KEY,
+  STATS_AREAS,
+  STATS_PAGE_TITLES,
   STATS_VIEW_TO_PEOPLE,
   TASKS_TAB_KEY,
   TASKS_TABS,
@@ -29,9 +32,11 @@ import {
   storedInnerView,
   storedInnerViews,
   statsTabOfView,
+  storedInsightsPeriod,
   storedKeepTab,
-  storedStatsTab,
   storedTasksTab,
+  storedWhose,
+  periodOfKey,
   viewIn,
   wardrobeTabOfView,
 } from '../components/planner/routes'
@@ -77,9 +82,8 @@ describe('five tabs, the same on the phone and the desktop', () => {
     expect(VIEWS as string[]).not.toContain('places')
   })
 
-  it('holds every area\u2019s figures as a segment of the lens, and a link to each', () => {
-    expect(STATS_TABS.map(t => [t.key, t.label])).toEqual([
-      ['overview', 'Overview'],
+  it('holds every area\u2019s figures as a page of Insights → Stats, and a link to each', () => {
+    expect(STATS_AREAS.map(t => [t.key, t.label])).toEqual([
       ['tasks', 'Tasks'],
       ['money', 'Money'],
       ['people', 'People'],
@@ -89,12 +93,14 @@ describe('five tabs, the same on the phone and the desktop', () => {
       ['habits', 'Habits'],
       ['journal', 'Journal'],
     ])
-    // every segment but the Overview has a link of its own, `stats-<segment>`
-    const segments = STATS_TABS.map(t => t.key).filter(k => k !== 'overview') as string[]
-    expect(Object.values(VIEW_TO_STATS).sort()).toEqual([...segments].sort())
-    for (const key of segments) expect(statsTabOfView(`stats-${key}`)).toBe(key)
-    // a bare ?view=stats names no segment, so the lens opens on the one last
-    // chosen — as ?view=kitchen does
+    // every area's page is titled as its chip, and the Overview is the year's
+    for (const a of STATS_AREAS) expect(STATS_PAGE_TITLES[a.key]).toBe(a.label)
+    expect(STATS_PAGE_TITLES.year).toBe('This year')
+    // every page has a link of its own, `stats-<area>`, and the year `stats-year`
+    const pages = [...STATS_AREAS.map(t => t.key), 'year'] as string[]
+    expect(Object.values(VIEW_TO_STATS).sort()).toEqual([...pages].sort())
+    for (const key of pages) expect(statsTabOfView(`stats-${key}`)).toBe(key)
+    // a bare ?view=stats names no page, so it opens the Highlights
     expect(statsTabOfView('stats')).toBeNull()
     expect(statsTabOfView('constructor')).toBeNull()
     expect(statsTabOfView(undefined)).toBeNull()
@@ -111,16 +117,35 @@ describe('five tabs, the same on the phone and the desktop', () => {
     expect(VIEW_TO_WARDROBE['wardrobe-stats']).toBe('stats')
   })
 
-  it('remembers the lens segment chosen on its own track, and nothing else', () => {
-    const read = (v: string | null) => {
-      vi.stubGlobal('localStorage', { getItem: () => v })
-      return storedStatsTab()
+  it('remembers the Highlights’ period and whose log, each by its own key, and nothing it does not know', () => {
+    const read = <T,>(key: string, v: string | null, fn: () => T) => {
+      vi.stubGlobal('localStorage', { getItem: (k: string) => (k === key ? v : null) })
+      return fn()
     }
-    expect(read(null)).toBe('overview')
-    expect(read('money')).toBe('money')
-    expect(read('wardrobe')).toBe('wardrobe')
-    expect(read('recipes')).toBe('overview')
-    expect(read('__proto__')).toBe('overview')
+    expect(read(INSIGHTS_PERIOD_KEY, null, storedInsightsPeriod)).toBe('week')
+    expect(read(INSIGHTS_PERIOD_KEY, 'month', storedInsightsPeriod)).toBe('month')
+    expect(read(INSIGHTS_PERIOD_KEY, 'year', storedInsightsPeriod)).toBe('year')
+    expect(read(INSIGHTS_PERIOD_KEY, 'decade', storedInsightsPeriod)).toBe('week')
+    expect(read(INSIGHTS_PERIOD_KEY, '__proto__', storedInsightsPeriod)).toBe('week')
+    // Mine unless this device chose Both of us
+    expect(read(INSIGHTS_WHOSE_KEY, null, storedWhose)).toBe('mine')
+    expect(read(INSIGHTS_WHOSE_KEY, 'both', storedWhose)).toBe('both')
+    expect(read(INSIGHTS_WHOSE_KEY, 'everyone', storedWhose)).toBe('mine')
+    // storage that will not answer is the defaults, never a throw
+    vi.stubGlobal('localStorage', {
+      getItem: () => {
+        throw new Error('blocked')
+      },
+    })
+    expect(storedInsightsPeriod()).toBe('week')
+    expect(storedWhose()).toBe('mine')
+  })
+
+  it('reads a period’s key in a link or a notice, and nothing else', () => {
+    expect(periodOfKey('2026-09')).toBe('month')
+    expect(periodOfKey('2026-W39')).toBe('week')
+    expect(periodOfKey('2026')).toBe('year')
+    for (const bad of ['2026-13', '2026-W54', '2026-W00', '26-09', 'constructor', '', null, undefined]) expect(periodOfKey(bad), String(bad)).toBeNull()
   })
 
   it('gives the wardrobe a segment of Keep, never a tab of its own', () => {

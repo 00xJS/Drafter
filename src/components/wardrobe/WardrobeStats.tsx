@@ -6,6 +6,7 @@ import { useTheme } from '../../theme'
 import { useNow } from '../../useNow'
 import type { Garment, Outfit } from '../../types'
 import { dateKey } from '../../utils'
+import { daysInRange, soFarBefore } from '../../stats'
 import {
   NOT_WORN_DAYS,
   wardrobeCosts,
@@ -23,7 +24,7 @@ import {
   yourUniform,
   type WearIndex,
 } from '../../wardrobe'
-import { ChartCard, ListCard, ListRow, MonthBars, MonthCalendar, Podium, RankedBars, StatTile, Stepper, StreakTiles, YearTable, markInk } from '../stats'
+import { ChartCard, DeltaBadge, ListCard, ListRow, MonthBars, MonthCalendar, Podium, RankedBars, StatTile, Stepper, YearTable, markInk } from '../stats'
 import { Collage, GarmentPhoto } from './GarmentPhoto'
 
 /** The Stats kit grew out of this screen, which keeps its own wardrobe- classes. */
@@ -133,7 +134,10 @@ export function WardrobeStats({ garments, outfits, byId, ix, onOpenPiece, onReti
   const thisYear = Number(ix.dayKey.slice(0, 4))
   const [year, setYear] = useState(thisYear)
   const tiles = wardrobeTiles(garments, ix)
+  // this month so far, against last month's same days
+  const loggedBefore = daysInRange(ix.logged, soFarBefore(ix.dayKey, 'month'))
   const streaks = wearStreaks(ix)
+  const today = ix.looks.has(ix.dayKey)
   const podium = mostWorn(garments, ix, 'all', 3).map(ranked)
   const rested = notWornLately(garments, ix)
   const never = neverWorn(garments, ix)
@@ -178,11 +182,21 @@ export function WardrobeStats({ garments, outfits, byId, ix, onOpenPiece, onReti
 
   return (
     <div className="wardrobe-stats">
+      {/* the month so far first, set against last month's same days; a tile is
+          drawn only for something there is */}
       <div className="kpi-row wardrobe-tiles">
-        <StatTile label="Clothes" value={String(tiles.pieces)} sub="in use; retired ones aside" />
-        <StatTile label="Days logged" value={`${tiles.loggedThisMonth} of ${tiles.daysThisMonth}`} sub="this month so far" />
-        <StatTile label="Worn lately" value={`${tiles.wornLately} of ${tiles.pieces}`} sub="pieces worn in the last 90 days" />
-        <StreakTiles current={streaks.current} best={streaks.best} today={ix.looks.has(ix.dayKey)} />
+        {tiles.loggedThisMonth > 0 && (
+          <StatTile
+            label="Days logged"
+            value={`${tiles.loggedThisMonth} of ${tiles.daysThisMonth}`}
+            sub="this month so far"
+            trend={<DeltaBadge by={tiles.loggedThisMonth - loggedBefore} than="on last month so far" />}
+          />
+        )}
+        {tiles.pieces > 0 && <StatTile label="Clothes" value={String(tiles.pieces)} sub="in use; retired ones aside" />}
+        {tiles.wornLately > 0 && <StatTile label="Worn lately" value={`${tiles.wornLately} of ${tiles.pieces}`} sub="pieces worn in the last 90 days" />}
+        {streaks.current > 0 && <StatTile label="Streak" value={countOf(streaks.current, 'day')} sub={today ? 'logged in a row, today too' : 'log today to keep it going'} />}
+        {streaks.best > 0 && <StatTile label="Best streak" value={countOf(streaks.best, 'day')} sub="logged in a row" />}
       </div>
 
       <MonthCalendar
@@ -220,8 +234,8 @@ export function WardrobeStats({ garments, outfits, byId, ix, onOpenPiece, onReti
         sub="Days worn: two looks on one day count once"
         empty="Log a few days and your most worn shows here."
         rank={span => mostWorn(garments, ix, span).map(ranked)}
-        // a photo's white or navy is moved just far enough to stand out on the theme's card
-        color={r => r.garment.color}
+        // one colour for the area (.wardrobe-stats, 18-stats-lens.css): a
+        // piece's own colour is its photo beside the bar
         picture={r => <GarmentPhoto garment={r.garment} className="thumb-28" />}
         badge={r => r.garment.archivedAt && <span className="badge wardrobe-retired">Retired</span>}
         onOpen={r => onOpenPiece(r.key)}

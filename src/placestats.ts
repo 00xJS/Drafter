@@ -1,5 +1,5 @@
 import { driftedFrom, filedAt, type PlaceStats } from './places'
-import { monthsAndTrend, topN, type DayWindow } from './stats'
+import { daysInRange, monthsAndTrend, soFarBefore, topN, type DayWindow } from './stats'
 import { MEAL_SLOTS, PLACE_CATEGORIES, PLACE_CATEGORY_META, type Person, type Place, type PlaceCategory } from './types'
 import { dateKey } from './utils'
 
@@ -83,6 +83,20 @@ export function placesTiles(stats: readonly PlaceStats[], now: Date = new Date()
     if (first && first.getFullYear() === year) newThisYear++
   }
   return { places: stats.length, outingsThisYear, outingsThisMonth, beenAWhile: stats.filter(dueBack).length, newThisYear }
+}
+
+/**
+ * The outings of the same stretch before this month's and this year's so far
+ * (soFarBefore): last month to today's date, last year to today's month and
+ * day, each filed as the tiles file them. What Outings this month and Outings
+ * this year are set against.
+ */
+export function outingsSoFarBefore(stats: readonly PlaceStats[], now: Date = new Date()): { month: number; year: number } {
+  const today = dateKey(now)
+  const month = soFarBefore(today, 'month')
+  const year = soFarBefore(today, 'year')
+  const days = stats.flatMap(s => s.visits.map(v => dateKey(new Date(filedAt(v)))))
+  return { month: daysInRange(days, month), year: daysInRange(days, year) }
 }
 
 // ---- ranked ------------------------------------------------------------------------

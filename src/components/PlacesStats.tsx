@@ -3,14 +3,14 @@ import { readableInk } from '../contrast'
 import { daysAgo, daysBetween, shortDay } from '../kitchen'
 import { countOf } from '../people'
 import { NO_PLACE_FILTER, kindOn, placeEmoji, placeMatcher, placeStats, placeYearReport, type PlaceFilter } from '../places'
-import { companyOnOutings, kindChips, mealsOut, mostVisited, neverBeen, notBeenBack, outingsByKind, outingsByMonth, placesByDay, placesTiles, usualCompany } from '../placestats'
+import { companyOnOutings, kindChips, mealsOut, mostVisited, neverBeen, notBeenBack, outingsByKind, outingsByMonth, outingsSoFarBefore, placesByDay, placesTiles, usualCompany } from '../placestats'
 import { MONTHS } from '../stats'
 import { useTheme } from '../theme'
 import { useDayClock } from '../useDayClock'
 import { PLACE_CATEGORY_META, type Meal, type Person, type Place, type Task } from '../types'
 import { dateKey } from '../utils'
 import { PersonFace } from './PersonFace'
-import { ChartCard, ListCard, ListRow, MonthBars, MonthCalendar, Narrowed, Podium, RankedBars, StatTile, Stepper, YearTable, markInk } from './stats'
+import { ChartCard, DeltaBadge, ListCard, ListRow, MonthBars, MonthCalendar, Narrowed, Podium, RankedBars, StatTile, Stepper, YearTable, markInk } from './stats'
 
 interface Props {
   places: Place[]
@@ -124,6 +124,7 @@ export function PlacesStats({ places, people, tasks, meals, filter, onFilter, on
   const figures = useMemo(
     () => ({
       tiles: placesTiles(stats, now),
+      before: outingsSoFarBefore(stats, now),
       podium: mostVisited(stats, 'all', now, 3),
       back: notBeenBack(stats),
       never: neverBeen(stats),
@@ -177,7 +178,7 @@ export function PlacesStats({ places, people, tasks, meals, filter, onFilter, on
       </div>
     )
 
-  const { tiles, podium, back, never, days, usual, eaten } = figures
+  const { tiles, before, podium, back, never, days, usual, eaten } = figures
   /** A month of the calendar in words: its outings, as the year's bars count them, on how many days. */
   const monthLine = (y: number, m: number) => {
     const outings = outingsByMonth(stats, y, now).months[m - 1]
@@ -195,12 +196,28 @@ export function PlacesStats({ places, people, tasks, meals, filter, onFilter, on
       {/* under the chips, heading the figures where the empty state sits, so a chip pressed never moves */}
       {narrowedBy && <Narrowed words={narrowedBy} onShowAll={showAll} />}
 
+      {/* the places, and the outings this month and this year, each set against
+          the same stretch before; a tile is drawn only for something there is */}
       <div className="kpi-row people-kpis">
         <StatTile label="Places" value={String(tiles.places)} sub={['saved', label ? `${label.toLowerCase()} only` : !typed && 'every kind', matching].filter(Boolean).join(', ')} />
-        <StatTile label="Outings this year" value={String(tiles.outingsThisYear)} sub="a meal eaten out there included" />
-        <StatTile label="Outings this month" value={String(tiles.outingsThisMonth)} sub={`in ${MONTHS[now.getMonth()]} so far`} />
-        <StatTile label="Been a while" value={String(tiles.beenAWhile)} sub="due or overdue a return" />
-        <StatTile label="New this year" value={String(tiles.newThisYear)} sub={`a first outing in ${thisYear}`} className="kpi-wide" />
+        {tiles.outingsThisMonth > 0 && (
+          <StatTile
+            label="Outings this month"
+            value={String(tiles.outingsThisMonth)}
+            sub={`in ${MONTHS[now.getMonth()]} so far`}
+            trend={<DeltaBadge by={tiles.outingsThisMonth - before.month} than="on last month so far" />}
+          />
+        )}
+        {tiles.outingsThisYear > 0 && (
+          <StatTile
+            label="Outings this year"
+            value={String(tiles.outingsThisYear)}
+            sub="a meal eaten out there included"
+            trend={<DeltaBadge by={tiles.outingsThisYear - before.year} than={`on ${thisYear - 1} so far`} />}
+          />
+        )}
+        {tiles.beenAWhile > 0 && <StatTile label="Been a while" value={String(tiles.beenAWhile)} sub="due or overdue a return" />}
+        {tiles.newThisYear > 0 && <StatTile label="New this year" value={String(tiles.newThisYear)} sub={`a first outing in ${thisYear}`} />}
       </div>
 
       <MonthCalendar
@@ -226,8 +243,8 @@ export function PlacesStats({ places, people, tasks, meals, filter, onFilter, on
         sub="Outings: a done task there or a meal eaten out there, two in one day counted as two"
         empty="Log an outing, or eat out somewhere you saved, and your most visited show here."
         rank={span => mostVisited(stats, span, now)}
-        // a pale colour is moved just far enough to stand out on the theme's card
-        color={r => r.place.color}
+        // one colour for the area (.place-stats, 18-stats-lens.css); each
+        // place's own colour is its mark beside the bar
         picture={r => <PlaceMark place={r.place} className="thumb-28" />}
         onOpen={r => onOpenPlace(r.place)}
       />
@@ -294,7 +311,7 @@ export function PlacesStats({ places, people, tasks, meals, filter, onFilter, on
         sub="Who was there on your outings; a meal eaten out records the place, not the company"
         empty="Tick who was there when you log an outing, and who you go with shows here."
         rank={span => companyOnOutings(stats, people, span, now)}
-        color={r => r.person.color}
+        // the area's one colour, as Most visited's; a person's own is their face
         // a face, as People → Stats draws each person: their colour read through readableInk
         picture={r => <PersonFace person={r.person} theme={theme} className="face-28" />}
         onOpen={onOpenPerson ? r => onOpenPerson(r.person) : undefined}

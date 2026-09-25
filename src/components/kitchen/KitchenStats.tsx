@@ -23,11 +23,11 @@ import {
 } from '../../kitchenstats'
 import { countOf } from '../../people'
 import { placeEmoji } from '../../places'
-import { MONTHS, type DayWindow } from '../../stats'
+import { MONTHS, daysInRange, soFarBefore, type DayWindow } from '../../stats'
 import { MEAL_SLOT_META, type GroceryList, type Meal, type MealSlot, type Place, type Recipe } from '../../types'
 import { useDayClock } from '../../useDayClock'
 import { dateKey } from '../../utils'
-import { ChartCard, ListCard, ListRow, MonthCalendar, Podium, RankedBars, StatTile, Stepper, StreakTiles, TrendBadge, WindowSwitch, type MonthDay, type StreakWords } from '../stats'
+import { ChartCard, DeltaBadge, ListCard, ListRow, MonthCalendar, Podium, RankedBars, StatTile, Stepper, TrendBadge, WindowSwitch, type MonthDay, type StreakWords } from '../stats'
 
 interface Props {
   recipes: Recipe[]
@@ -203,18 +203,45 @@ export function KitchenStats({ recipes, meals, groceries, places, onOpenRecipe, 
     [ix],
   )
   const months = useMemo(() => mealMonths(ix, year), [ix, year])
+  // this month so far, set against last month's same days: the days cooked at
+  // home, and the meals eaten out, by the ways the tiles count them
+  const before = useMemo(() => {
+    const range = soFarBefore(ix.dayKey, 'month')
+    const had = (way: MealWay) => ix.meals.filter(m => ix.ways.get(m.id) === way)
+    return { cookedDays: daysInRange([...new Set(had('cooked').map(m => m.date))], range), eatenOut: daysInRange(had('out').map(m => m.date), range) }
+  }, [ix])
   // tonight's dinner out already: the streak's line says so rather than ask for a cook
   const outTonight = !!dinners.get(dayKey)?.meal.out
+  const streakWords = outTonight ? DINNERS_OUT : DINNERS
 
   return (
     <div className="kitchen-stats">
+      {/* the month so far first, each set against last month's same days; a
+          tile is drawn only for something there is */}
+      {tiles.cookedDays + tiles.eatenOut + tiles.recipes + tiles.newThisYear + streaks.best > 0 && (
       <div className="kpi-row kitchen-tiles">
-        <StatTile label="Recipes" value={String(tiles.recipes)} sub={`${tiles.notLately} not lately`} />
-        <StatTile label="New recipes" value={String(tiles.newThisYear)} sub={`first cooked in ${thisYear}`} />
-        <StatTile label="Cooked at home" value={`${tiles.cookedDays} of ${tiles.daysThisMonth}`} sub="days this month so far" />
-        <StatTile label="Eaten out" value={String(tiles.eatenOut)} sub={tiles.bought > 0 ? `at a place this month · ${tiles.bought} bought, no place` : 'at a place this month'} />
-        <StreakTiles current={streaks.current} best={streaks.best} today={streaks.today} noun="dinner" words={outTonight ? DINNERS_OUT : DINNERS} />
+        {tiles.cookedDays > 0 && (
+          <StatTile
+            label="Cooked at home"
+            value={`${tiles.cookedDays} of ${tiles.daysThisMonth}`}
+            sub="days this month so far"
+            trend={<DeltaBadge by={tiles.cookedDays - before.cookedDays} than="on last month so far" />}
+          />
+        )}
+        {tiles.eatenOut > 0 && (
+          <StatTile
+            label="Eaten out"
+            value={String(tiles.eatenOut)}
+            sub={tiles.bought > 0 ? `at a place this month · ${tiles.bought} bought, no place` : 'at a place this month'}
+            trend={<DeltaBadge by={tiles.eatenOut - before.eatenOut} than="on last month so far" />}
+          />
+        )}
+        {tiles.recipes > 0 && <StatTile label="Recipes" value={String(tiles.recipes)} sub={tiles.notLately > 0 ? `${tiles.notLately} not lately` : 'every one cooked lately'} />}
+        {tiles.newThisYear > 0 && <StatTile label="New recipes" value={String(tiles.newThisYear)} sub={`first cooked in ${thisYear}`} />}
+        {streaks.current > 0 && <StatTile label="Streak" value={countOf(streaks.current, 'dinner')} sub={streaks.today ? streakWords.today : streakWords.waiting} />}
+        {streaks.best > 0 && <StatTile label="Best streak" value={countOf(streaks.best, 'dinner')} sub={streakWords.best} />}
       </div>
+      )}
 
       <MonthCalendar
         title="Dinners"

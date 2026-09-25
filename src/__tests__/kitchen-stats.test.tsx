@@ -321,9 +321,10 @@ describe('the Stats view', () => {
 
   it('says, empty, what each card will show, and stands nobody on a podium', () => {
     const out = html(<StatsView {...empty} />)
-    expect(out).toContain('<div class="stat-label">Recipes</div><div class="stat-value">0</div><div class="stat-sub">0 not lately</div>')
-    expect(out).toContain('<div class="stat-value">0 of 14</div><div class="stat-sub">days this month so far</div>')
-    expect(out).toContain('<div class="stat-label">Streak</div><div class="stat-value">0 dinners</div><div class="stat-sub">cook a dinner at home to start one</div>')
+    // a tile is drawn only for something there is: an empty kitchen has no
+    // "Recipes 0", no "0 of 14" and no "Streak 0 dinners" — the cards below say what they wait for
+    expect(out).not.toContain('kitchen-tiles')
+    expect(out).not.toContain('class="stat-tile"')
     expect(out).toContain('aria-label="Mon 14 Sep: no dinner planned"')
     expect(out).toContain('Each day’s dinner · 0 dinners cooked at home')
     expect(out).not.toContain('Top three')
@@ -346,7 +347,9 @@ describe('the Stats view', () => {
     expect(out).toContain('<div class="stat-label">Recipes</div><div class="stat-value">7</div><div class="stat-sub">3 not lately</div>')
     expect(out).toContain('<div class="stat-label">New recipes</div><div class="stat-value">4</div><div class="stat-sub">first cooked in 2026</div>')
     expect(out).toContain('<div class="stat-label">Cooked at home</div><div class="stat-value">8 of 14</div>')
-    expect(out).toContain('<div class="stat-label">Eaten out</div><div class="stat-value">1</div><div class="stat-sub">at a place this month · 2 bought, no place</div>')
+    expect(out).toMatch(/<div class="stat-label">Eaten out<\/div><div class="stat-value">1<\/div><div class="stat-trend">.*?<\/div><div class="stat-sub">at a place this month · 2 bought, no place<\/div>/)
+    // the month so far, each set against last month's same days
+    expect(out).toMatch(/<div class="stat-label">Cooked at home<\/div><div class="stat-value">8 of 14<\/div><div class="stat-trend"><span class="delta-line">/)
     expect(out).toContain('<div class="stat-value">3 dinners</div><div class="stat-sub">cooked at home in a row, tonight too</div>')
     expect(out).toContain('<div class="stat-label">Best streak</div><div class="stat-value">4 dinners</div><div class="stat-sub">cooked at home in a row</div>')
 

@@ -184,6 +184,17 @@ export function previousPhrase(span: PeriodSpan, today: string): string {
   return `on ${span.period === 'month' ? monthName(prev.key, today) : prev.key}`
 }
 
+/**
+ * The line under a period's name: its days, and what it is set against —
+ * "Sep 20 – 26 · against the same days of last week", "August · against July".
+ */
+export function periodNote(span: PeriodSpan, today: string): string {
+  const days = span.period === 'week' ? weekRange(span) : span.period === 'month' ? monthName(span.key, today) : span.key
+  const prev = previousSpan(span, today)
+  const before = span.period === 'week' ? (span.current ? 'last week' : 'the week before') : span.period === 'month' ? monthName(prev.key, today) : prev.key
+  return `${days} · against ${span.current ? `the same days of ${before}` : before}`
+}
+
 /** "Your September in Drafter": the monthly recap's headline, for a month's key. */
 export const recapTitle = (monthKey: string): string => `Your ${MONTH_NAMES[Number(monthKey.slice(5, 7)) - 1] ?? 'month'} in Drafter`
 
@@ -530,8 +541,12 @@ export const MAX_HIGHLIGHTS = 8
 /** Days in a row worth saying. */
 const MIN_STREAK = 3
 
-/** A change as the card says it; money is dollars, and a share is in points. */
-function delta(by: number, than: string, unit: 'n' | 'money' | 'points' = 'n'): HighlightDelta {
+/**
+ * A change as a card or a tile says it: "↑7", "↓$120.00", "↑6 points", or
+ * "same as" when nothing moved. Money is dollars (formatMoney), and a share is
+ * in points. `than` is what it is set against ("on last week").
+ */
+export function describeDelta(by: number, than: string, unit: 'n' | 'money' | 'points' = 'n'): HighlightDelta {
   const size = Math.abs(by)
   const amount = unit === 'money' ? formatMoney(size) : unit === 'points' ? `${size} ${size === 1 ? 'point' : 'points'}` : size.toLocaleString('en-US')
   return { by, text: by > 0 ? `↑${amount}` : by < 0 ? `↓${amount}` : 'same as', than: by === 0 ? than.replace(/^on /, '') : than }
@@ -576,7 +591,7 @@ export function pickHighlights(figs: InsightFigures): Highlight[] {
       kind: 'tasks-done',
       area: 'tasks',
       title: `${count(cur.tasks.done, 'task')} done ${phrase}`,
-      delta: delta(cur.tasks.done - prev.tasks.done, than),
+      delta: describeDelta(cur.tasks.done - prev.tasks.done, than),
       detail: !clear ? undefined : span.period === 'week' ? `${WEEKDAYS[day]} was ${both ? 'the busiest day' : 'your best day'}` : `${WEEKDAYS[day]}s ${past ? 'were' : 'are'} ${whoseBest}`,
       visual: cur.tasks.series.length > 1 ? { kind: 'spark', series: cur.tasks.series } : undefined,
       score: 55 + lift(cur.tasks.done, prev.tasks.done),
@@ -601,7 +616,7 @@ export function pickHighlights(figs: InsightFigures): Highlight[] {
       kind: 'money',
       area: 'money',
       title: `Paid ${formatMoney(cur.money.paid)} ${phrase}`,
-      delta: delta(Math.round(cur.money.paid - prev.money.paid), than, 'money'),
+      delta: describeDelta(Math.round(cur.money.paid - prev.money.paid), than, 'money'),
       detail: top && cur.money.byPayee.length > 1 ? `${top.name} ${past ? 'was' : 'is'} the biggest` : undefined,
       visual: cur.money.series.length > 1 ? { kind: 'spark', series: cur.money.series.map(n => Math.round(n)) } : undefined,
       score: 44 + lift(cur.money.paid, prev.money.paid) / 3,
@@ -624,9 +639,8 @@ export function pickHighlights(figs: InsightFigures): Highlight[] {
       kind: 'people',
       area: 'people',
       title,
-      delta: delta(seen.length - prev.people.seen.length, than),
+      delta: describeDelta(seen.length - prev.people.seen.length, than),
       detail: lead ?? days,
-      visual: { kind: 'ring', value: cur.people.days, of: Math.max(1, daysBetween(span.start, span.last) + 1), label: String(cur.people.days) },
       score: 52 + Math.min(10, 2 * seen.length) + lift(seen.length, prev.people.seen.length) / 2,
     })
   }
@@ -635,12 +649,13 @@ export function pickHighlights(figs: InsightFigures): Highlight[] {
   const visited = cur.places.visited
   if (visited.length > 0) {
     const firsts = cur.places.firsts
-    const first = firsts.length ? `first time at ${andList(firsts.slice(0, 2).map(f => f.name))}${firsts.length > 2 ? ` and ${count(firsts.length - 2, 'more place')}` : ''}` : undefined
+    const named = firsts.slice(0, 2).map(f => f.name)
+    const first = !firsts.length ? undefined : firsts.length > 2 ? `first time at ${named.join(', ')} and ${firsts.length - 2} more` : `first time at ${andList(named)}`
     card({
       kind: 'places',
       area: 'places',
       title: visited.length === 1 ? `${both ? 'Went' : 'You went'} to ${visited[0].name} ${phrase}` : `${both ? 'Went' : 'You went'} to ${count(visited.length, 'place')} ${phrase}`,
-      delta: delta(visited.length - prev.places.visited.length, than),
+      delta: describeDelta(visited.length - prev.places.visited.length, than),
       detail: first ?? leaders(visited) ?? (visited.length === 1 ? times(visited[0].n) : undefined),
       score: 48 + Math.min(10, 2 * visited.length) + (firsts.length ? 8 : 0),
     })
@@ -685,9 +700,9 @@ export function pickHighlights(figs: InsightFigures): Highlight[] {
       kind: 'journal',
       area: 'journal',
       title: `Wrote in the journal on ${count(cur.journal.days, 'day')} ${phrase}`,
-      delta: delta(cur.journal.days - prev.journal.days, than),
+      delta: describeDelta(cur.journal.days - prev.journal.days, than),
       detail: cur.journal.mood !== null ? `mood ${cur.journal.mood.toFixed(1)} of 5` : undefined,
-      visual: { kind: 'ring', value: cur.journal.days, of: Math.max(1, daysBetween(span.start, span.last) + 1), label: String(cur.journal.days) },
+      visual: { kind: 'ring', value: cur.journal.days, of: daysBetween(span.start, span.last) + 1, label: `${cur.journal.days}/${daysBetween(span.start, span.last) + 1}` },
       score: 42 + Math.min(10, cur.journal.days) + lift(cur.journal.days, prev.journal.days) / 2,
     })
   }
@@ -700,7 +715,7 @@ export function pickHighlights(figs: InsightFigures): Highlight[] {
       kind: 'habits',
       area: 'habits',
       title: `Habits kept ${h.pct}% of the time`,
-      delta: prev.habits.due > 0 ? delta(h.pct - prev.habits.pct, than, 'points') : undefined,
+      delta: prev.habits.due > 0 ? describeDelta(h.pct - prev.habits.pct, than, 'points') : undefined,
       detail: [`${h.done} of ${h.due} due days`, run].filter(Boolean).join(' · '),
       visual: { kind: 'ring', value: h.done, of: h.due, label: `${h.pct}%` },
       score: 46 + (h.pct >= 80 ? 12 : 0) + (run ? 5 : 0),
@@ -715,7 +730,7 @@ export function pickHighlights(figs: InsightFigures): Highlight[] {
       kind: 'wardrobe-days',
       area: 'wardrobe',
       title: `Outfit logged on ${count(w.days, 'day')} ${phrase}`,
-      delta: delta(w.days - prev.wardrobe.days, than),
+      delta: describeDelta(w.days - prev.wardrobe.days, than),
       detail: top,
       score: 38 + Math.min(8, w.days / 2),
     })

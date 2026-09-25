@@ -114,7 +114,7 @@
   display: block;
   height: 100%;
   border-radius: 999px;
-  background: var(--viz-series-1);
+  background: var(--area-ink, var(--viz-series-1));
 }
 .mood-bar {
   width: 100%;
@@ -154,5 +154,271 @@
   .stats-window > .segmented {
     width: 100%;
     max-width: none;
+  }
+}
+
+/* ---------- the Highlights (components/insights/Highlights.tsx) ----------
+   Insights → Stats' first page: the period and whose log at the head, a chip
+   for every area, then a few cards, each a line about the period in its
+   area's colour (the .ink-* classes, 18-stats-lens.css) with a small picture. */
+.insights-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-bottom: 8px;
+}
+.highlights-head {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.highlights-switches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.highlights-switches > .segmented.seg-track {
+  flex: 1 1 220px;
+}
+.highlights-when {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.when-step {
+  flex: none;
+  font-size: 1.375rem;
+  line-height: 1;
+}
+.when-words {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+}
+.when-name {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+/* whose log the figures count, under Both of us: said in words as well as on a badge */
+.whose-note {
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--text-2);
+}
+.whose-badge {
+  display: inline-block;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+.whose-badge.just-you {
+  background: var(--surface-3);
+  color: var(--text-2);
+}
+.highlight-area .whose-badge {
+  font-size: 0.625rem;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  padding: 1px 7px;
+}
+/* every area a tap away: pills that wrap onto a second line rather than scroll */
+.area-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.area-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border-radius: 999px;
+  padding: 6px 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.area-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--area-ink, var(--viz-series-1));
+}
+.highlight-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
+  gap: 10px;
+}
+.highlight-list > li {
+  display: flex;
+  min-width: 0;
+  animation: stats-rise 0.32s cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+.highlight-list > li:nth-child(2) {
+  animation-delay: 0.03s;
+}
+.highlight-list > li:nth-child(3) {
+  animation-delay: 0.06s;
+}
+.highlight-list > li:nth-child(n + 4) {
+  animation-delay: 0.09s;
+}
+/* a card is its area's colour down its leading edge, and a button to its figures */
+.highlight {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+  text-align: left;
+  background: var(--surface);
+  color: inherit;
+  font: inherit;
+  border: 1px solid var(--hairline);
+  border-left: 4px solid var(--area-ink, var(--viz-series-1));
+  border-radius: var(--radius-lg);
+  padding: 13px 14px;
+  box-shadow: var(--shadow);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    box-shadow 0.16s ease,
+    transform 0.16s ease;
+}
+.highlight:hover {
+  box-shadow: var(--shadow-md);
+}
+.highlight:active {
+  transform: scale(0.99);
+}
+.highlight-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.highlight-area {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.highlight-title {
+  font-size: 1.0625rem;
+  font-weight: 700;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+.just-you {
+  color: var(--text-2);
+  font-weight: 600;
+}
+.highlight-more {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  font-size: 0.8125rem;
+  color: var(--text-2);
+}
+.highlight-detail {
+  overflow-wrap: anywhere;
+}
+.highlight-visual {
+  flex: none;
+  display: flex;
+  align-items: center;
+}
+.highlight-visual .sparkline {
+  width: 72px;
+}
+/* "86%" and "5/7" inside a 48px ring */
+.highlight-visual .ring-label {
+  font-size: 0.75rem;
+}
+/* the Kitchen's three ways, as its calendar and its shares draw them */
+.split-bar {
+  display: flex;
+  gap: 2px;
+  width: 72px;
+  height: 12px;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.split-bar > span {
+  min-width: 4px;
+}
+.split-cooked {
+  background: var(--viz-series-1);
+}
+.split-out {
+  background: var(--cal-meal-out);
+}
+.split-bought {
+  background: var(--cal-meal-bought);
+}
+.highlights-empty .stats-note {
+  margin-top: 6px;
+}
+/* a figure's change on the period before (DeltaBadge): a badge and its words */
+.delta-line {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 4px;
+}
+.delta-badge {
+  padding: 1px 7px;
+}
+
+/* ---------- a page pushed over the Highlights ----------
+   Its head — whose log, and the window where one governs — sits under the
+   pushed screen's own sticky ‹ Back, so here it scrolls with the page. */
+.stats-page > .stats-bar {
+  position: static;
+  padding: 0;
+}
+.stats-page > .kpi-row,
+.stats-page > .stats-note {
+  margin: 0;
+}
+
+@media (max-width: 640px) {
+  /* eight areas in two rows of four on a phone, each a full 44pt target,
+     rather than three ragged rows of pills pushing the cards off the screen */
+  .area-chips {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .area-chip {
+    justify-content: center;
+    gap: 5px;
+    padding-inline: 4px;
+    font-size: 0.8125rem;
+    white-space: nowrap;
+    min-width: 0;
+  }
+  .highlight {
+    padding: 12px;
+    gap: 10px;
+  }
+  .highlight-visual .sparkline,
+  .split-bar {
+    width: 56px;
+  }
+  .highlights-switches > .segmented.seg-track {
+    flex-basis: 100%;
   }
 }

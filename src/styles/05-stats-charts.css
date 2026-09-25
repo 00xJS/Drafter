@@ -78,6 +78,12 @@
   margin-top: 3px;
 }
 
+/* a figure's change on the period before, under it (StatTile's `trend`) */
+.stat-trend {
+  margin-top: 5px;
+  font-size: 0.75rem;
+}
+
 .chart-card {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -207,12 +213,14 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* a bar is its area's colour where it is drawn inside one (18-stats-lens.css,
+   .ink-*), and the chart series everywhere else */
 .bar {
-  fill: var(--viz-series-1);
+  fill: var(--area-ink, var(--viz-series-1));
 }
 
 .bar.hot {
-  fill: var(--viz-series-1-hot);
+  fill: var(--area-ink-hot, var(--viz-series-1-hot));
 }
 
 .hit {
@@ -250,7 +258,7 @@
 
 .hbar-fill {
   height: 16px;
-  background: var(--viz-series-1);
+  background: var(--area-ink, var(--viz-series-1));
   border-radius: 0 4px 4px 0;
 }
 

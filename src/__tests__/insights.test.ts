@@ -223,8 +223,8 @@ describe('what the highlights count', () => {
     expect(c.title).toBe('You saw 2 people this week')
     expect(c.detail).toBe('most often Tio Marco')
     expect(c.who).toBeNull()
-    // two days with anyone, of the five the week has had
-    expect(c.visual).toEqual({ kind: 'ring', value: 2, of: 5, label: '2' })
+    // no picture: a ring of days beside a count of people read as people
+    expect(c.visual).toBeUndefined()
   })
 
   it('counts an event of your own that has happened as seeing whoever was on it', () => {
