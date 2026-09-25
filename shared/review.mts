@@ -43,6 +43,15 @@ const ms = (d: Date | number): number => (d instanceof Date ? d.getTime() : Numb
 /** A logged get-together, not a piece of work: counted separately everywhere. */
 export const isVisit = (t: { tags?: readonly string[] } | null | undefined): boolean => (t?.tags ?? []).includes('visit')
 
+/**
+ * Every task that is finished WORK: done, out of Trash, with the moment it was
+ * finished, and not a logged visit (isVisit). The Stats lens's Finished, its
+ * year grid and its sparklines, Insights' highlights and the monthly recap all
+ * count this, so none of them can call a catch-up with Mum a chore done.
+ */
+export const workDone = <T extends Pick<Task, 'status' | 'completedAt' | 'deletedAt' | 'tags'>>(tasks: readonly T[]): T[] =>
+  tasks.filter(t => !t.deletedAt && t.status === 'done' && !!t.completedAt && !isVisit(t))
+
 /** Whether an instant falls inside [start, end). Dates or epoch ms; a bad instant never does. */
 export function inRange(iso: string | null | undefined, start: Date | number, end: Date | number): boolean {
   const t = Date.parse(iso ?? '')

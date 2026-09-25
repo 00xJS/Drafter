@@ -312,3 +312,7 @@ export const VIEW_TO_STATS: Record<string, StatsTab> = {
 }
 /** The lens segment a link's view names, or null. Its own names only, so `?view=constructor` names none. */
 export const statsTabOfView = (view: string | undefined): StatsTab | null => viewIn(VIEW_TO_STATS, view)
+
+/** The eight areas' figures, one per chip under Insights' Highlights, in the order shared/insights.mts ranks a tie by. */
+export type StatsArea = 'tasks' | 'money' | 'people' | 'places' | 'kitchen' | 'wardrobe' | 'habits' | 'journal'
+export const STATS_AREAS: { key: StatsArea; label: string }[] = STATS_TABS.filter((t): t is { key: StatsArea; label: string } => t.key !== 'overview')

@@ -61,15 +61,12 @@ export const BILL_KIND_META: Record<BillKind, { label: string; emoji: string }> 
   income: { label: 'Payday', emoji: '💵' },
   saving: { label: 'Savings', emoji: '🐷' },
 }
-/** Money coming IN. Every figure that adds money up has to ask, or a payday reads as a cost. */
-export const isIncomeKind = (k: BillKind | undefined): boolean => k === 'income'
 /**
- * Money set aside into savings on a schedule. It leaves what you could spend
- * this month, so the runway and "safe to spend" count it going out, but it is
- * not spending: it is never a cost, a bill or money spent. Every figure that
- * adds money up has to ask this too, or a set-aside reads as a bill paid.
+ * Money coming IN (isIncomeKind), and money set aside into savings
+ * (isSavingKind): neither is ever a cost. Kept in shared/money.mts with the
+ * rest of what adds money up, as the server adds it up too.
  */
-export const isSavingKind = (k: BillKind | undefined): boolean => k === 'saving'
+export { isIncomeKind, isSavingKind } from '../shared/money.mts'
 
 /**
  * What a set-aside series is saving towards. It rides on the series rather

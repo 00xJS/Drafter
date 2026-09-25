@@ -1,6 +1,6 @@
 import { weekKeyStart } from '../shared/weeks.mts'
+import { mealWay, mealWays, savedPlaces, type MealWay } from '../shared/kitchen.mts'
 import { cookedIndex, cookedRecipeIds, ingredientKey, mealSides, notLately, type CookedIndex } from './kitchen'
-import { outingsAt } from './places'
 import { countDays, dayStreaks, daysWithin, inWindow, monthBuckets, monthsAndTrend, topN, type DayWindow, type Streaks } from './stats'
 import type { GroceryList, Meal, MealSlot, Place, Recipe } from './types'
 import { dateKey } from './utils'
@@ -31,8 +31,8 @@ import { dateKey } from './utils'
  * own kinds count; anything else handed in counts for nothing.
  */
 
-/** How a meal was had, once it counts: cooked at home, eaten out at a saved place, or bought with no place named. */
-export type MealWay = 'cooked' | 'out' | 'bought'
+/** How a meal was had, once it counts: cooked at home, eaten out at a saved place, or bought with no place named (shared/kitchen.mts). */
+export type { MealWay }
 
 /** The three, in the order every chart, bar and key draws them. */
 export const MEAL_WAYS: readonly { key: MealWay; label: string }[] = [
@@ -60,22 +60,13 @@ export interface KitchenIndex {
   ways: ReadonlyMap<string, MealWay>
 }
 
-/** The saved places a meal can be eaten out at, by id: the live ones. One in the Trash, or anything else handed in, is none. */
-export function savedPlaces(places: readonly Place[]): ReadonlyMap<string, Place> {
-  return new Map(places.filter(p => p.kind === 'place' && !p.deletedAt).map(p => [p.id, p]))
-}
-
 /**
- * How a meal is had, or is planned to be, whatever its day: eaten out at a
- * place still saved (`places`, as savedPlaces keeps them); bought when it is
- * out with no place named, or at one since deleted; and cooked at home
- * otherwise. The Calendar colours every meal by it, a plan by the way it is
- * planned. When a meal counts is kitchenIndex's rule, below, not this one's.
+ * The saved places a meal can be eaten out at (savedPlaces), how a meal is
+ * had or planned to be (mealWay), and which meals count and how (mealWays):
+ * the Kitchen's rules, kept in shared/kitchen.mts because Insights' highlights
+ * and the monthly recap on the server count meals by them too.
  */
-export function mealWay(meal: Pick<Meal, 'out' | 'placeId'>, places: ReadonlyMap<string, Place>): MealWay {
-  if (!meal.out) return 'cooked'
-  return meal.placeId && places.has(meal.placeId) ? 'out' : 'bought'
-}
+export { mealWay, savedPlaces }
 
 export function kitchenIndex(recipes: readonly Recipe[], meals: readonly Meal[], places: readonly Place[], now: Date = new Date()): KitchenIndex {
   const dayKey = dateKey(now)
@@ -90,26 +81,9 @@ export function kitchenIndex(recipes: readonly Recipe[], meals: readonly Meal[],
       days.set(id, set)
     }
   }
-  // eaten out: each place's own outings, the meals among them, as its card
-  // counts them. The meals out are sorted to their places in one pass, so a
-  // place is asked about its own meals only, never every meal there is.
-  const outBy = new Map<string, Meal[]>()
-  for (const m of liveMeals) {
-    // out at a saved place, so it names one
-    if (mealWay(m, placeById) !== 'out') continue
-    const at = outBy.get(m.placeId!) ?? []
-    at.push(m)
-    outBy.set(m.placeId!, at)
-  }
-  const out = new Set<string>()
-  for (const [id, at] of outBy) for (const o of outingsAt(id, [], at, now)) if (o.kind === 'meal') out.add(o.meal.id)
-  const ways = new Map<string, MealWay>()
-  for (const m of liveMeals) {
-    const way = mealWay(m, placeById)
-    // a meal out at a saved place counts once it is one of the place's outings
-    // (its day has come here, and midday UTC has too); any other once its day has
-    if (way === 'out' ? out.has(m.id) : m.date <= dayKey) ways.set(m.id, way)
-  }
+  // how each meal that counts was had: a meal out at a saved place once it is
+  // one of the place's outings, any other once its day has come (mealWays)
+  const ways = mealWays(liveMeals, placeById, now, dayKey)
   return {
     dayKey,
     now,

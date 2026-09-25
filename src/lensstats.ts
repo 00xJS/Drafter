@@ -1,4 +1,5 @@
-import { isBill, isSpending, withPaidDefault } from './bills'
+import { isBill, withPaidDefault } from './bills'
+import { payments } from '../shared/money.mts'
 import { habitsConsistency, isDueOn, streakOf } from './habits'
 import { isVisit } from './review'
 import { dayOffset } from './taskutils'
@@ -7,6 +8,8 @@ import { countDays, dayStreaks, monthBuckets, monthsAndTrend, recentTrend, topN,
 import { BILL_KIND_META, PRIORITY_META, STATUS_META, type Habit, type JournalEntry, type Priority, type Task, type TaskStatus } from './types'
 import { dateKey } from './utils'
 import { inWindow } from '../shared/stats.mts'
+import { workDone } from '../shared/review.mts'
+import { journalStreaks } from '../shared/journal.mts'
 
 /*
  * The Stats lens, counted. Pure, no DOM, worked out once per render and handed
@@ -35,7 +38,9 @@ function doneMarks(tasks: readonly Task[]): Dated[] {
 }
 
 /**
- * Every task that is finished WORK: done, not in Trash, and not a logged visit.
+ * Every task that is finished WORK: done, not in Trash, and not a logged visit
+ * — shared/review.mts's rule, which Insights' highlights and the monthly recap
+ * count by too.
  *
  * Exported because the lens draws the same quantity in more than one place,
  * and every one of them has to read this and not spell it again. Two did spell
@@ -43,7 +48,7 @@ function doneMarks(tasks: readonly Task[]): Dated[] {
  * catch-ups as work, so a quiet month of seeing people was drawn as a busy
  * month of finishing things, against the segment below that said otherwise.
  */
-export const workDone = (tasks: readonly Task[]): Task[] => tasks.filter(t => !t.deletedAt && t.status === 'done' && t.completedAt && !isVisit(t))
+export { workDone }
 
 /** The day keys something was finished on, newest first: two tasks on one Saturday are one day. */
 export function doneDays(tasks: readonly Task[]): string[] {
@@ -172,19 +177,10 @@ export interface MoneyReport {
  * A payment, as the dated mark a chart counts: what a task actually cost,
  * filed when it was finished. A payday received and a set-aside moved are
  * not payments — one is money in and the other money kept (isSpending) — and
- * counting them made a wage read as the biggest thing you paid for.
+ * counting them made a wage read as the biggest thing you paid for. The rule
+ * is shared/money.mts's `payments`, which the monthly recap reads too.
  */
-function paidMarks(tasks: readonly Task[]): (Dated & { amount: number; payee: string })[] {
-  const out: (Dated & { amount: number; payee: string })[] = []
-  for (const raw of tasks) {
-    if (raw.deletedAt || raw.status !== 'done' || !raw.completedAt || !isSpending(raw)) continue
-    const t = raw.bill ? withPaidDefault(raw) : raw
-    const amount = t.actualCost
-    if (amount === undefined || !Number.isFinite(amount) || amount <= 0) continue
-    out.push({ at: t.completedAt as string, amount, payee: t.bill?.payee?.trim() || t.title || 'Untitled' })
-  }
-  return out
-}
+const paidMarks = (tasks: readonly Task[]): (Dated & { amount: number; payee: string })[] => payments(tasks)
 
 /** A money total is a sum, not a count, so the month buckets add amounts rather than rows. Unrounded: see moneyReport. */
 const sumIn = (marks: readonly (Dated & { amount: number })[], year: number): number[] => {
@@ -352,7 +348,9 @@ export function journalReport(entries: readonly JournalEntry[], window: DayWindo
   return {
     entries: inside.length,
     days: days.filter(d => inWindow(d, today, window)),
-    streaks: { ...dayStreaks(days, today), today: days.includes(today) },
+    // the journal's own streak rule (shared/journal.mts), which Today's card,
+    // Insights' highlights and the monthly recap read too
+    streaks: { ...journalStreaks(live, today), today: days.includes(today) },
     mood: moods.length > 0 ? moods.reduce((a, b) => a + b, 0) / moods.length : null,
     moodCounts,
     months,
