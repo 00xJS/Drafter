@@ -8,9 +8,10 @@
 // The rule, per top-level field: take the local value when only this device
 // changed it since the base (the last version the server confirmed), otherwise
 // the remote one. Lists of records with a stable key (checklist lines,
-// comments, grocery lines, routine steps, milestones) merge per element by the
-// same rule, keeping additions from both sides and honouring a deletion on one
-// side when the other side left that element alone. String sets (a habit's
+// comments, grocery lines, routine steps, milestones, an account's balance
+// check-ins) merge per element by the same rule, keeping additions from both
+// sides and honouring a deletion on one side when the other side left that
+// element alone. String sets (a habit's
 // done days, a routine's ticks, tags, id lists) keep members added on either
 // side. With no base — a deterministic id such as meal~<date>~<slot> created
 // on two devices — lists are unioned and the remote side wins every scalar
@@ -100,14 +101,18 @@ export function sameContent(a: object | null | undefined, b: object | null | und
  * What makes two list elements "the same line". Grocery lines go by name and
  * unit, the key buildGroceryList itself matches on: a line can arrive with a
  * sanitizer's positional id (g-1, g-2…) or with a different random id for the
- * same hand-added item on each device, and neither is an identity. Everything
- * else goes by its id. Null when the element has no usable key.
+ * same hand-added item on each device, and neither is an identity. An
+ * account's balance check-ins go by their day: they carry no id, and there is
+ * one a day (sanitizeAccount), so two devices checking in on different days
+ * both keep theirs instead of the whole list losing to the other side's.
+ * Everything else goes by its id. Null when the element has no usable key.
  */
 export function elementKey(kind: unknown, field: string, el: unknown): string | null {
   if (!isRecord(el) || Array.isArray(el)) return null
   if (kind === 'grocery' && field === 'items') {
     return typeof el.name === 'string' && el.name.trim() ? ingredientKey(el.name, el.unit) : null
   }
+  if (kind === 'account' && field === 'balances') return typeof el.on === 'string' && el.on ? el.on : null
   return typeof el.id === 'string' && el.id ? el.id : null
 }
 
