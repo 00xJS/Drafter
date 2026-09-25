@@ -428,6 +428,8 @@ export function recordLabel(item: Item | undefined): string {
       return item.name || 'Untitled piece'
     case 'snooze':
       return 'A nudge put off'
+    case 'recipedraft':
+      return 'A recipe draft'
     case 'message':
       return item.body ? `“${item.body.slice(0, 40)}”` : 'A message'
     case 'chat':

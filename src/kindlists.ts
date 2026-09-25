@@ -41,6 +41,9 @@ export const LISTS = {
   people: spec({ kind: 'person', draw: l => live(l).sort(byName) }),
   places: spec({ kind: 'place', draw: l => live(l).sort(byName) }),
   recipes: spec({ kind: 'recipe', draw: l => live(l).sort(byName) }),
+  // Drafts waiting for their recipe (v3.35): the household's, like the
+  // recipes they are for; Fill them in reads them, by recipe
+  recipeDrafts: spec({ kind: 'recipedraft', draw: live }),
   // the household's, unless its owner kept it to themselves (v3.22)
   meals: spec({
     kind: 'meal',

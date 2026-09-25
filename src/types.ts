@@ -1,5 +1,6 @@
 import type { QuickPick } from '../shared/kitchen.mts'
 import type { PlaceCategory } from '../shared/places.mts'
+import type { DraftIngredient } from '../shared/recipefill.mts'
 
 export type Platform = 'x' | 'instagram' | 'threads' | 'linkedin' | 'facebook' | 'tiktok' | 'youtube'
 export type TaskStatus = 'wishlist' | 'todo' | 'doing' | 'blocked' | 'done' | 'canceled'
@@ -479,6 +480,44 @@ export interface Recipe extends Owned {
   createdAt: string
   updatedAt: string
   deletedAt?: string
+}
+
+/**
+ * A recipe's draft, prepared ahead of time (v3.35): what the assistant
+ * proposed for a recipe saved with no ingredients, waiting for someone to
+ * look at it in Kitchen → Recipes → Fill them in. It is only ever a proposal —
+ * nothing reaches the recipe until a member taps Save, which removes the draft.
+ *
+ * One per recipe, at `recipedraft~<recipe id>`. The nightly job writes it
+ * (netlify/functions/lib/recipedrafts.mjs) as the recipe's own owner, and the
+ * kind is the household's like a recipe's: whoever can read the recipe reads
+ * its draft. Skip keeps it, marked, so it is neither offered nor drafted again
+ * until it is brought back; a draft whose recipe is deleted or filled in is
+ * removed overnight. A draft with nothing in it is the job's note that it
+ * asked and got nothing usable (`triedAt`, `tries`), to try another night.
+ */
+export interface RecipeDraftRecord extends Owned {
+  kind: 'recipedraft'
+  id: string
+  /** The recipe it drafts, as its id names it. */
+  recipeId: string
+  servings?: number
+  ingredients: DraftIngredient[]
+  steps: string[]
+  /** When the assistant drafted it, and the model that answered. */
+  draftedAt?: string
+  model?: string
+  /** A member passed it over: not offered again, nor drafted again, until brought back. */
+  skippedAt?: string
+  skippedBy?: string
+  /** When the nightly job last asked for it; with no draft, how many nights got nothing usable. */
+  triedAt?: string
+  tries?: number
+  createdAt: string
+  updatedAt: string
+  deletedAt?: string
+  /** Never set: a draft is named by its recipe. Declared for code that reads a record's name without asking its kind. */
+  name?: undefined
 }
 
 export type { QuickPick }
@@ -1130,7 +1169,7 @@ export interface Notice extends Owned {
   name?: undefined
 }
 
-export type Item = Task | Project | CalendarSource | Person | Place | Review | Template | Recipe | Meal | GroceryList | JournalEntry | CalendarEntry | Habit | Routine | Note | Garment | Outfit | Wear | Snooze | Message | ChatTurn | Account | Notice
+export type Item = Task | Project | CalendarSource | Person | Place | Review | Template | Recipe | RecipeDraftRecord | Meal | GroceryList | JournalEntry | CalendarEntry | Habit | Routine | Note | Garment | Outfit | Wear | Snooze | Message | ChatTurn | Account | Notice
 
 export const RECURRENCE_META: Record<RecurrenceFreq, string> = {
   daily: 'Daily',

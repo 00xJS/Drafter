@@ -26,6 +26,7 @@ import {
   mergeIngredients,
   newMealShared,
   quickMain,
+  recipeHasIngredients,
   recipesUsed,
   removeGroceryLine,
   restoreGroceryLine,
@@ -909,10 +910,8 @@ export function serialiseCookSteps(recipeId: string, done: Record<number, boolea
 
 // ---- recipes the grocery list cannot use ----------------------------------------
 
-/** Whether a recipe has anything to shop for. One with none puts nothing on the grocery list. */
-export function recipeHasIngredients(recipe: Pick<Recipe, 'ingredients'>): boolean {
-  return (recipe.ingredients ?? []).some(i => typeof i?.name === 'string' && i.name.trim() !== '')
-}
+/** Whether a recipe has anything to shop for: shared/kitchen.mts, the nightly recipe drafts' rule too. */
+export { recipeHasIngredients }
 
 /**
  * The recipes to fill in, in the order worth doing them: the ones already on

@@ -229,6 +229,17 @@ export function mealPicked(
   return withAudience(mealWithMain(own, at, main, o.now, userId), shared, o.cookId)
 }
 
+/**
+ * Whether a recipe has anything to shop for: one with none puts nothing on the
+ * grocery list. The Kitchen's rule for a recipe to fill in, and the nightly
+ * recipe drafts' (netlify/functions/lib/recipedrafts.mjs), which read a
+ * stored row's data — so anything but a list of named lines is none.
+ */
+export function recipeHasIngredients(recipe: { ingredients?: unknown } | null | undefined): boolean {
+  const list = recipe?.ingredients
+  return Array.isArray(list) && list.some(i => typeof i?.name === 'string' && i.name.trim() !== '')
+}
+
 export function ingredientKey(name: unknown, unit?: unknown): string {
   return `${String(name ?? '').trim().toLowerCase().replace(/\s+/g, ' ')}|${String(unit ?? '').trim().toLowerCase()}`
 }

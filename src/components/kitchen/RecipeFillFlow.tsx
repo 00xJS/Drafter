@@ -1,14 +1,21 @@
 import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from 'react'
-import { fillInputFor, fillRecipe, fillRunCurrent } from '../../recipefill'
+import { draftRemoved, draftRowsByRecipe, draftSkipped, fillInputFor, fillRecipe, fillRunCurrent, readyDraftOf } from '../../recipefill'
 import type { FillInput, FillRun, RecipeDraft } from '../../recipefill'
-import type { Recipe } from '../../types'
+import type { Recipe, RecipeDraftRecord } from '../../types'
 import { aiFailureText } from '../AskSheet'
 import { Modal, ModalHead } from '../Modal'
 
-// "Fill them in": the recipes with no ingredients, one at a time. Each is
-// drafted when the sheet reaches it — never ahead, so no call is spent on a
-// recipe nobody looks at — and shown with Save · Edit · Skip · Stop. Nothing is
-// saved without a tap on Save (here, or in the editor Edit opens).
+// "Fill them in": the recipes with no ingredients, one at a time, each shown
+// with Save · Edit · Skip · Stop. Nothing is saved without a tap on Save (here,
+// or in the editor Edit opens).
+//
+// Most arrive drafted: the nightly job prepares a draft for each bare recipe
+// ahead of time (v3.35, netlify/functions/lib/recipedrafts.mjs), and one
+// waiting is shown the moment the sheet reaches its recipe. A recipe with none
+// is drafted then, while the sheet waits, as it always was — never ahead of the
+// sheet, so no call is spent on a recipe nobody looks at. Save puts the draft
+// into the recipe and removes the waiting one; Skip keeps it, marked, so it is
+// neither offered nor drafted again until it is brought back.
 
 const count = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`
 
@@ -37,6 +44,12 @@ function failure(e: unknown): string {
 interface Props {
   run: FillRun
   recipes: Recipe[]
+  /** The drafts made ahead of time, as the store holds them: one waiting for the recipe the sheet is on shows at once, with no call. */
+  waiting?: readonly RecipeDraftRecord[]
+  /** Writes a draft's own row: Save's removal of it, and Skip's mark on it. */
+  onDraftRow?(row: RecipeDraftRecord): void
+  /** Who is filling in, for Skip's mark. */
+  myId?: string | null
   onDraft(id: string, draft: RecipeDraft): void
   onSave(recipe: Recipe, draft: RecipeDraft): void
   onEdit(recipe: Recipe, draft: RecipeDraft): void
@@ -47,10 +60,18 @@ interface Props {
   fill?(input: FillInput): Promise<RecipeDraft>
 }
 
-export function RecipeFillFlow({ run, recipes, onDraft, onSave, onEdit, onSkip, onStop, fill = fillRecipe }: Props) {
+/** No drafts made ahead: outside a store, and the default. */
+const NO_ROWS: readonly RecipeDraftRecord[] = []
+
+export function RecipeFillFlow({ run, recipes, waiting = NO_ROWS, onDraftRow, myId = null, onDraft, onSave, onEdit, onSkip, onStop, fill = fillRecipe }: Props) {
   const current = fillRunCurrent(run, recipes)
   const recipe = current?.recipe ?? null
-  const draft = recipe ? run.drafts[recipe.id] : undefined
+  // the recipe's own draft row, if it has one; what this sheet drafted while
+  // it waited; and otherwise what the row has waiting, shown at once
+  const row = recipe ? draftRowsByRecipe(waiting).get(recipe.id) : undefined
+  const live = recipe ? run.drafts[recipe.id] : undefined
+  const ahead = live ? undefined : readyDraftOf(row)
+  const draft = live ?? ahead
   const [failed, setFailed] = useState<{ id: string; message: string } | null>(null)
   const [attempt, setAttempt] = useState(0)
   // one request per recipe and attempt, kept across StrictMode's second run of
@@ -106,6 +127,7 @@ export function RecipeFillFlow({ run, recipes, onDraft, onSave, onEdit, onSkip, 
           <p className="recipe-fill-done" role="status">
             {fillSummary(run)}
           </p>
+          {run.skipped > 0 && onDraftRow && <p className="field-hint">What you skipped stays aside: Recipes offers it again only once you bring it back.</p>}
         </div>
         <footer className="modal-foot">
           <span className="spacer" />
@@ -143,6 +165,7 @@ export function RecipeFillFlow({ run, recipes, onDraft, onSave, onEdit, onSkip, 
           </p>
         ) : (
           <>
+            {ahead && <p className="field-hint recipe-fill-ahead">Drafted ahead of time — nothing is saved until you tap Save.</p>}
             <p className="recipe-cook-meta">
               {[
                 (recipe.servings ?? draft.servings) ? `Serves ${recipe.servings ?? draft.servings}` : '',
@@ -194,13 +217,31 @@ export function RecipeFillFlow({ run, recipes, onDraft, onSave, onEdit, onSkip, 
           Stop
         </button>
         <span className="spacer" />
-        <button type="button" className="btn" onClick={() => onSkip(recipe)}>
+        <button
+          type="button"
+          className="btn"
+          onClick={() => {
+            // kept, marked: neither this sheet nor the nightly job offers it again until it is brought back
+            onDraftRow?.(draftSkipped({ row, recipeId: recipe.id, live, by: myId }))
+            onSkip(recipe)
+          }}
+        >
           Skip
         </button>
         <button type="button" className="btn" disabled={!draft} onClick={() => draft && onEdit(recipe, draft)}>
           Edit
         </button>
-        <button type="button" className="btn primary" disabled={!draft} onClick={() => draft && onSave(recipe, draft)}>
+        <button
+          type="button"
+          className="btn primary"
+          disabled={!draft}
+          onClick={() => {
+            if (!draft) return
+            onSave(recipe, draft)
+            // in the recipe now: the draft that waited for it has done its work
+            if (row) onDraftRow?.(draftRemoved(row))
+          }}
+        >
           Save
         </button>
       </footer>
