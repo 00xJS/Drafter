@@ -753,7 +753,7 @@ describe('the segmented control is the same control everywhere', () => {
     expect(phone).toMatch(/\.segmented\.seg-track \{\s*max-width: none;/)
   })
 
-  it('scrolls the nine-segment track instead of wrapping it into three rows', () => {
+  it('scrolls a track of more choices than fit, instead of wrapping it into three rows', () => {
     // `.segmented` wraps by default, which the filter rows want and a track
     // never does: wrapped, the lens's nine became three rows on a 375pt phone
     const scroll = css.match(/\.segmented\.seg-scroll \{([^}]*)\}/)

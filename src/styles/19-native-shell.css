@@ -129,8 +129,8 @@
    This week/Grocery/Stats, the calendar's Month/Week/Day) become a filled
    track with a raised thumb that stretches the width, the way UISegmentedControl
    does — not a row of separate buttons. Since 2026-09-15 the web gets the same
-   track from 04-table-modal.css, and the Stats lens's nine-segment track scrolls
-   (.seg-scroll) rather than stretching; these rules refine the shell's own.
+   track from 04-table-modal.css, and a track with more choices than fit
+   scrolls (.seg-scroll) rather than stretching; these rules refine the shell's own.
    Scoped to those container classes so the grocery, settings and other
    segmented controls keep their own shape. */
 /* Every tab-level switch takes the iOS track. Listing them one container at a
@@ -141,7 +141,7 @@
    ways on one phone (v3.28). So the first selector is the <Segmented>
    component itself: anything built from it is a track here by construction,
    and the container names below are only the hand-rolled ones left. A
-   scrolling track (the Stats lens's nine) opts out, because segments that
+   scrolling track opts out, because segments that
    stretch cannot also scroll. */
 .native .segmented.seg-track:not(.seg-scroll),
 .native .people-tab-seg .segmented,

@@ -2,8 +2,8 @@ import type { ReactNode } from 'react'
 import { Sparkline } from './Sparkline'
 
 /**
- * One area's line on the Overview: a headline figure, a shape, and the way
- * through to the figures that area keeps itself.
+ * One area's line on Insights' This year page: a headline figure, a shape,
+ * and the way through to the figures that area keeps itself.
  *
  * The lens deliberately does not re-count People, Places, Kitchen or the
  * Wardrobe here — each of those counts what its own list's find box and chips

@@ -6,12 +6,13 @@
  * time, distinct days, streaks, a year's months, the 90-day trend, the top
  * few); the kit only draws them, and counts nothing of its own.
  *
- * - StatTile, StreakTiles: counters for a kpi-row; DeltaBadge, a figure's change on the period before.
+ * - StatTile, StreakTiles: counters for a kpi-row.
  * - ChartCard, with a Stepper (‹ year ›) or a WindowSwitch (30 days · 12 months · All) at its head.
  * - Segmented: one track with a thumb that slides, for a switch that swaps the panel under it.
  * - Ring: "13 of 15" as an arc. Sparkline: a series small enough to sit in a row.
  * - HeatGrid: a year of days as a column per week — runs and gaps in one glance.
- * - AreaCard: one area's line on the Overview, and the way to that area's segment of the lens.
+ * - AreaCard: one area's line on the year's page (and the Highlights' way to it), and the way to that area's page.
+ * - DeltaBadge: a figure's change on the period before, where it has one.
  * - RankedBars: ranked bars under that switch. Podium: the top three.
  * - MonthCalendar: a month grid with ‹ ›, each day drawn through a render prop.
  * - MonthBars: a year by month, with its total and a TrendBadge.

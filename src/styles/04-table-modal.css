@@ -339,7 +339,8 @@ textarea {
   color: var(--accent-text);
 }
 
-/* More choices than fit a line — the Stats lens has nine. The segments take
+/* More choices than fit a line — the Stats lens had nine, until Insights
+   opened on its Highlights and gave each area a chip. The segments take
    their own widths, the track scrolls, and Segmented keeps the chosen one in
    view. No thumb: one that has to travel past the edge of its own track reads
    worse than a raised button, so the chosen segment is simply raised, as every
