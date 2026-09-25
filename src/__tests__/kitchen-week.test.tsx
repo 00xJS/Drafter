@@ -14,6 +14,7 @@ import { asMeal as weekSheetMeal } from '../components/WeekPlanSheet'
 import {
   cookTaskFor,
   cookTaskId,
+  cookTaskUpdates,
   cookTaskWithCook,
   cookedIndex,
   mealAdjusted,
@@ -271,6 +272,8 @@ describe('who cooks a shared dish, and the cook task that is theirs', () => {
   it('keeps an open cook task with its meal’s cook, and takes it back off them only while it is the meal’s', () => {
     const task = { ...cookTaskFor({ ...dinner, cookId: undefined }, STAMP, [dogs]), ownerId: JOE }
     expect(syncCookTask(task, dinner, [dogs])?.assigneeId).toBe(MARIA)
+    // what useCookTaskSync writes back on either phone: the task, handed to her
+    expect(cookTaskUpdates([task], [dinner], [dogs]).map(t => t.assigneeId)).toEqual([MARIA])
     expect(syncCookTask({ ...task, assigneeId: MARIA }, dinner, [dogs])).toBeNull()
     expect(cookTaskWithCook(task, undefined, MARIA, JOE)).toMatchObject({ assigneeId: MARIA, assignedBy: JOE })
     expect(cookTaskWithCook({ ...task, assigneeId: MARIA }, MARIA, undefined, JOE)).not.toHaveProperty('assigneeId')
