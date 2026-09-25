@@ -56,6 +56,7 @@ import { recordJobRun } from './lib/jobhealth.mjs'
 import { putNotice } from './lib/notices.mjs'
 import { noticeId } from '../../shared/notices.mts'
 import { buildPeerMap as peerMap } from './lib/peers.mjs'
+import { recipeNightAccounts, recipeNightStarts, startRecipeNight } from './lib/recipedrafts.mjs'
 import { sundayDraftStarts, sundayLine } from './lib/reviewweek.mjs'
 import { signInLine } from './lib/signins.mjs'
 import { wantsDraft, weekReviewOf } from './lib/sundaydraft.mjs'
@@ -280,8 +281,10 @@ async function digestRun(now, run) {
   // Sunday's draft is started even with nobody subscribed, on a Sunday hour
   // that starts one somewhere: {} stands for an account with no settings row
   const drafting = !!resolveProvider() && [...(users ?? []), {}].some(u => sundayDraftStarts(u, now))
+  // …and the nightly recipe drafts, in the small hours somewhere (lib/recipedrafts.mjs)
+  const recipeNight = !!resolveProvider() && [...(users ?? []), {}].some(u => recipeNightStarts(u, now))
   run.counts = { subscribers: active.length, sent: 0, draftsStarted: 0 }
-  if (active.length === 0 && !drafting) return new Response(`no subscribers; ${checked}`, { status: 200 })
+  if (active.length === 0 && !drafting && !recipeNight) return new Response(`no subscribers; ${checked}`, { status: 200 })
 
   // keep row ownership so each recipient only ever sees their own scope. Read a
   // page at a time (restAll, as the nightly backup reads them): one request
@@ -480,6 +483,13 @@ async function digestRun(now, run) {
   if (drafts.length) {
     if (await startJob({ type: 'sunday-drafts', userIds: drafts, at: now.toISOString() }, { origin: site })) draftsStarted = drafts.length
     else failures.push(`Sunday's draft could not be started for ${drafts.length} account(s): the background function did not answer`)
+  }
+
+  // Recipe drafts for the households whose night it is and that have a recipe
+  // still bare, subscribed or not: written by the background function too
+  if (recipeNight) {
+    const unstarted = await startRecipeNight(recipeNightAccounts(accounts, rows, peers, now), now, site)
+    if (unstarted) failures.push(unstarted)
   }
 
   // hard-delete purged tombstones older than the TTL (peers have had time to see them);

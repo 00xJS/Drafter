@@ -250,7 +250,7 @@ describe('/api/admin: the jobs and the error list, for the site owner', () => {
     jobRuns.set('backup', { job: 'backup', ran_at: backup.at, ok: true, counts: backup.counts, failures: [], failure_count: 0, failing_since: null, last_ok_at: backup.at, last_good_at: backup.at })
     canary = { ok: true, checked: 22, failures: [], error: null, at: '2026-09-22T09:00:00.000Z', failingSince: null, alertedAt: null }
     const body = await (await act('opsHealth')).json()
-    expect(body.jobs).toEqual({ backup: { ...backup }, digest: null, 'sunday-draft': null, 'email-triage': null })
+    expect(body.jobs).toEqual({ backup: { ...backup }, digest: null, 'sunday-draft': null, 'email-triage': null, 'recipe-drafts': null })
     expect(body.syncCheck.record.at).toBe('2026-09-22T09:00:00.000Z')
     // a backup with a record of its own needs no look in the bucket
     expect(body.lastSnapshotAt).toBeNull()
