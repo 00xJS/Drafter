@@ -20,7 +20,7 @@
 // after writing it loses the push rather than repeating it an hour later.
 
 import { localParts, visibleItemsFor } from '../../../shared/digest.mts'
-import { insightFigures, lastMonthKey, periodSpan, pickHighlights, recapLines, recapTitle } from '../../../shared/insights.mts'
+import { insightFigures, lastMonthKey, periodSpan, pickHighlights, recapLines, recapPushBody, recapTitle } from '../../../shared/insights.mts'
 import { noticeId } from '../../../shared/notices.mts'
 import { dayKeysIn } from '../../../shared/people.mts'
 import { validTimeZone } from './timezone.mjs'
@@ -106,8 +106,11 @@ export function buildRecap(rows, userId, peerIds, ownerId, timezone, now, month)
     today,
     dayKeyOf,
   }
-  const cards = pickHighlights(insightFigures(input, periodSpan('month', `${month}-01`, today)))
-  return { month, title: recapTitle(month), lines: recapLines(cards, RECAP_LINES), cards }
+  const figures = insightFigures(input, periodSpan('month', `${month}-01`, today))
+  const cards = pickHighlights(figures)
+  // the lines go in the notice, which only its reader opens; the push, on a
+  // lock screen, carries the household's counts and nothing with a name in it
+  return { month, title: recapTitle(month), lines: recapLines(cards, RECAP_LINES), push: recapPushBody(figures.current), cards }
 }
 
 /**

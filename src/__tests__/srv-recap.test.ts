@@ -222,8 +222,9 @@ describe('what the recap says, and to whom', () => {
     expect(recapNoticeId(JOE, '2026-09')).toBe(`notice~${JOE}~recap~2026-09`)
     expect(notice.user_id).toBe(JOE)
     expect(notice.data).toMatchObject({ kind: 'notice', type: 'digest', title: 'Your September in Drafter', target: { kind: 'insights', id: '2026-09' } })
-    // the notice and the push say the same lines, most interesting first
-    expect(push.body).toBe(notice.data.lines.join('\n'))
+    // the notice says the lines, most interesting first; the push, on a lock
+    // screen, the household's counts alone: Joe's own journal and whom he saw stay in the bell
+    expect(push.body).toBe('6 tasks done')
     expect(notice.data.lines).toEqual([
       'Journal 9 days in a row · your longest yet',
       '6 tasks done in September, ↑6 on August · Tuesdays were the busiest',
@@ -298,6 +299,53 @@ describe('what the recap says, and to whom', () => {
       ),
     )
     expect(recap.lines).toEqual(recapLines(cards))
+  })
+
+  /** Joe's September, with more in it: a place, bills paid, meals, a habit, a shirt and a low mood. */
+  const fuller = (): Row[] => [
+    ...september(),
+    // where Joe went, whom the household paid, a meal out there and one at home
+    record(JOE, { kind: 'place', id: 'nopi', name: 'Nopi', category: 'restaurant', color: '#c0392b' }),
+    done(JOE, 'out', '2026-09-19', { title: 'Dinner at Nopi', placeId: 'nopi' }),
+    done(JOE, 'rent', '2026-09-01', { title: 'Rent', bill: { kind: 'bill', payee: 'Landlord Co' }, estimateCost: 1850, actualCost: 1850 }),
+    done(JOE, 'power', '2026-09-15', { title: 'Power', bill: { kind: 'bill', payee: 'City Power' }, estimateCost: 80, actualCost: 80 }),
+    record(JOE, { kind: 'meal', id: `meal~2026-09-05~dinner~${JOE}`, date: '2026-09-05', slot: 'dinner', title: 'Soup', shared: true }),
+    record(JOE, { kind: 'meal', id: `meal~2026-09-12~dinner~${JOE}`, date: '2026-09-12', slot: 'dinner', title: 'Nopi', out: true, placeId: 'nopi', shared: true }),
+    // his habit, his shirt, and a low mood on the days he wrote
+    record(JOE, { kind: 'habit', id: 'h1', name: 'Meditate', done: Array.from({ length: 10 }, (_, i) => `2026-09-${21 + i}`) }),
+    record(JOE, { kind: 'garment', id: 'g1', name: 'Blue linen shirt', type: 'top' }),
+    ...['2026-09-02', '2026-09-03', '2026-09-04'].map((date, i) => record(JOE, { kind: 'wear', id: `w${i}`, date, garmentIds: ['g1'] })),
+    ...['2026-09-06', '2026-09-08'].map(date => record(JOE, { kind: 'journal', id: `journal~${date}~joe`, date, body: 'a bad day', mood: 1 })),
+  ]
+  /** The words a lock screen must never show: names, and anything from the member's own log. */
+  const PRIVATE = ['Tio Marco', 'Nopi', 'Landlord Co', 'City Power', 'Rent', 'Meditate', 'Blue linen shirt', 'Soup', 'mood', 'Journal', 'Habit', 'Outfit', 'You ']
+
+  it('puts the household’s counts on the lock screen, and nothing with a name in it: those stay in the bell', () => {
+    const recap = buildRecap(fuller(), JOE, [JOE, MARIA], JOE, 'America/Phoenix', new Date('2026-10-01T15:00:00.000Z'), '2026-09')
+    // the bell's lines name them: whom he saw, where he went, who was paid, his habit and his shirt
+    const said = recap.cards.map(c => c.line).join('\n')
+    for (const name of ['Tio Marco', 'Nopi', 'Landlord Co', 'Meditate', 'Blue linen shirt']) expect(said, name).toContain(name)
+    // the lock screen: tasks done, meals had and money paid, as numbers alone
+    expect(recap.push).toBe('9 tasks done · 2 meals · $1,930.00 paid')
+    for (const word of PRIVATE) expect(recap.push, word).not.toContain(word)
+  })
+
+  it('is what the digest sends: the counts to the lock screen, the lines to the bell', async () => {
+    settings = [account(JOE)]
+    rows = fuller()
+    await runAt('2026-10-01T15:00:00.000Z')
+    const [push] = recaps()
+    expect(push.body).toBe('9 tasks done · 2 meals · $1,930.00 paid')
+    for (const word of PRIVATE) expect(push.body, word).not.toContain(word)
+    const lines = kept.get(recapNoticeId(JOE, '2026-09'))!.data.lines as string[]
+    expect(lines).toHaveLength(4)
+    expect(lines.join('\n')).toMatch(/Tio Marco|Nopi|Landlord Co|Meditate|Blue linen shirt/)
+  })
+
+  it('says only that there are highlights when the month counted none of the household’s', () => {
+    const quiet = buildRecap([...Array.from({ length: 9 }, (_, i) => entry(JOE, `2026-09-${22 + i}`))], JOE, [JOE], JOE, 'America/Phoenix', new Date('2026-10-01T15:00:00.000Z'), '2026-09')
+    expect(quiet.lines).toEqual(['Journal 9 days in a row · your longest yet'])
+    expect(quiet.push).toBe('Open Drafter for the highlights.')
   })
 
   it('says nothing about a month with nothing in it', async () => {

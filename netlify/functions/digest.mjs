@@ -445,9 +445,10 @@ async function digestRun(now, run) {
       }
 
       // the recap's push, once its notice is kept: every device, a phone's too,
-      // and a tap opens Insights on that month (useDeepLinks)
+      // and a tap opens Insights on that month (useDeepLinks). Counts only on
+      // the lock screen (recapPushBody); the lines, names and all, are in the bell
       if (recap && liveSubs.length && pushConfigured()) {
-        const { failed } = await applySend({ title: recap.title, body: recap.lines.join('\n'), tag: `recap-${recap.month}`, url: `${site || ''}${recapPath(recap.month)}` })
+        const { failed } = await applySend({ title: recap.title, body: recap.push, tag: `recap-${recap.month}`, url: `${site || ''}${recapPath(recap.month)}` })
         if (failed.length) failures.push(`recap ${u.user_id}: ${failed.map(f => f.statusCode).join(',')}`)
         sent += Math.max(0, liveSubs.length - failed.length)
       }

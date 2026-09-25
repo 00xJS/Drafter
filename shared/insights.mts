@@ -746,5 +746,24 @@ export function highlightLine(c: Pick<Highlight, 'title' | 'delta' | 'detail'>):
   return `${c.title}${change}${c.detail ? ` · ${c.detail}` : ''}`
 }
 
-/** The recap's body: the first few cards' lines, most interesting first. */
+/** The recap's notice in the bell: the first few cards' lines, most interesting first. */
 export const recapLines = (cards: readonly Highlight[], n = 4): string[] => cards.slice(0, n).map(c => c.line)
+
+/**
+ * The recap's push, as a lock screen shows it: counts alone, from the
+ * household's areas — tasks done, meals had, money paid. A lock screen is read
+ * by whoever picks the phone up, so nothing on it names anybody or anything:
+ * no person or place, no habit or piece of clothing, nobody who was paid, and
+ * no mood. The lines themselves stay in the bell (recapLines), which only
+ * their reader opens.
+ */
+export function recapPushBody(cur: SpanFigures): string {
+  const k = cur.kitchen
+  const meals = k.cooked + k.out + k.bought
+  const counts = [
+    cur.tasks.done > 0 ? `${count(cur.tasks.done, 'task')} done` : '',
+    meals > 0 ? count(meals, 'meal') : '',
+    cur.money.paid > 0 ? `${formatMoney(cur.money.paid)} paid` : '',
+  ].filter(Boolean)
+  return counts.length ? counts.join(' · ') : 'Open Drafter for the highlights.'
+}

@@ -20,7 +20,15 @@ export declare function buildRecap(
   timezone: string | null | undefined,
   now: Date,
   month: string,
-): { month: string; title: string; lines: string[]; cards: Highlight[] }
+): {
+  month: string
+  title: string
+  /** The notice's lines, for the bell: the first few highlights, names and all. */
+  lines: string[]
+  /** The push's body, for a lock screen: the household's counts alone (recapPushBody), never a name. */
+  push: string
+  cards: Highlight[]
+}
 
 export declare function recapNotice(userId: string, recap: { month: string; title: string; lines: string[] }, now: Date): Notice
 
