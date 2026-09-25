@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { memberName } from '../../household'
 import { Icon } from '../Icon'
 import { inTrash, newerStamp } from '../../itemops'
@@ -17,6 +18,8 @@ export function TasksScreen({ p }: { p: PlannerCtx }) {
   // segment row now. `inTrash` is the Trash's own rule, imported rather than
   // repeated, so the badge and the list always say the same number.
   const trashCount = store.visibleItems.filter(inTrash).length
+  // the Finance segment tapped while Finance is up: Finance goes back to its pay periods
+  const [financeHome, setFinanceHome] = useState(0)
 
   // a map lookup so an id whose project was deleted degrades to the index
   const notesProject = notesProjectId ? projectMap.get(notesProjectId) : undefined
@@ -30,7 +33,17 @@ export function TasksScreen({ p }: { p: PlannerCtx }) {
       <div className="people-tab-seg with-trash">
         <span className="segmented" role="tablist" aria-label="Tasks view">
           {TASKS_TABS.map(t => (
-            <button key={t.key} type="button" role="tab" aria-selected={tasksTab === t.key} className={tasksTab === t.key ? 'seg on' : 'seg'} onClick={() => setTasksTab(t.key)}>
+            <button
+              key={t.key}
+              type="button"
+              role="tab"
+              aria-selected={tasksTab === t.key}
+              className={tasksTab === t.key ? 'seg on' : 'seg'}
+              onClick={() => {
+                if (t.key === 'bills' && tasksTab === 'bills') setFinanceHome(n => n + 1)
+                setTasksTab(t.key)
+              }}
+            >
               {t.label}
             </button>
           ))}
@@ -138,6 +151,7 @@ export function TasksScreen({ p }: { p: PlannerCtx }) {
           onCheckInOpened={() => setFinanceCheckIn(false)}
           addBill={financeBill}
           onAddBillOpened={() => setFinanceBill(false)}
+          home={financeHome}
         />
       )}
       {tasksTab === 'notes' && (

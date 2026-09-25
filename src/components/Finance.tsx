@@ -92,15 +92,24 @@ interface Props {
   /** Open on + Bill's sheet: handed over by the palette's New bill. */
   addBill?: boolean
   onAddBillOpened?(): void
+  /** Moves each time the Finance segment is tapped again while Finance is up: back to the pay periods, out of Manage. */
+  home?: number
   now?: Date
 }
 
 export function Finance(props: Props) {
   const { tasks, accounts, members, myId, inHousehold = false, onOpen, onNew, onMarkPaid, onAdd, onSaveTask, onRemoveTask, onDeleteTask, onArchiveTask, onChangeAccount, onRemoveAccount, onCheckIn, checkIn = false, onCheckInOpened } = props
-  const { addBill = false, onAddBillOpened, now } = props
+  const { addBill = false, onAddBillOpened, home = 0, now } = props
   // Manage, when it is up, and the segment it is on: Finance opens on the
   // periods every time Tasks → Finance is picked
   const [manage, setManage] = useState<ManageTab | null>(null)
+  // …and a tap on the segment it is already on goes back to them, as a tab
+  // tapped again goes back to its top
+  const [homeSeen, setHomeSeen] = useState(home)
+  if (home !== homeSeen) {
+    setHomeSeen(home)
+    setManage(null)
+  }
   const [days, setDays] = useState(TIMELINE_DAYS)
   // Check in, asked for from elsewhere — the weekly check-in's task, its
   // reminder — lands here with Finance not yet drawn, so it opens the sheet
