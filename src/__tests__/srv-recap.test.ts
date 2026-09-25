@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { buildRecap, recapDue, recapNoticeId } from '../../netlify/functions/lib/recap.mjs'
+import { sanitizeItem } from '../schema'
 import { forgetNoticesStored } from '../../netlify/functions/lib/notices.mjs'
 import { insightFigures, periodSpan, pickHighlights, recapLines } from '../../shared/insights.mts'
 import { dayKeysIn } from '../../shared/people.mts'
@@ -348,12 +349,30 @@ describe('what the recap says, and to whom', () => {
     expect(quiet.push).toBe('Open Drafter for the highlights.')
   })
 
-  it('says nothing about a month with nothing in it', async () => {
+  it('says nothing about a month with nothing in it, and marks it done with a tombstone no device shows', async () => {
     settings = [account(JOE)]
     rows = [person('marco', 'Tio Marco')]
     await runAt('2026-10-01T15:00:00.000Z')
     expect(recaps()).toEqual([])
-    expect(kept.has(recapNoticeId(JOE, '2026-09'))).toBe(false)
+    const mark = kept.get(recapNoticeId(JOE, '2026-09'))!
+    expect(mark.user_id).toBe(JOE)
+    expect(mark.data).toMatchObject({ kind: 'notice', id: recapNoticeId(JOE, '2026-09'), purged: true, deletedAt: '2026-10-01T15:00:00.000Z' })
+    expect(mark.data).not.toHaveProperty('title')
+    expect(mark.data).not.toHaveProperty('lines')
+    // read on a device, it is the tombstone it is: nothing for the bell to list
+    expect(sanitizeItem(mark.data)).toMatchObject({ kind: 'notice', deletedAt: '2026-10-01T15:00:00.000Z', purged: true })
+  })
+
+  it('reads and counts a quiet month once: the hours after it on the 1st find it done', async () => {
+    settings = [account(JOE)]
+    rows = [person('marco', 'Tio Marco')]
+    await runAt('2026-10-01T15:00:00.000Z')
+    const personal = () => reads.filter(r => r.includes('kind=in.(journal,habit,garment,wear)'))
+    expect(personal()).toHaveLength(1)
+    await runAt('2026-10-01T16:00:00.000Z')
+    await runAt('2026-10-01T23:00:00.000Z')
+    expect(personal()).toHaveLength(1)
+    expect(order.filter(e => e.includes('~recap~'))).toEqual([`notice ${recapNoticeId(JOE, '2026-09')}`])
   })
 })
 

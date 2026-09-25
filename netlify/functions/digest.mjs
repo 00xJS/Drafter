@@ -61,7 +61,7 @@ import { signInLine } from './lib/signins.mjs'
 import { wantsDraft, weekReviewOf } from './lib/sundaydraft.mjs'
 import { keyHeaders } from './lib/supabasekeys.mjs'
 import { pushConfigured, sendToAll } from './push.mjs'
-import { RECAP_KINDS, buildRecap, keepWritten, recapDue, recapNotice, recapNoticeId, recapPath } from './lib/recap.mjs'
+import { RECAP_KINDS, buildRecap, keepWritten, recapDue, recapNotice, recapNoticeId, recapPath, recapQuietMark } from './lib/recap.mjs'
 
 export const config = { schedule: '@hourly' }
 
@@ -207,9 +207,10 @@ async function recapsToSend(active, now, ownerId) {
 /**
  * One account's recap: counted as Insights counts, and its notice written
  * for its month. Resolves what to push — or null when the month held nothing
- * worth saying, when the notice was there already (another run sent it), or
- * when notices cannot be kept yet, since a push with no watermark behind it
- * could go again an hour later.
+ * worth saying (marked done all the same, recapQuietMark, so the hours after
+ * this one do not count it again), when the notice was there already (another
+ * run sent it), or when notices cannot be kept yet, since a push with no
+ * watermark behind it could go again an hour later.
  * @param {{ user_id: string, timezone?: string | null }} u
  * @param {{ user_id: string | null, data: unknown }[]} rows the digest's
  * @param {{ user_id: string | null, data: unknown }[]} personal the recap's own read
@@ -233,7 +234,10 @@ async function claimRecap(u, rows, personal, peerIds, ownerId, now, month) {
     now,
     month,
   )
-  if (!recap.lines.length) return null
+  if (!recap.lines.length) {
+    await putNotice(recapQuietMark(u.user_id, month, now), u.user_id, keepWritten)
+    return null
+  }
   const put = await putNotice(recapNotice(u.user_id, recap, now), u.user_id, keepWritten)
   return put.ok && !put.unchanged ? recap : null
 }

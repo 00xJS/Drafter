@@ -32,4 +32,7 @@ export declare function buildRecap(
 
 export declare function recapNotice(userId: string, recap: { month: string; title: string; lines: string[] }, now: Date): Notice
 
+/** A quiet month's mark: the recap notice's id as a content-free tombstone, so the month counts as done. */
+export declare function recapQuietMark(userId: string, month: string, now: Date): Notice
+
 export declare function keepWritten(existing: Notice | null | undefined, incoming: Notice): Notice

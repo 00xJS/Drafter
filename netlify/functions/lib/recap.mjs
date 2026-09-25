@@ -17,12 +17,16 @@
 // Once a month: the notice's id is the month's, `notice~<user>~recap~YYYY-MM`,
 // and it is written BEFORE anything is sent, as the digest writes its
 // watermarks first. A run that finds it written sends nothing; a run that dies
-// after writing it loses the push rather than repeating it an hour later.
+// after writing it loses the push rather than repeating it an hour later. A
+// quiet month, with nothing to say, is marked done under the same id with a
+// content-free tombstone (recapQuietMark), or every hour left of the 1st would
+// read the member's rows and count the month again to find it still quiet.
 
 import { localParts, visibleItemsFor } from '../../../shared/digest.mts'
 import { insightFigures, lastMonthKey, periodSpan, pickHighlights, recapLines, recapPushBody, recapTitle } from '../../../shared/insights.mts'
 import { noticeId } from '../../../shared/notices.mts'
 import { dayKeysIn } from '../../../shared/people.mts'
+import { purgeTombstone } from '../../../shared/tombstone.mts'
 import { validTimeZone } from './timezone.mjs'
 
 /** The personal kinds the recap reads beyond the digest's own rows: the member's journal, habits and clothes. */
@@ -133,6 +137,21 @@ export function recapNotice(userId, recap, now) {
     createdAt: stamp,
     updatedAt: stamp,
   }
+}
+
+/**
+ * A quiet month's mark: the recap notice's own id, as the content-free
+ * tombstone "Delete forever" leaves (shared/tombstone.mts). The one read of
+ * recaps already written finds it, so the hours left of the 1st read and count
+ * nothing more; no device shows a tombstone, and it goes with the other purged
+ * ones long after the 1st.
+ * @param {string} userId
+ * @param {string} month YYYY-MM
+ * @param {Date} now
+ * @returns {import('../../../src/types.ts').Notice} a notice's tombstone, which is all of a notice a device keeps once it has gone
+ */
+export function recapQuietMark(userId, month, now) {
+  return /** @type {import('../../../src/types.ts').Notice} */ (/** @type {unknown} */ (purgeTombstone('notice', recapNoticeId(userId, month), now.toISOString())))
 }
 
 /** putNotice's merge for the recap: a recap already written is left exactly as it is, so nothing is sent twice. */
