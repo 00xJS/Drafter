@@ -830,6 +830,22 @@ describe('Check in', () => {
   })
 })
 
+describe('the palette’s New bill', () => {
+  it('opens + Bill’s own sheet, with its templates, whether Finance was on screen or not', () => {
+    const opened = vi.fn()
+    const view = render(<Finance {...props({ addBill: true, onAddBillOpened: opened })} />)
+    expect(within(dialog()).getByRole('heading', { name: 'Add a bill' })).toBeTruthy()
+    expect(within(dialog()).getByRole('button', { name: 'Rent' })).toBeTruthy()
+    expect(opened).toHaveBeenCalled()
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Close' }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    // handed over again while Finance is up
+    view.rerender(<Finance {...props({ addBill: false, onAddBillOpened: opened })} />)
+    view.rerender(<Finance {...props({ addBill: true, onAddBillOpened: opened })} />)
+    expect(within(dialog()).getByRole('heading', { name: 'Add a bill' })).toBeTruthy()
+  })
+})
+
 describe('the weekly check-in', () => {
   it('turns on in Manage as a weekly task on Sunday at six, moves, and turns off', () => {
     const p = props()

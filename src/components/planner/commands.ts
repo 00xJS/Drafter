@@ -23,6 +23,8 @@ export interface PaletteNav {
   openLens(tab?: StatsTab): void
   /** Tasks → Finance with its Check in sheet up. */
   openFinanceCheckIn(): void
+  /** Tasks → Finance with + Bill's sheet up. */
+  openFinanceBill(): void
 }
 
 /** The editors and sheets the palette opens (useOverlays', or a stand-in). */
@@ -43,7 +45,7 @@ export const SHUT_DOWN_QUICK_FROM = 17
 // decides which of the day's routines is a quick action. There is no New
 // project: there is one ongoing project, and nothing starts a second.
 export function buildPaletteCommands(nav: PaletteNav, overlays: PaletteOverlays, now: Date = new Date()): Command[] {
-  const { goView, setView, openJournal, openReview, goTasksTab, setKeepTab, goInnerView, openWardrobe, openKitchen, openLens, openFinanceCheckIn } = nav
+  const { goView, setView, openJournal, openReview, goTasksTab, setKeepTab, goInnerView, openWardrobe, openKitchen, openLens, openFinanceCheckIn, openFinanceBill } = nav
   const { newTask, setPushed, openSheet } = overlays
   const hour = now.getHours()
   /** People or Places — two of Keep's four — remembered as its button would,
@@ -68,7 +70,8 @@ export function buildPaletteCommands(nav: PaletteNav, overlays: PaletteOverlays,
     // Add clothing lands on the sheet's big photo target rather than the picker.
     { id: 'log-wear', label: 'What am I wearing?', icon: 'wardrobe', quick: false, keywords: 'outfit today log clothes', run: () => openWardrobe({ date: localDayKey() }) },
     { id: 'add-clothing', label: 'Add clothing', icon: 'camera', quick: false, keywords: 'photo garment top bottom shirt', run: () => openWardrobe({ tab: 'clothes', add: true }) },
-    { id: 'new-bill', label: 'New bill', icon: 'bills', quick: true, keywords: 'payment money', run: () => newTask({ bill: { kind: 'bill' }, recurrence: { freq: 'monthly' } }, { capture: false }) },
+    // Finance's own + Bill, with its templates and the date it will not save without, as Check in balances opens Finance's Check in
+    { id: 'new-bill', label: 'New bill', icon: 'bills', quick: true, keywords: 'payment money', run: () => openFinanceBill() },
     // what each account holds, typed in: typed for rather than offered, as the weekly check-in's own reminder offers it
     { id: 'check-in', label: 'Check in balances', icon: 'bills', quick: false, keywords: 'money accounts balance finance safe spend', run: () => openFinanceCheckIn() },
     { id: 'go-home', label: 'Home', icon: 'home', keywords: 'today dashboard', run: () => goView('home') },

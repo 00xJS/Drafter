@@ -89,11 +89,15 @@ interface Props {
   /** Open on Check in: handed over by the weekly check-in's task or its reminder. */
   checkIn?: boolean
   onCheckInOpened?(): void
+  /** Open on + Bill's sheet: handed over by the palette's New bill. */
+  addBill?: boolean
+  onAddBillOpened?(): void
   now?: Date
 }
 
 export function Finance(props: Props) {
-  const { tasks, accounts, members, myId, inHousehold = false, onOpen, onNew, onMarkPaid, onAdd, onSaveTask, onRemoveTask, onDeleteTask, onArchiveTask, onChangeAccount, onRemoveAccount, onCheckIn, checkIn = false, onCheckInOpened, now } = props
+  const { tasks, accounts, members, myId, inHousehold = false, onOpen, onNew, onMarkPaid, onAdd, onSaveTask, onRemoveTask, onDeleteTask, onArchiveTask, onChangeAccount, onRemoveAccount, onCheckIn, checkIn = false, onCheckInOpened } = props
+  const { addBill = false, onAddBillOpened, now } = props
   // Manage, when it is up, and the segment it is on: Finance opens on the
   // periods every time Tasks → Finance is picked
   const [manage, setManage] = useState<ManageTab | null>(null)
@@ -101,7 +105,7 @@ export function Finance(props: Props) {
   // Check in, asked for from elsewhere — the weekly check-in's task, its
   // reminder — lands here with Finance not yet drawn, so it opens the sheet
   // from the first render, and again when it is asked while Finance is up
-  const [sheet, setSheet] = useState<Sheet | null>(() => (checkIn ? { kind: 'checkin' } : null))
+  const [sheet, setSheet] = useState<Sheet | null>(() => (checkIn ? { kind: 'checkin' } : addBill ? { kind: 'bill' } : null))
   const [asked, setAsked] = useState(checkIn)
   if (checkIn !== asked) {
     setAsked(checkIn)
@@ -110,6 +114,16 @@ export function Finance(props: Props) {
   useEffect(() => {
     if (checkIn) onCheckInOpened?.()
   }, [checkIn, onCheckInOpened])
+  // …and + Bill, the same way: the palette's New bill lands on the sheet that
+  // knows a bill's templates and asks for its date, not the bare task editor
+  const [askedBill, setAskedBill] = useState(addBill)
+  if (addBill !== askedBill) {
+    setAskedBill(addBill)
+    if (addBill) setSheet({ kind: 'bill' })
+  }
+  useEffect(() => {
+    if (addBill) onAddBillOpened?.()
+  }, [addBill, onAddBillOpened])
 
   // read by the day, so the forecast is not rebuilt on every render by a fresh
   // clock, and still starts from today once midnight has passed on a phone

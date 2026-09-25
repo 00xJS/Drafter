@@ -40,6 +40,8 @@ interface ShellState {
   sheets: Sheet[]
   /** Finance's Check in, asked for */
   checkIn: boolean
+  /** Finance's + Bill sheet asked for. */
+  addBill?: boolean
 }
 
 /** Two starting points that disagree on every field, so no landing is true by accident. The first is on the month a day from a Stats view left, the Day remembered; in each, People's and Places' switches are on different halves. */
@@ -169,6 +171,11 @@ function shell(start: ShellState, now: Date = AFTERNOON) {
       s.tasksTab = 'bills'
       s.view = 'tasks'
     },
+    openFinanceBill: () => {
+      s.addBill = true
+      s.tasksTab = 'bills'
+      s.view = 'tasks'
+    },
   }
   const overlays: PaletteOverlays = {
     newTask: (...args) => {
@@ -213,7 +220,14 @@ describe('the palette’s own commands', () => {
 
   it('opens the editors the toolbar does', () => {
     expect(run('new-task').newTasks).toEqual([[]])
-    expect(run('new-bill').newTasks).toEqual([[{ bill: { kind: 'bill' }, recurrence: { freq: 'monthly' } }, { capture: false }]])
+  })
+
+  it('opens Finance’s own + Bill, from anywhere, never the bare task editor', () => {
+    for (const start of STARTS) {
+      const s = run('new-bill', start)
+      expect(s).toMatchObject({ addBill: true, view: 'tasks', tasksTab: 'bills' })
+      expect(s.newTasks).toEqual([])
+    }
   })
 
   it('opens Plan next week, Ask Drafter and I\'m here over wherever you are, typed for rather than offered', () => {

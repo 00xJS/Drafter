@@ -344,6 +344,13 @@ export function useNavigation() {
     goTasksTab('bills')
     setView('tasks')
   }
+  /** + Bill's sheet, asked for from outside Finance (the palette's New bill); consumed by Finance, as Check in is. */
+  const [financeBill, setFinanceBill] = useState(false)
+  const openFinanceBill = () => {
+    setFinanceBill(true)
+    goTasksTab('bills')
+    setView('tasks')
+  }
   /**
    * A task for Tasks → List to bring into view, its filter moved to show it:
    * one just logged as done, which the Open filter hides (the toast's Show).
@@ -435,6 +442,9 @@ export function useNavigation() {
     financeCheckIn,
     setFinanceCheckIn,
     openFinanceCheckIn,
+    financeBill,
+    setFinanceBill,
+    openFinanceBill,
     taskShown,
     setTaskShown,
     showTaskInList,
