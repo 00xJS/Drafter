@@ -166,23 +166,6 @@
   align-items: center;
 }
 
-/* sparkline + stalled */
-.spark {
-  display: flex;
-  align-items: flex-end;
-  gap: 2px;
-  height: 22px;
-  margin-top: 6px;
-}
-.spark-bar {
-  flex: 1;
-  background: var(--viz-empty);
-  border-radius: 2px 2px 0 0;
-}
-.spark-bar.now {
-  background: var(--viz-series-1);
-}
-
 /* review */
 /* the column gap on .insights.review spaces the toolbar; the base .toolbar
    margin would add 12px on top of it */

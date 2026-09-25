@@ -97,19 +97,24 @@ describe('the strip’s action (B5)', () => {
     expect(briefingCtaLabel({ hour: 9, hasFocus: true, closed: true })).toBe('Day closed')
   })
 
-  it('is the first tile, a real button, and never in the header', () => {
-    const html = renderToStaticMarkup(<BriefingCard events={[]} habits={[]} dinner={null} now={new Date(2026, 8, 14, 9)} cta={{ label: 'Plan my day', onClick: noop }} />)
-    const tiles = html.indexOf('<ul class="briefing-tiles">')
-    expect(html.slice(tiles)).toMatch(/^<ul class="briefing-tiles"><li class="briefing-tile briefing-cta"><button type="button" class="briefing-cta-btn">/)
-    expect(html.slice(tiles)).toContain('Plan my day')
-    expect(html.slice(0, tiles)).not.toContain('Plan my day')
+  // It was the briefing strip's first tile until Home's top section
+  // (2026-09-25): the focus card's header carries it now, where the day's
+  // three are, and the strip that was left says only the day's other facts.
+  const focusCard = (cta?: ComponentProps<typeof FocusCard>['cta']) =>
+    renderToStaticMarkup(<FocusCard tasks={[]} blocks={new Map()} onOpen={noop} onStatus={noop} onDefer={noop} cta={cta} />)
+
+  it('is a real button in the focus card’s header, and nowhere on the briefing strip', () => {
+    const html = focusCard({ label: 'Plan my day', onClick: noop })
+    const head = html.slice(html.indexOf('<header'), html.indexOf('</header>'))
+    expect(head).toContain('<button type="button" class="btn subtle home-link">Plan my day</button>')
+    expect(renderToStaticMarkup(<BriefingCard events={[]} habits={[]} now={new Date(2026, 8, 14, 9)} />)).not.toMatch(/Plan my day|Shut down|Day closed/)
   })
 
-  it('is a statement, not a button, without onClick; and no tiles at all without it on an empty day', () => {
-    const closed = renderToStaticMarkup(<BriefingCard events={[]} habits={[]} dinner={null} now={new Date()} cta={{ label: 'Day closed' }} />)
-    expect(closed).toContain('<li class="briefing-tile briefing-cta closed"><span class="briefing-cta-btn">')
-    expect(closed).not.toContain('<button type="button" class="briefing-cta-btn"')
-    expect(renderToStaticMarkup(<BriefingCard events={[]} habits={[]} dinner={null} now={new Date()} />)).not.toContain('briefing-tiles')
+  it('is a statement, not a button, without onClick; and no tiles at all on an empty day', () => {
+    const closed = focusCard({ label: 'Day closed' })
+    expect(closed).toContain('<span class="home-link closed">Day closed</span>')
+    expect(closed).not.toContain('<button type="button" class="btn subtle home-link"')
+    expect(renderToStaticMarkup(<BriefingCard events={[]} habits={[]} now={new Date()} />)).not.toContain('briefing-tiles')
   })
 })
 
@@ -144,17 +149,22 @@ describe('today’s focus on Today (B4)', () => {
     ])
   })
 
-  it('reads "N of M done" with each block’s time, and is not drawn when empty', () => {
+  it('reads "N of M done" with each block’s time; empty, it asks while it has the day’s action, and is not drawn without one', () => {
     const [garage, bank] = tasks()
-    const card = (ts: Task[]) =>
-      renderToStaticMarkup(<FocusCard tasks={ts} blocks={blocksOn([block], TODAY)} onOpen={noop} onStatus={noop} onDefer={noop} onEdit={noop} />)
+    const plan = { label: 'Plan my day' as const, onClick: noop }
+    const card = (ts: Task[], cta: typeof plan | null = plan) =>
+      renderToStaticMarkup(<FocusCard tasks={ts} blocks={blocksOn([block], TODAY)} onOpen={noop} onStatus={noop} onDefer={noop} cta={cta ?? undefined} />)
     const html = card([garage, bank])
     expect(html).toContain('1 of 2 done')
     expect(html).toContain('10am–11am')
-    expect(html).toContain('>Edit</button>')
+    expect(html).toContain('>Plan my day</button>')
     expect(card([bank])).toContain('All done')
     expect(card([bank, { ...bank, id: 'b2' }, { ...bank, id: 'b3' }])).toContain('All three done')
-    expect(card([])).toBe('')
+    // nothing picked yet: the card stays, to ask, with Plan my day beside the question
+    expect(card([])).toContain('Pick up to three things for today')
+    expect(card([])).toContain('>Plan my day</button>')
+    expect(card([])).not.toContain('<ul')
+    expect(card([], null)).toBe('')
   })
 
   const review: Review = {
@@ -215,13 +225,17 @@ describe('today’s focus on Today (B4)', () => {
     return renderToStaticMarkup(<Today {...props} />)
   }
 
-  it('puts the focus card directly under the briefing strip, with only your picks', () => {
+  it('puts the focus card under this week’s 3 and the week, above the counters, with only your picks', () => {
     const html = renderToday()
-    const strip = html.indexOf('class="chart-card briefing"')
+    const goals = html.indexOf('class="chart-card home-goals')
+    const week = html.indexOf('class="home-week"')
     const focus = html.indexOf('id="today-focus"')
-    expect(strip).toBeGreaterThan(-1)
-    expect(focus).toBeGreaterThan(strip)
+    expect(goals).toBeGreaterThan(-1)
+    expect(week).toBeGreaterThan(goals)
+    expect(focus).toBeGreaterThan(week)
     expect(html.indexOf('class="kpi-row"')).toBeGreaterThan(focus)
+    // the briefing's other facts follow the top section now
+    expect(html.indexOf('class="chart-card briefing"')).toBeGreaterThan(focus)
     const card = sectionAt(html, 'id="today-focus"')
     expect(card).toContain('Sort the garage')
     expect(card).toContain('Call the bank')
@@ -244,7 +258,7 @@ describe('today’s focus on Today (B4)', () => {
   })
 
   it('keeps the week’s 3 lines, badging the one whose task is in today’s focus', () => {
-    const top = sectionAt(html(), 'class="chart-card week-top3"')
+    const top = sectionAt(html(), 'class="chart-card home-goals')
     expect(top).toContain('Paint the fence')
     expect(top.match(/Today’s focus/g)).toHaveLength(1)
     function html() {
@@ -252,19 +266,19 @@ describe('today’s focus on Today (B4)', () => {
     }
   })
 
-  it('offers Plan my day in the morning, Shut down in the evening, and Day closed after it', () => {
-    expect(sectionAt(renderToday(), 'class="chart-card briefing"')).toContain('Plan my day')
+  it('offers Plan my day in the morning, Shut down in the evening, and Day closed after it, on the focus card', () => {
+    expect(sectionAt(renderToday(), 'id="today-focus"')).toContain('Plan my day')
     vi.setSystemTime(new Date(2026, 8, 14, 18, 0))
-    expect(sectionAt(renderToday(), 'class="chart-card briefing"')).toContain('Shut down')
+    expect(sectionAt(renderToday(), 'id="today-focus"')).toContain('Shut down')
     memoryStorage()
     closeDay(TODAY)
-    expect(sectionAt(renderToday(), 'class="chart-card briefing"')).toContain('Day closed')
+    expect(sectionAt(renderToday(), 'id="today-focus"')).toContain('Day closed')
   })
 
   it('reads as before until the planner passes the new props', () => {
     const html = renderToday({ myId: undefined, entries: undefined, onPlanDay: undefined, onShutDown: undefined })
-    expect(html).not.toContain('briefing-cta')
-    expect(sectionAt(html, 'id="today-focus"')).not.toContain('>Edit</button>')
+    expect(html).not.toMatch(/Plan my day|Shut down/)
+    expect(sectionAt(html, 'id="today-focus"')).not.toContain('home-link')
     expect(html).not.toContain('meal-ideas')
   })
 

@@ -389,12 +389,6 @@
   .briefing-tile > .briefing-text {
     align-items: center;
   }
-  /* the CTA's own button fills its tile and carries its own text-align, so
-     centring the tile around it is not enough */
-  .briefing-cta-btn {
-    justify-content: center;
-    text-align: center;
-  }
 }
 
 /* ==========================================================================
@@ -403,42 +397,6 @@
    later move into a partial of its own is a cut and paste. Phone rules sit
    behind (max-width: 640px); touch floors behind (pointer: coarse).
    ========================================================================== */
-
-/* --- the strip's action tile (B5): a tile that is a button --- */
-.briefing-cta {
-  padding: 0;
-  border-color: var(--accent-ring);
-  background: var(--accent-soft);
-}
-.briefing-cta.closed {
-  border-color: var(--hairline);
-  background: var(--surface-2);
-}
-.briefing-cta-btn {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  min-width: 0;
-  padding: 6px 10px;
-  border: 0;
-  border-radius: inherit;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  -webkit-tap-highlight-color: transparent;
-}
-button.briefing-cta-btn {
-  cursor: pointer;
-}
-.briefing-cta:not(.closed) .briefing-main {
-  color: var(--accent-text);
-}
-button.briefing-cta-btn:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
-}
 
 /* --- today's focus (B4) --- */
 .focus-card {
@@ -460,9 +418,6 @@ button.briefing-cta-btn:focus-visible {
   color: var(--accent-text);
   font-size: 0.6875rem;
   padding: 1px 7px;
-}
-.week-top3 .focus-badge {
-  margin-top: 3px;
 }
 
 /* --- lunch & dinner ideas (B4) --- */
@@ -713,7 +668,6 @@ span.routine-name:hover {
 
 /* every one of these is a tap that changes the plan: the 44pt floor */
 @media (pointer: coarse) {
-  .briefing-cta-btn,
   .meal-idea,
   .plan-cand,
   .plan-keep {

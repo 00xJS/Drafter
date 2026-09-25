@@ -215,6 +215,12 @@ const LAZY_ONLY = [
   // A GitHub board's rules: loaded by the first push or pull, and nothing
   // pushes or pulls until a project has a board linked (githubboard.ts).
   resolve(SRC, 'githubsync.ts'),
+  // Home's "This week so far" and the rules it counts by: Insights' own
+  // (shared/insights.mts), which the launch never parses — the card is a
+  // chunk of its own, and draws a moment after the rest of Home
+  component('home/WeekSoFar'),
+  component('insights/HighlightVisual'),
+  resolve(SRC, '../shared/insights.mts'),
 ]
 
 /** Static edges only: `import type` and import() are not followed. */
@@ -313,6 +319,7 @@ describe('the screens and the wardrobe card load on demand', () => {
   it('loads each through planner/lazy.ts, and Home with the shell', () => {
     for (const name of SCREENS) expect(lazySrc).toContain(`import('./${name}')`)
     expect(lazySrc).toContain("import('../wardrobe/WardrobeCard')")
+    expect(lazySrc).toContain("import('../home/WeekSoFar')")
     const shell = reachable([resolve(SRC, 'main.tsx'), component('Planner')])
     expect(shell).toContain(planner('HomeScreen'))
     expect([...SCREENS.map(planner), component('wardrobe/WardrobeCard')].filter(f => shell.has(f)).map(f => f.slice(SRC.length))).toEqual([])

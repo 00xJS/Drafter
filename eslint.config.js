@@ -106,6 +106,10 @@ export default defineConfig(
     // as they render, and join this list as they are moved onto the hooks.
     files: [
       'src/components/Today.tsx',
+      'src/components/home/WeekGoals.tsx',
+      'src/components/home/HomeWeek.tsx',
+      'src/components/home/WeekSoFar.tsx',
+      'src/components/home/useTodaysSky.ts',
       'src/components/BriefingCard.tsx',
       'src/components/HabitsCard.tsx',
       'src/components/RoutinesCard.tsx',

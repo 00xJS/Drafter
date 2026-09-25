@@ -29,13 +29,12 @@ import {
   TaskStatus,
   Wear,
 } from '../types'
-import { mealLabel, platesOn, tonightDinner } from '../kitchen'
+import { mealLabel, mealWho, platesOn, tonightDinner } from '../kitchen'
 import { JournalCard } from './JournalCard'
-import { newerStamp } from '../itemops'
 import { snoozedIds } from '../snooze'
 import { NEVER_NUDGES, SEEN_META, peopleToNudge, personStats, plannedGift, seenTasks, upcomingOccasions } from '../people'
 import { placeCadenceStatus } from '../places'
-import { defaultReviewAnchor, doneByWeek, isVisit, weekRange, shiftRange } from '../review'
+import { defaultReviewAnchor, isVisit, weekRange } from '../review'
 import { DAY_MS, compareTasks, dayOffset, dueTone, inInbox, startOfDay } from '../taskutils'
 import { eventStartDate } from '../calendarstate'
 import { workDaysOf } from '../calgrid'
@@ -50,9 +49,15 @@ import type { MealIdea } from '../../shared/weekplan.mts'
 import { DueBadge, PriorityMark, StatTile } from './bits'
 import { HabitsCard } from './HabitsCard'
 import { RoutinesCard } from './RoutinesCard'
-import { BriefingCard, briefingFacts } from './BriefingCard'
-import type { BriefingCta } from './BriefingCard'
+import { BriefingCard, briefingFacts, greeting } from './BriefingCard'
 import { MealIdeasCard } from './MealIdeasCard'
+// Home's top section (2026-09-25): the greeting, this week's 3, the week, and
+// the two tiles; the week's Insights highlight is a chunk of its own (lazy.ts)
+import { WeekGoals } from './home/WeekGoals'
+import { HomeTiles, HomeWeekStrip } from './home/HomeWeek'
+import { useTodaysSky } from './home/useTodaysSky'
+import { tonight as tonightTile, upNext, weekStrip } from '../homeweek'
+import { weekGoalsRecord } from '../weekgoals'
 // from focus.ts and dayclose.ts, not the sheets: a static import of either
 // sheet would pull its chunk into the first load
 import { blocksOn } from '../focus'
@@ -62,7 +67,7 @@ import { dayClosed } from '../dayclose'
 // the wardrobe can dress you, and the rest of the wardrobe is Home → Wardrobe's
 import { canDress } from '../wardrobe'
 import type { CardLog } from './wardrobe/WardrobeCard'
-import { WardrobeCard } from './planner/lazy'
+import { WardrobeCard, WeekSoFar } from './planner/lazy'
 import type { WardrobeOpen } from './planner/useNavigation'
 import type { SyncAlarm } from '../syncalarm'
 import type { SignInTrouble } from '../calendarstate'
@@ -179,6 +184,21 @@ interface Props {
   notices?: Notice[]
   /** Open the hub. */
   onOpenNotices?(): void
+  // ---- Home's top section (2026-09-25). Optional: without them the week's
+  // days, the two tiles and the week's highlight are drawn but open nothing.
+  /**
+   * More than one account shares the planner: tonight's dinner says who it is
+   * for and who cooks, and the week's highlight counts the household's work.
+   */
+  inHousehold?: boolean
+  /** The Calendar on a day, its day sheet up: a day of the week strip, and Up next when nothing is timed. */
+  onOpenDay?(dayKey: string): void
+  /** Kitchen → This week on a day: the Dinner tile, on today. */
+  onOpenKitchenDay?(dayKey: string): void
+  /** An event Up next names: one of yours in its editor, any other on its day in the Calendar. */
+  onOpenEvent?(ev: CalendarEvent): void
+  /** Insights → Stats on the week: This week so far. */
+  onOpenInsightsWeek?(): void
 }
 
 /**
@@ -356,16 +376,16 @@ export function dueSections(tasks: Task[], now: Date = new Date()) {
   }
 }
 
-/** From 17:00 the strip offers Shut down once a focus is set, and from 20:00 whether or not. */
+/** From 17:00 the focus card offers Shut down once a focus is set, and from 20:00 whether or not. */
 export const SHUTDOWN_HOUR = 17
 export const LATE_HOUR = 20
 
 /**
- * The strip's one action: "Plan my day" in the morning (and in the early
- * evening while nothing is in focus), "Shut down" in the evening, and "Day
- * closed" once this device has shut the day down.
+ * The day's one action, on the focus card: "Plan my day" in the morning (and
+ * in the early evening while nothing is in focus), "Shut down" in the
+ * evening, and "Day closed" once this device has shut the day down.
  */
-export function briefingCtaLabel({ hour, hasFocus, closed }: { hour: number; hasFocus: boolean; closed: boolean }): BriefingCta['label'] {
+export function briefingCtaLabel({ hour, hasFocus, closed }: { hour: number; hasFocus: boolean; closed: boolean }): DayCta['label'] {
   if (closed) return 'Day closed'
   if (hour >= LATE_HOUR || (hour >= SHUTDOWN_HOUR && hasFocus)) return 'Shut down'
   return 'Plan my day'
@@ -590,11 +610,22 @@ export function TaskRow({
   )
 }
 
+/** The day's one action: plan it in the morning, close it at night, and say when it is closed. */
+export interface DayCta {
+  label: 'Plan my day' | 'Shut down' | 'Day closed'
+  /** Absent, it is a statement rather than a button. */
+  onClick?(): void
+}
+
 /**
- * Today's focus, directly under the briefing strip: up to three tasks you
- * chose this morning (or last night), open ones first, each swipeable like any
- * Today row and showing its time block when it has one. A defer from here also
- * takes the task out of today's focus. Nothing in focus, no card.
+ * Today's focus, under the week: up to three tasks you chose this morning (or
+ * last night), open ones first, each swipeable like any Today row and showing
+ * its time block when it has one. A defer from here also takes the task out
+ * of today's focus. Its header carries the day's one action — Plan my day,
+ * Shut down, Day closed — which was a tile on the briefing strip until Home's
+ * top section took the strip's place (2026-09-25); so while there is an
+ * action the card is drawn even with nothing in focus, and without one an
+ * empty focus draws nothing.
  */
 export function FocusCard({
   tasks,
@@ -602,7 +633,7 @@ export function FocusCard({
   onOpen,
   onStatus,
   onDefer,
-  onEdit,
+  cta,
 }: {
   /** Today's focus as focusTasks lists it: open first, then done. */
   tasks: Task[]
@@ -611,43 +642,48 @@ export function FocusCard({
   onOpen(t: Task): void
   onStatus(id: string, s: TaskStatus): void
   onDefer(id: string, day: Date): void
-  /** Opens Plan my day at the focus step. */
-  onEdit?(): void
+  /** Plan my day, Shut down or Day closed (briefingCtaLabel). */
+  cta?: DayCta
 }) {
   const fold = useFold('focus', 'Today’s focus')
-  if (tasks.length === 0) return null
+  if (tasks.length === 0 && !cta) return null
   const done = tasks.filter(t => t.status === 'done').length
-  const allDone = done === tasks.length
-  const sub = allDone ? (tasks.length === 3 ? 'All three done' : 'All done') : `${done} of ${tasks.length} done`
+  const allDone = tasks.length > 0 && done === tasks.length
+  const sub = tasks.length === 0 ? 'Pick up to three things for today' : allDone ? (tasks.length === 3 ? 'All three done' : 'All done') : `${done} of ${tasks.length} done`
   return (
-    <section id="today-focus" className={'chart-card focus-card' + (allDone ? ' all-done' : '') + fold.className}>
+    <section id="today-focus" className={'chart-card focus-card' + (allDone ? ' all-done' : '') + (tasks.length === 0 ? ' empty' : '') + fold.className}>
       <header className="chart-head">
         <div>
           <h3>Today’s focus</h3>
           <p className="chart-sub">{sub}</p>
         </div>
-        {onEdit && (
-          <button type="button" className="btn subtle" onClick={onEdit}>
-            Edit
-          </button>
-        )}
+        {cta &&
+          (cta.onClick ? (
+            <button type="button" className="btn subtle home-link" onClick={cta.onClick}>
+              {cta.label}
+            </button>
+          ) : (
+            <span className="home-link closed">{cta.label}</span>
+          ))}
         {fold.control}
       </header>
-      <ul className="dash-list tlist">
-        {tasks.map(t => {
-          const block = blocks.get(t.id)
-          return (
-            <TaskRow
-              key={t.id}
-              task={t}
-              reason={block ? `${clock(block.start)}–${clock(block.end)}` : undefined}
-              onOpen={onOpen}
-              onStatus={onStatus}
-              onDefer={onDefer}
-            />
-          )
-        })}
-      </ul>
+      {tasks.length > 0 && (
+        <ul className="dash-list tlist">
+          {tasks.map(t => {
+            const block = blocks.get(t.id)
+            return (
+              <TaskRow
+                key={t.id}
+                task={t}
+                reason={block ? `${clock(block.start)}–${clock(block.end)}` : undefined}
+                onOpen={onOpen}
+                onStatus={onStatus}
+                onDefer={onDefer}
+              />
+            )
+          })}
+        </ul>
+      )}
     </section>
   )
 }
@@ -737,6 +773,11 @@ export function Today({
   onSetUpRhythms,
   notices = NO_NOTICES,
   onOpenNotices,
+  inHousehold = false,
+  onOpenDay,
+  onOpenKitchenDay,
+  onOpenEvent,
+  onOpenInsightsWeek,
 }: Props) {
   /**
    * Today's day key, and the reason this page re-renders at midnight.
@@ -765,8 +806,6 @@ export function Today({
   const now = Math.max(minute, dayStartMs(todayKey))
   const at = useMemo(() => new Date(now), [now])
   const noon = useMemo(() => noonOf(todayKey), [todayKey])
-  const weekly = useMemo(() => doneByWeek(tasks, 12, noon), [tasks, noon])
-  const thisWeek = useMemo(() => weekRange(noon), [noon])
   const isSunday = noon.getDay() === 0
   /**
    * Where the journal card sits: with the other once-a-day cards in the
@@ -824,18 +863,23 @@ export function Today({
   // card still filtering by last night's hour would hide the morning list. The
   // card itself holds the hour still while an edit is open.
   const hour = at.getHours()
-  // Top 3 is written during last week's review as "for next week"
-  const weekReview = useMemo(() => {
-    const prev = shiftRange(thisWeek, -1)
-    return reviews.find(r => r.period === 'week' && r.key === prev.key) ?? reviews.find(r => r.period === 'week' && r.key === thisWeek.key)
-  }, [reviews, thisWeek])
+  // This week's 3: written during last week's review as "for next week", or
+  // set on Home, and read where Plan my day reads them (src/weekgoals.ts)
+  const goalsRecord = useMemo(() => weekGoalsRecord(reviews, noon), [reviews, noon])
+  const hasGoals = !!goalsRecord?.top?.some(line => line.trim())
+  // the week's review, once written: its summary is what makes it one — never
+  // a week's goals alone, which a record set on Home can hold without a word more
   const sundayDraft = useMemo(() => {
     const anchor = defaultReviewAnchor(noon)
     const range = weekRange(anchor)
     return reviews.find(r => r.period === 'week' && r.key === range.key && r.summary?.trim())
   }, [reviews, noon])
-  const top3 = useMemo(() => (weekReview?.top ?? []).map(t => t.trim()).filter(Boolean).slice(0, 3), [weekReview])
-  const topDone = useMemo(() => weekReview?.topDone ?? [], [weekReview])
+  // the greeting's sky: what the "Your day" card last fetched for today, in a few words
+  const sky = useTodaysSky(noon.getTime(), hour)
+  // the week at a glance, tonight's dinner and what is up next
+  const strip = useMemo(() => weekStrip(todayKey, tasks, meals, events), [todayKey, tasks, meals, events])
+  const dinnerTile = useMemo(() => tonightTile(meals, recipes, todayKey, myId), [meals, recipes, todayKey, myId])
+  const next = useMemo(() => upNext({ events, tasks, now: at, todayKey, myId }), [events, tasks, at, todayKey, myId])
   // today's focus has its own card: the lists below leave it out and say so
   const focus = useMemo(() => focusTasks(tasks, todayKey, myId), [tasks, todayKey, myId])
   const focusIds = useMemo(() => new Set(focus.map(t => t.id)), [focus])
@@ -923,14 +967,6 @@ export function Today({
     return { open, overdue, today, late, week, doing, blocked, stale, inbox, doneRecent, visitsRecent }
   }, [tasks, at])
 
-  const toggleTop = (index: number) => {
-    if (!weekReview) return
-    const next = [...(weekReview.topDone ?? [false, false, false])]
-    while (next.length < 3) next.push(false)
-    next[index] = !next[index]
-    onSaveReview({ ...weekReview, topDone: next, updatedAt: newerStamp(weekReview.updatedAt) })
-  }
-
   // A clear day — no events, nothing due, nothing overdue — is the moment to
   // surface the wishlist: the things you said you would do if there were time.
   const clearDay = !briefingFacts(events, habits, at).events && s.overdue.length === 0 && s.today.length === 0
@@ -944,10 +980,11 @@ export function Today({
     </>
   )
 
-  // a wardrobe that can dress you has its card to show, tasks or not; and
-  // news in the hub is something to see, so its bell has the page to sit on
+  // a wardrobe that can dress you has its card to show, tasks or not; news in
+  // the hub is something to see, so its bell has the page to sit on; and a
+  // week with goals set has them to tick
   const dressable = !!wardrobeCard
-  if (tasks.length === 0 && projects.length === 0 && !dinner && !sundayDraft && !dressable && notices.length === 0) {
+  if (tasks.length === 0 && projects.length === 0 && !dinner && !sundayDraft && !dressable && notices.length === 0 && !hasGoals) {
     return (
       <>
         {alarm}
@@ -994,9 +1031,9 @@ export function Today({
         ? () => document.getElementById('today-focus')?.scrollIntoView({ block: 'start' })
         : null
 
-  // the strip's one action; "Day closed" is this device's own note (ShutdownSheet)
+  // the day's one action, on the focus card; "Day closed" is this device's own note (ShutdownSheet)
   const ctaLabel = briefingCtaLabel({ hour, hasFocus: focus.length > 0, closed: dayClosed(todayKey) })
-  const cta: BriefingCta | undefined =
+  const cta: DayCta | undefined =
     ctaLabel === 'Plan my day' ? (onPlanDay ? { label: ctaLabel, onClick: () => onPlanDay() } : undefined) : onShutDown ? { label: ctaLabel, onClick: onShutDown } : undefined
   const focusTitles = new Set(focus.map(t => (t.title || '').trim().toLowerCase()).filter(Boolean))
 
@@ -1016,15 +1053,24 @@ export function Today({
   return (
     <HomeFolds value={{ folded, onFold }}>
     <div className="insights today">
-      <header className="today-head">
-        <div>
-          <h2>Today</h2>
-          <p className="chart-sub">{dayLabel(todayKey)}</p>
-        </div>
+      {/* The greeting: the hour's hello and your first name, then the date and
+          today's sky. The bell and Review ride on it, at the top of the page
+          as they have been since v3.29 — beside the greeting on a wide
+          screen, under it on a phone, where the greeting takes the line. */}
+      <header className="today-head home-hero">
+        <h2>{greeting(hour, name)}</h2>
+        {/* two unbreakable halves, so a narrow line breaks between the date and the sky and nowhere else */}
+        <p className="chart-sub">
+          <span className="home-hero-date">
+            {dayLabel(todayKey)}
+            {sky ? ' ·' : ''}
+          </span>
+          {sky && ' '}
+          {sky && <span className="home-hero-sky">{sky}</span>}
+        </p>
         <div className="today-head-actions">
-          {/* The hub rides on the title line too: what happened while you were
-              away is news about the day, and a bell is where a phone keeps it.
-              Small, so the line still fits beside the date at 375pt. */}
+          {/* The hub rides on the greeting too: what happened while you were
+              away is news about the day, and a bell is where a phone keeps it. */}
           {onOpenNotices && (
             <button type="button" className="btn subtle icon-btn today-bell" aria-label={bellLabel(unreadNotices)} title="Notifications" onClick={onOpenNotices}>
               <Icon name="bell" size={20} />
@@ -1035,9 +1081,8 @@ export function Today({
               )}
             </button>
           )}
-          {/* Review rides on the title line: it is the one of these that is about
-              a span of days rather than a thing you keep, so it belongs with the
-              date rather than in the row of places below (v3.29). */}
+          {/* Review is the one of Home's doors about a span of days rather than
+              a thing you keep, so it belongs with the date (v3.29). */}
           {onOpenReview && (
             <button type="button" className="btn today-review" onClick={onOpenReview}>
               Review
@@ -1045,6 +1090,70 @@ export function Today({
           )}
         </div>
       </header>
+      {alarm}
+
+      {/* Home's top section: the week's 3, the week, today's focus, tonight
+          and what is next, and how the week is going. Each card in a boundary
+          of its own: one that fails leaves the rest of the day up. */}
+      <CardBoundary name="this week’s 3">
+        <WeekGoals
+          reviews={reviews}
+          record={goalsRecord}
+          noon={noon}
+          focusTitles={focusTitles}
+          onSave={onSaveReview}
+          onMakeTask={line => onNew({ title: line, dueAt: endOfNextWeek, status: 'todo' })}
+          // Sundays, while no week-ready card below offers it
+          onPlanWeek={isSunday && !sundayDraft?.summary ? onPlanWeek : undefined}
+        />
+      </CardBoundary>
+      <CardBoundary name="the week">
+        <HomeWeekStrip days={strip} todayKey={todayKey} onOpenDay={onOpenDay} />
+      </CardBoundary>
+      <CardBoundary name="today's focus">
+        <FocusCard tasks={focus} blocks={blocks} onOpen={onOpen} onStatus={onStatus} onDefer={onDeferFromFocus ?? onDefer} cta={cta} />
+      </CardBoundary>
+      <CardBoundary name="tonight and what is next">
+        <HomeTiles
+          tonight={dinnerTile}
+          who={dinnerTile ? mealWho(dinnerTile.meal, { mine: dinnerTile.mine, myId, inHousehold, nameOf }) : ''}
+          next={next}
+          onOpenDinner={onOpenKitchenDay ? () => onOpenKitchenDay(todayKey) : undefined}
+          onOpenNext={
+            !next
+              ? onOpenDay
+                ? () => onOpenDay(todayKey)
+                : undefined
+              : next.kind === 'task'
+                ? () => onOpen(next.task)
+                : onOpenEvent
+                  ? () => onOpenEvent(next.event)
+                  : undefined
+          }
+        />
+      </CardBoundary>
+      {/* the week's first Insights highlight: a chunk of its own, and nothing drawn while it comes */}
+      {onOpenInsightsWeek && (
+        <CardBoundary name="this week so far">
+          <Suspense fallback={null}>
+            <WeekSoFar
+              tasks={tasks}
+              events={entries}
+              people={people}
+              places={places}
+              meals={meals}
+              recipes={recipes}
+              journal={journal}
+              habits={habits}
+              garments={garments}
+              wears={wears}
+              myId={myId}
+              household={inHousehold}
+              onOpen={onOpenInsightsWeek}
+            />
+          </Suspense>
+        </CardBoundary>
+      )}
 
       {/* The places Home opens, as cards rather than as a row of small buttons.
           They are three of the app's rooms and a card is what a room looks
@@ -1075,21 +1184,10 @@ export function Today({
           </button>
         )}
       </div>
-      {alarm}
-      {/* the day at a glance sits above the counters: what the day IS before what it owes.
-          Each card in a boundary of its own: one that fails leaves the rest of the day up */}
+      {/* the rest of the day's facts: the sky's range and the weather picker,
+          whose work day is whose, the events and the habits */}
       <CardBoundary name="the briefing">
-        <BriefingCard events={events} habits={habits} dinner={dinner} now={at} name={name} cta={cta} myId={myId} nameOf={nameOf} />
-      </CardBoundary>
-      <CardBoundary name="today's focus">
-        <FocusCard
-          tasks={focus}
-          blocks={blocks}
-          onOpen={onOpen}
-          onStatus={onStatus}
-          onDefer={onDeferFromFocus ?? onDefer}
-          onEdit={onPlanDay ? () => onPlanDay('focus') : undefined}
-        />
+        <BriefingCard events={events} habits={habits} now={at} myId={myId} nameOf={nameOf} />
       </CardBoundary>
       {morning && wardrobeCard}
       {freeTime.length > 0 && (
@@ -1108,7 +1206,7 @@ export function Today({
           </ul>
         </section>
       )}
-      {/* Below 640px the two `kpi-extra` tiles leave grid flow entirely and
+      {/* Below 640px the `kpi-extra` tile leaves grid flow entirely and
           "Open" spans the row (the phone `.kpi-extra` rules in src/styles/), so DOM order does not decide
           what the phone shows — it is the desktop row, left as it was. */}
       <div className="kpi-row">
@@ -1127,18 +1225,6 @@ export function Today({
         />
         <StatTile label="This week" value={String(s.week.length)} sub="due in the next 7 days" className="kpi-extra" onJump={onOpenTasks ?? undefined} />
         <StatTile label="Open" value={String(s.open.length)} sub="the rest is on Tasks" className="kpi-wide" onJump={onOpenTasks ?? undefined} />
-        <div className="stat-tile kpi-extra">
-          <div className="stat-label">Done this week</div>
-          <div className="stat-value">
-            {s.doneRecent.length}
-            {s.visitsRecent.length > 0 && <small className="stat-aside"> · {s.visitsRecent.length} visits</small>}
-          </div>
-          <div className="spark" aria-hidden title="Done per week, last 12 weeks">
-            {weekly.map((n, i) => (
-              <span key={i} className={i === weekly.length - 1 ? 'spark-bar now' : 'spark-bar'} style={{ height: `${n === 0 ? 8 : 20 + (n / Math.max(...weekly, 1)) * 80}%` }} />
-            ))}
-          </div>
-        </div>
       </div>
 
       {/* the one bulk gesture worth the space the counters gave back */}
@@ -1149,6 +1235,83 @@ export function Today({
           </button>
         </p>
       )}
+
+      {sundayDraft?.summary && (
+        <section className={card('weekreview', 'chart-card week-review-ready')}>
+          <header className="chart-head">
+            <div>
+              <h3>{isSunday ? 'Your week is ready' : 'Last week’s review'}</h3>
+              <p className="chart-sub">{isSunday ? 'Written this morning from what actually happened' : 'Written from what actually happened'}</p>
+            </div>
+            <div className="event-actions">
+              {isSunday && onPlanWeek && (
+                <button type="button" className="btn" onClick={onPlanWeek}>
+                  Plan next week
+                </button>
+              )}
+              <button className="btn primary" onClick={onOpenReview}>
+                Open review
+              </button>
+            </div>
+          <Fold id="weekreview" name="the week" folded={folded} onFold={onFold} />
+            </header>
+          <p className="week-review-excerpt">{excerpt(sundayDraft.summary, 280)}</p>
+        </section>
+      )}
+
+      {evening && journalCard}
+
+      {!morning && wardrobeCard}
+
+      <CardBoundary name="the habits">
+        <HabitsCard habits={habits} today={todayKey} onSave={onSaveHabit} onDelete={onDeleteHabit} />
+      </CardBoundary>
+
+      <CardBoundary name="the routines">
+        <RoutinesCard routines={routines} today={todayKey} hour={hour} onSave={onSaveRoutine} onDelete={onDeleteRoutine} />
+      </CardBoundary>
+
+      {sections.length === 0 ? (
+        <div className="chart-card">
+          <p className="empty">
+            Nothing due and nothing stuck.{' '}
+            <button type="button" className="btn subtle" onClick={() => onNew()}>
+              + New task
+            </button>{' '}
+            or enjoy the quiet.
+          </p>
+        </div>
+      ) : (
+        <div className="today-grid">
+          {sections.map(sec => (
+            <section key={sec.key} id={`today-${sec.key}`} className={card(sec.key, sec.tone === 'warn' ? 'chart-card warn-card' : 'chart-card')}>
+              <header className="chart-head">
+                <div>
+                  <h3>
+                    {sec.title} <span className="board-count">{sec.tasks.length}</span>
+                  </h3>
+                  {sec.sub && <p className="chart-sub">{sec.sub}</p>}
+                </div>
+                {sec.key === 'overdue' && sec.tasks.length > 0 && (
+                  <button className="btn" onClick={() => onDeferAll(sec.tasks.map(t => t.id), addDays(new Date(), 1))}>
+                    Push all to tomorrow
+                  </button>
+                )}
+              <Fold id={sec.key} name={sec.title} folded={folded} onFold={onFold} />
+                </header>
+              <ul className="dash-list tlist">
+                {sec.tasks.slice(0, 12).map(t => (
+                  <TaskRow key={t.id} task={t} onOpen={onOpen} onStatus={onStatus} onDefer={onDefer} />
+                ))}
+              </ul>
+              {sec.tasks.length > 12 && <p className="board-more">+ {sec.tasks.length - 12} more in the Tasks tab</p>}
+              {sec.inFocus > 0 && <p className="board-more focus-more">+ {sec.inFocus} in today’s focus</p>}
+            </section>
+          ))}
+        </div>
+      )}
+
+      {!evening && journalCard}
 
       {plates.length > 0 && (
         <section className="chart-card kitchen-tonight">
@@ -1200,115 +1363,6 @@ export function Today({
           <MealIdeasCard dayKey={todayKey} now={at} meals={meals} recipes={recipes} places={places} tasks={tasks} onPlan={onPlanMeal} />
         </CardBoundary>
       )}
-
-      {sundayDraft?.summary && (
-        <section className={card('weekreview', 'chart-card week-review-ready')}>
-          <header className="chart-head">
-            <div>
-              <h3>{isSunday ? 'Your week is ready' : 'Last week’s review'}</h3>
-              <p className="chart-sub">{isSunday ? 'Written this morning from what actually happened' : 'Written from what actually happened'}</p>
-            </div>
-            <div className="event-actions">
-              {isSunday && onPlanWeek && (
-                <button type="button" className="btn" onClick={onPlanWeek}>
-                  Plan next week
-                </button>
-              )}
-              <button className="btn primary" onClick={onOpenReview}>
-                Open review
-              </button>
-            </div>
-          <Fold id="weekreview" name="the week" folded={folded} onFold={onFold} />
-            </header>
-          <p className="week-review-excerpt">{excerpt(sundayDraft.summary, 280)}</p>
-        </section>
-      )}
-
-      {evening && journalCard}
-
-      {!morning && wardrobeCard}
-
-      <CardBoundary name="the habits">
-        <HabitsCard habits={habits} today={todayKey} onSave={onSaveHabit} onDelete={onDeleteHabit} />
-      </CardBoundary>
-
-      <CardBoundary name="the routines">
-        <RoutinesCard routines={routines} today={todayKey} hour={hour} onSave={onSaveRoutine} onDelete={onDeleteRoutine} />
-      </CardBoundary>
-
-      {top3.length > 0 && (
-        <section className={card('weektop3', 'chart-card week-top3')}>
-          <header className="chart-head">
-            <div>
-              <h3>This week's 3</h3>
-              <p className="chart-sub">From last Sunday's review</p>
-            </div>
-            {isSunday && onPlanWeek && !sundayDraft?.summary && (
-              <button type="button" className="btn subtle" onClick={onPlanWeek}>
-                Plan next week
-              </button>
-            )}
-          <Fold id="weektop3" name="this week's 3" folded={folded} onFold={onFold} />
-          </header>
-          <ul className="dash-list">
-            {top3.map((line, i) => (
-              <li key={i} className={topDone[i] ? 'trow done' : 'trow'}>
-                <input type="checkbox" className="tcheck" checked={!!topDone[i]} aria-label={`Mark “${line}” done`} onChange={() => toggleTop(i)} />
-                <div className="dash-main">
-                  <span className="dash-title">{line}</span>
-                  {/* the line stays; its task is also on the focus card above */}
-                  {focusTitles.has(line.trim().toLowerCase()) && <span className="badge focus-badge">Today’s focus</span>}
-                </div>
-                <button className="btn subtle" onClick={() => onNew({ title: line, dueAt: endOfNextWeek, status: 'todo' })}>
-                  → task
-                </button>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-
-      {sections.length === 0 ? (
-        <div className="chart-card">
-          <p className="empty">
-            Nothing due and nothing stuck.{' '}
-            <button type="button" className="btn subtle" onClick={() => onNew()}>
-              + New task
-            </button>{' '}
-            or enjoy the quiet.
-          </p>
-        </div>
-      ) : (
-        <div className="today-grid">
-          {sections.map(sec => (
-            <section key={sec.key} id={`today-${sec.key}`} className={card(sec.key, sec.tone === 'warn' ? 'chart-card warn-card' : 'chart-card')}>
-              <header className="chart-head">
-                <div>
-                  <h3>
-                    {sec.title} <span className="board-count">{sec.tasks.length}</span>
-                  </h3>
-                  {sec.sub && <p className="chart-sub">{sec.sub}</p>}
-                </div>
-                {sec.key === 'overdue' && sec.tasks.length > 0 && (
-                  <button className="btn" onClick={() => onDeferAll(sec.tasks.map(t => t.id), addDays(new Date(), 1))}>
-                    Push all to tomorrow
-                  </button>
-                )}
-              <Fold id={sec.key} name={sec.title} folded={folded} onFold={onFold} />
-                </header>
-              <ul className="dash-list tlist">
-                {sec.tasks.slice(0, 12).map(t => (
-                  <TaskRow key={t.id} task={t} onOpen={onOpen} onStatus={onStatus} onDefer={onDefer} />
-                ))}
-              </ul>
-              {sec.tasks.length > 12 && <p className="board-more">+ {sec.tasks.length - 12} more in the Tasks tab</p>}
-              {sec.inFocus > 0 && <p className="board-more focus-more">+ {sec.inFocus} in today’s focus</p>}
-            </section>
-          ))}
-        </div>
-      )}
-
-      {!evening && journalCard}
 
       {occasions.length > 0 && (
         <section className={card('occasions', 'chart-card occasions')}>

@@ -374,12 +374,12 @@ describe('phone: the journal look-back is readable', () => {
 describe("phone: Today's first screen is worth the morning", () => {
   const narrow = narrowBlocks()
 
-  it('hides the two reporting-only tiles below 640px', () => {
+  it('hides the reporting-only tile below 640px', () => {
     const hidden = narrow.find(b => rule(b.body, '.kpi-extra'))
     expect(hidden, 'no @media (max-width: 640px) rule for .kpi-extra').toBeTruthy()
     expect(rule(hidden!.body, '.kpi-extra')).toMatch(/display:\s*none/)
-    // the desktop row keeps all five, sparkline included: the class is declared
-    // nowhere but inside that one narrow block
+    // the desktop row keeps all four: the class is declared nowhere but
+    // inside that one narrow block
     expect(bare.match(/\.kpi-extra\s*\{/g), 'the desktop page must keep every tile').toHaveLength(1)
   })
 
