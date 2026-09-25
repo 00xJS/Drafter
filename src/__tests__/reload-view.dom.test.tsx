@@ -8,9 +8,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 // iOS takes an idle app's web content back — after the full-screen camera, or
 // a while in the background — and Capacitor reloads the page into the same web
 // view, which came back on Home whatever tab it had been on. In the shell the
-// tab is now kept in sessionStorage (which a reload keeps and a fresh launch
-// starts without) and read back only on a reload (src/reloadstate.ts). A
-// reload asked for — the error screen's, a sign-out's — opens on Home.
+// tab is now kept in sessionStorage, which a reload into the same web view
+// keeps and a launch starts without, so a tab kept is itself the sign of a
+// reload (src/reloadstate.ts). On the iOS 27 simulator, after the web content
+// process was killed, WebKit named the new page's navigation "back_forward",
+// not "reload", so the navigation entry is not asked. A reload asked for — the
+// error screen's, a sign-out's — forgets the tab and opens on Home.
 
 const env = vi.hoisted(() => ({ native: true, navigation: 'reload' as string }))
 vi.mock('@capacitor/core', () => ({ Capacitor: { isNativePlatform: () => env.native, getPlatform: () => (env.native ? 'ios' : 'web') }, registerPlugin: () => ({}) }))
@@ -35,6 +38,8 @@ const shown = () => screen.getByTestId('view').textContent
 const go = (view: 'calendar' | 'tasks') => act(async () => void fireEvent.click(screen.getByRole('button', { name: `Go to ${view}` })))
 
 beforeEach(() => {
+  // every test starts as a launch does: nothing kept
+  sessionStorage.clear()
   env.native = true
   env.navigation = 'reload'
   vi.spyOn(performance, 'getEntriesByType').mockImplementation(() => [{ type: env.navigation }] as unknown as PerformanceEntryList)
@@ -50,19 +55,23 @@ function start(navigation: string) {
 }
 
 describe('the tab comes back after iOS reclaims the page', () => {
-  it('opens on the tab it was on when the page is a reload', async () => {
+  it('opens on the tab it was on when the web content comes back, as WebKit names that load', async () => {
     const first = start('navigate')
     expect(shown()).toBe('home')
     await go('calendar')
     expect(sessionStorage.getItem(RELOAD_VIEW_KEY)).toBe('calendar')
     first.unmount()
-    // the web content was taken back; Capacitor reloads the page
+    // the web content was taken back; Capacitor reloads the page, and WebKit
+    // calls that load back_forward (seen on the iOS 27 simulator), or reload
+    const again = start('back_forward')
+    expect(shown()).toBe('calendar')
+    again.unmount()
     start('reload')
     expect(shown()).toBe('calendar')
   })
 
-  it('opens on Home at a launch or a link, whatever is kept', () => {
-    sessionStorage.setItem(RELOAD_VIEW_KEY, 'tasks')
+  it('opens on Home at a launch, which keeps no tab', () => {
+    sessionStorage.removeItem(RELOAD_VIEW_KEY)
     start('navigate')
     expect(shown()).toBe('home')
   })
