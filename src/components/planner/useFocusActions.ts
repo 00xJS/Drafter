@@ -290,7 +290,7 @@ export function useFocusActions(deps: Deps) {
   const applyDayPlan = (r: PlanDayApply) => {
     const now = new Date()
     const w = planDayWrites(store.tasks, r, { today: localDayKey(now), myId: household.myId, now, newId: uid })
-    const meals = r.meals.map(c => mealFromIdea(c.dayKey, c.slot, c.idea, slotRecord(c.dayKey, c.slot), now))
+    const meals = r.meals.map(c => mealFromIdea(c.dayKey, c.slot, c.idea, slotRecord(c.dayKey, c.slot), now, household.myId))
     const undo = applyDayPlanWrites(ports, w, meals)
     showToast(dayPlanToast(w, meals), undo)
   }
@@ -320,7 +320,7 @@ export function useFocusActions(deps: Deps) {
 
   /** One of Today's lunch and dinner ideas, planned as the Kitchen plans a meal; Undo clears the slot again. */
   const planMealIdea = (dayKey: string, slot: MealSlot, idea: MealIdea) => {
-    const m = mealFromIdea(dayKey, slot, idea, slotRecord(dayKey, slot))
+    const m = mealFromIdea(dayKey, slot, idea, slotRecord(dayKey, slot), new Date(), household.myId)
     deps.saveMeals([m])
     showToast(mealIdeaToast(m), () => latest.current.clearMeals([m.id]))
   }

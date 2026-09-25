@@ -2,7 +2,7 @@ import { PROJECT_COLORS, type CalendarEvent, type GroceryList, type Meal, type P
 import type { Store } from '../../store'
 import { eventStartDate, prepDueFor } from '../../calendarstate'
 import { newerStamp } from '../../../shared/domain.mts'
-import { cookTaskFor, cookTaskId, mealIsShared, mealWrites, syncCookTask } from '../../kitchen'
+import { cookTaskFor, cookTaskId, cookTaskWithCook, mealCook, mealHasCookTask, mealWrites, syncCookTask } from '../../kitchen'
 import { newPlace } from '../../places'
 import { snoozeBackLabel, snoozeUntil, snoozeWrite } from '../../snooze'
 import { uid } from '../../utils'
@@ -72,18 +72,22 @@ export function useLifeActions({ store, showToast, newTask, inHousehold }: Deps)
     let meals = store.meals
     let lists = store.groceries
     for (const m of next) {
-      const rows = mealWrites(m, null, meals, store.recipes, lists)
+      const before = meals.find(x => x.id === m.id)
+      // the member's own grocery row for the week, as the Kitchen's rebuild writes it
+      const rows = mealWrites(m, null, meals, store.recipes, lists, store.myId)
       for (const row of rows) store.upsert(row)
       meals = [...meals.filter(x => x.id !== m.id), m]
       lists = afterWrites(lists, rows)
       const cookId = cookTaskId(m.id)
       const had = store.tasks.find(t => t.id === cookId)
-      if (inHousehold && mealIsShared(m)) {
+      if (inHousehold && mealHasCookTask(m)) {
         if (!had || (had.status !== 'done' && had.status !== 'canceled')) {
           // the recipe comes along: its steps to tick, its ingredients and notes to read
           const draft = cookTaskFor(m, had?.createdAt, store.recipes)
           const moved = had ? { ...had, title: draft.title, dueAt: draft.dueAt, placeId: draft.placeId, updatedAt: newerStamp(had.updatedAt), shared: true } : draft
-          store.upsert(had ? (syncCookTask(moved, m, store.recipes) ?? moved) : draft)
+          // …and whoever cooks it has it: theirs to do, and theirs to be reminded of
+          const handed = cookTaskWithCook(moved, mealCook(before), mealCook(m), store.myId)
+          store.upsert(had ? (syncCookTask(handed, m, store.recipes) ?? handed) : handed)
         }
       } else if (had && had.status !== 'done' && had.status !== 'canceled') {
         store.remove(had.id)
@@ -94,7 +98,7 @@ export function useLifeActions({ store, showToast, newTask, inHousehold }: Deps)
     let meals = store.meals
     let lists = store.groceries
     for (const id of ids) {
-      const rows = mealWrites(null, id, meals, store.recipes, lists)
+      const rows = mealWrites(null, id, meals, store.recipes, lists, store.myId)
       for (const row of rows) store.upsert(row)
       store.remove(id)
       const cook = store.tasks.find(t => t.id === cookTaskId(id))

@@ -1,3 +1,4 @@
+import type { QuickPick } from '../shared/kitchen.mts'
 import type { PlaceCategory } from '../shared/places.mts'
 
 export type Platform = 'x' | 'instagram' | 'threads' | 'linkedin' | 'facebook' | 'tiktok' | 'youtube'
@@ -470,10 +471,17 @@ export interface Recipe extends Owned {
   notes?: string
   /** The web page it was imported from (http or https only), shown as its Source. */
   sourceUrl?: string
+  /**
+   * Starred: first in the Favourites rotation (shared/weekplan.mts
+   * favouritesRotation) whenever it has not been had lately.
+   */
+  favourite?: boolean
   createdAt: string
   updatedAt: string
   deletedAt?: string
 }
+
+export type { QuickPick }
 
 export type MealSlot = 'breakfast' | 'lunch' | 'dinner'
 export const MEAL_SLOTS: MealSlot[] = ['breakfast', 'lunch', 'dinner']
@@ -522,6 +530,20 @@ export interface Meal extends Owned {
    * only the owner can turn it off.
    */
   shared?: boolean
+  /**
+   * Answered in one tap, with no recipe and no place: Leftovers, Fend for
+   * yourself or Takeout (shared/kitchen.mts QUICK_PICK_META). A takeout is
+   * also `out`, so it counts as bought; none of them cooks a recipe.
+   */
+  quick?: QuickPick
+  /**
+   * Who cooks a shared cooked meal: a household member's id. The meal's cook
+   * task is theirs (assigneeId), so it reminds them and nobody else. Read it
+   * through mealCook: a meal out, a quick pick or one kept to yourself has
+   * nobody cooking for the household, whatever the row says. Absent is the
+   * cook task as it always was, nobody's in particular.
+   */
+  cookId?: string
   createdAt: string
   updatedAt: string
   deletedAt?: string

@@ -4,10 +4,8 @@ import {
   GroceryLine,
   GroceryList,
   GroceryState,
-  MEAL_SLOT_META,
   MEAL_SLOTS,
   Meal,
-  MealSlot,
   MealSide,
   Place,
   PlaceCategory,
@@ -53,8 +51,11 @@ import {
   fillQueue,
   groceryGapLine,
   groceryGaps,
+  recipeStarred,
 } from '../kitchen'
-import type { CookedIndex, VisitIndex } from '../kitchen'
+import type { CookedIndex, KitchenMember, VisitIndex } from '../kitchen'
+import { favouritesRotation, rotationIdeas } from '../../shared/weekplan.mts'
+import { weekDayKeys } from '../../shared/weeks.mts'
 import type { ReadRecipe } from '../ai'
 import { safeHttpUrl } from '../links'
 import { fillRunDone, fillRunWithDraft, newFillRun, recipeWithDraft, splitDraft } from '../recipefill'
@@ -65,7 +66,8 @@ import { ConfirmButton } from './ConfirmButton'
 import { RecipeCapture, draftNote, linkHost } from './kitchen/RecipeCapture'
 import type { CaptureMode } from './kitchen/RecipeCapture'
 import { RecipeFillFlow } from './kitchen/RecipeFillFlow'
-import { MealSlotRow } from './MealSlotRow'
+import { Icon } from './Icon'
+import { MealDayCard } from './kitchen/MealCards'
 import { Modal, ModalHead } from './Modal'
 import { MealPlanSheet, mealsForPicks, type MealPick } from './MealPlanSheet'
 import { RecipeSuggestions } from './RecipeSuggestions'
@@ -119,18 +121,40 @@ function groupRecipes(list: Recipe[], cooked: CookedIndex): RecipeGroup[] {
   ].filter((group): group is RecipeGroup => group !== null)
 }
 
+/** ★ on a recipe: pressed for a favourite, which the Favourites rotation offers first. */
+function RecipeStar({ recipe, className, onStar }: { recipe: Recipe; className: string; onStar(recipe: Recipe): void }) {
+  const on = !!recipe.favourite
+  return (
+    <button
+      type="button"
+      aria-pressed={on}
+      aria-label={`Favourite: ${recipe.name}`}
+      title={on ? 'A favourite — tap to unstar it' : 'Star it as a favourite'}
+      className={on ? `btn subtle ${className} on` : `btn subtle ${className}`}
+      onClick={e => {
+        e.stopPropagation()
+        onStar(recipe)
+      }}
+    >
+      <Icon name="star" size={18} filled={on} />
+    </button>
+  )
+}
+
 function RecipeCard({
   recipe,
   cooked,
   today,
   onCook,
   onEdit,
+  onStar,
 }: {
   recipe: Recipe
   cooked: CookedIndex
   today: string
   onCook(recipe: Recipe): void
   onEdit(recipe: Recipe): void
+  onStar(recipe: Recipe): void
 }) {
   const next = cooked.byId.get(recipe.id)?.nextPlanned
   return (
@@ -143,6 +167,7 @@ function RecipeCard({
         <span className="recipe-cooked">{cookedLine(cooked, recipe.id)}</span>
         {next && <span className="recipe-on-plan">On {shortDay(next, today)}</span>}
       </div>
+      <RecipeStar recipe={recipe} className="recipe-star" onStar={onStar} />
       <button
         type="button"
         className="btn subtle recipe-card-edit"
@@ -168,6 +193,9 @@ function storedRecipeView(): RecipeView {
   }
 }
 
+/** Nobody to cook with: outside a household, and the default. */
+const NO_MEMBERS: readonly KitchenMember[] = []
+
 interface Props {
   /**
    * The signed-in account, null in local mode. A meal and a week's grocery
@@ -179,6 +207,8 @@ interface Props {
   nameOf?(id: string | undefined): string | null
   /** Just me / Household on a breakfast, lunch or dinner — nobody to share with when this is off. */
   inHousehold?: boolean
+  /** The household's members, for who's cooking a shared dish: none outside a household. */
+  members?: readonly KitchenMember[]
   recipes: Recipe[]
   meals: Meal[]
   groceries: GroceryList[]
@@ -211,7 +241,7 @@ interface Props {
   onOpenDayConsumed?(): void
 }
 
-export function Kitchen({ myId = null, nameOf, inHousehold, recipes, meals, groceries, places, onSave, onDelete, onSaveMeal, onClearMeal, onCreatePlace, onCreateRecipe, openRecipe, onOpenRecipeConsumed, tasks, entries, feedEvents, onToast, openTab, onOpenTabConsumed, openDay, onOpenDayConsumed }: Props) {
+export function Kitchen({ myId = null, nameOf, inHousehold, members = NO_MEMBERS, recipes, meals, groceries, places, onSave, onDelete, onSaveMeal, onClearMeal, onCreatePlace, onCreateRecipe, openRecipe, onOpenRecipeConsumed, tasks, entries, feedEvents, onToast, openTab, onOpenTabConsumed, openDay, onOpenDayConsumed }: Props) {
   // the segment last chosen, unless a way in names one for this visit
   const [seg, setSeg] = useState<KitchenTab>(() => openTab ?? storedKitchenTab())
   const [recipeView, setRecipeView] = useState<RecipeView>(storedRecipeView)
@@ -318,10 +348,39 @@ export function Kitchen({ myId = null, nameOf, inHousehold, recipes, meals, groc
   }
 
   // the latest props, for an Undo pressed after this render's closures went stale
-  const latest = useRef({ meals, recipes, groceries, onClearMeal, onSave })
+  const latest = useRef({ meals, recipes, groceries, onClearMeal, onSave, onSaveMeal })
   useLayoutEffect(() => {
-    latest.current = { meals, recipes, groceries, onClearMeal, onSave }
+    latest.current = { meals, recipes, groceries, onClearMeal, onSave, onSaveMeal }
   })
+
+  /** ★ on a recipe, or off: the Favourites rotation offers it first while it has not been had lately. */
+  const star = (r: Recipe) => onSave(recipeStarred(r, !r.favourite))
+
+  /**
+   * A meal chosen on This week — a pick, an idea, a quick pick — through the
+   * planner's own path, and said in the toast. Its Undo puts back what the slot
+   * held (`before`), or clears it when it held nothing; a slot changed again
+   * since is left as it is now.
+   */
+  const planMeal = (next: Meal, before: Meal | undefined) => {
+    onSaveMeal(next)
+    onToast?.(`Planned “${next.title}” for ${next.slot}`, () => {
+      const cur = latest.current
+      const now = cur.meals.find(m => m.id === next.id)
+      if (now && now.updatedAt !== next.updatedAt) return
+      if (before) cur.onSaveMeal({ ...before, updatedAt: newerStamp(now?.updatedAt ?? next.updatedAt) })
+      else if (now) cur.onClearMeal(next.id)
+    })
+  }
+  /** Remove, from the picker: the slot cleared, and its Undo puts the meal back unless the slot was planned again meanwhile. */
+  const removeMeal = (meal: Meal) => {
+    onClearMeal(meal.id)
+    onToast?.(`Removed “${meal.title}” from ${meal.slot}`, () => {
+      const cur = latest.current
+      if (cur.meals.some(m => m.id === meal.id)) return
+      cur.onSaveMeal({ ...meal, updatedAt: newerStamp(meal.updatedAt) })
+    })
+  }
 
   /** Fill them in, over these recipes in this order. */
   const startFill = (list: readonly Recipe[]) => {
@@ -348,7 +407,9 @@ export function Kitchen({ myId = null, nameOf, inHousehold, recipes, meals, groc
    * nothing uses and nobody edited, and rebuilds the list again.
    */
   const applyMealPlan = (picks: MealPick[]): { count: number; undo(): void } | null => {
-    const { meals: planned, created } = mealsForPicks(picks, { recipes, places, meals, createRecipe: onCreateRecipe, now: new Date(), myId })
+    const { meals: picked, created } = mealsForPicks(picks, { recipes, places, meals, createRecipe: onCreateRecipe, now: new Date(), myId })
+    // for whom the picker starts a new meal: in a household, a dinner for both of you, and a lunch for you
+    const planned = inHousehold ? picked.map(m => (m.shared === undefined ? { ...m, shared: m.slot === 'dinner' } : m)) : picked
     if (planned.length === 0) return null
     for (const m of planned) onSaveMeal(m)
     const dates = planned.map(m => m.date)
@@ -550,6 +611,7 @@ export function Kitchen({ myId = null, nameOf, inHousehold, recipes, meals, groc
                         today={today}
                         onCook={cook}
                         onEdit={r => setEditing({ recipe: r, from: 'list' })}
+                        onStar={star}
                       />
                     ))}
                   </ul>
@@ -566,6 +628,7 @@ export function Kitchen({ myId = null, nameOf, inHousehold, recipes, meals, groc
                   today={today}
                   onCook={cook}
                   onEdit={r => setEditing({ recipe: r, from: 'list' })}
+                  onStar={star}
                 />
               ))}
             </ul>
@@ -587,9 +650,11 @@ export function Kitchen({ myId = null, nameOf, inHousehold, recipes, meals, groc
         <WeekPlan
           week={week}
           meals={weekMeals}
+          history={meals}
           myId={myId}
           nameOf={nameOf}
           inHousehold={inHousehold}
+          members={members}
           recipes={recipes}
           places={places}
           cooked={cooked}
@@ -600,11 +665,13 @@ export function Kitchen({ myId = null, nameOf, inHousehold, recipes, meals, groc
             setFocusDay(null)
             setAnchor(a => shiftRange(weekRange(a), d).start)
           }}
-          onSaveMeal={onSaveMeal}
-          onClearMeal={onClearMeal}
+          onPlanMeal={planMeal}
+          onAdjustMeal={onSaveMeal}
+          onRemoveMeal={removeMeal}
           onCreatePlace={onCreatePlace}
           onCreateRecipe={onCreateRecipe}
           onOpenRecipe={cook}
+          onStar={star}
           onPlan={() => setPlanningMeals(true)}
         />
       )}
@@ -617,8 +684,10 @@ export function Kitchen({ myId = null, nameOf, inHousehold, recipes, meals, groc
           recipes={recipes}
           places={places}
           meals={meals}
+          myId={myId}
           onCreatePlace={onCreatePlace}
           onCreateRecipe={onCreateRecipe}
+          onStar={star}
           onApply={applyMealPlan}
           onToast={onToast}
           onClose={() => setPlanningMeals(false)}
@@ -653,8 +722,10 @@ export function Kitchen({ myId = null, nameOf, inHousehold, recipes, meals, groc
       {cooking && editing?.from !== 'cook' && (
         <RecipeCook
           key={cooking.recipe.id}
-          recipe={cooking.recipe}
+          // the recipe as it is now: a star changed in cook mode shows at once
+          recipe={recipes.find(r => r.id === cooking.recipe.id) ?? cooking.recipe}
           cooked={cooked}
+          onStar={star}
           sides={mealSides(cookingMeal)}
           recipes={recipes}
           paused={!!cookingSide}
@@ -737,31 +808,40 @@ export function Kitchen({ myId = null, nameOf, inHousehold, recipes, meals, groc
 function WeekPlan({
   week,
   meals,
+  history,
   myId,
   nameOf,
   inHousehold,
+  members,
   recipes,
   places,
   cooked,
   visited,
   focusDay,
   onShift,
-  onSaveMeal,
-  onClearMeal,
+  onPlanMeal,
+  onAdjustMeal,
+  onRemoveMeal,
   onCreatePlace,
   onCreateRecipe,
   onOpenRecipe,
+  onStar,
   onPlan,
   today,
 }: {
   week: { key: string; start: Date; end: Date; label: string }
+  /** The week's meals. */
   meals: Meal[]
+  /** Every meal: the Favourites rotation and the picker's Cook list are worked out from them. */
+  history: Meal[]
   myId?: string | null
   nameOf?(id: string | undefined): string | null
   inHousehold?: boolean
+  /** The household, for who's cooking. */
+  members: readonly KitchenMember[]
   recipes: Recipe[]
   places: Place[]
-  /** When each recipe was last cooked, beside it in the pickers. */
+  /** When each recipe was last cooked, beside it in the picker. */
   cooked: CookedIndex
   /** When each place was last gone to, beside it under Eat out. */
   visited: VisitIndex
@@ -772,9 +852,13 @@ function WeekPlan({
   onShift(delta: number): void
   onCreatePlace(name: string, category: PlaceCategory): Place
   onCreateRecipe(name: string): Recipe
-  onSaveMeal(m: Meal): void
-  onClearMeal(id: string): void
+  /** A meal chosen for a slot, said in the toast with an Undo back to `before`. */
+  onPlanMeal(next: Meal, before: Meal | undefined): void
+  /** Who a meal is for, who cooks it, or its sides: saved as they are. */
+  onAdjustMeal(m: Meal): void
+  onRemoveMeal(m: Meal): void
   onOpenRecipe(r: Recipe, meal: Meal): void
+  onStar(r: Recipe): void
   /** Open "Plan this week's meals". */
   onPlan?(): void
 }) {
@@ -786,10 +870,7 @@ function WeekPlan({
   const keys = days.map(dateKey)
   // dinners still to plan from today on: a past night is not worth proposing
   const emptyDinners = keys.filter(key => key >= today && !meals.some(m => m.date === key && m.slot === 'dinner')).length
-  // Breakfast and lunch stay put away until a day has one, or you ask for it —
-  // otherwise the week is 21 empty dropdowns and dinner is the one that matters.
-  const [extraSlots, setExtraSlots] = useState<Record<string, MealSlot[]>>({})
-  // One day at a time. The strip is the week; the pickers are only for the
+  // One day at a time. The strip is the week; the cards are only for the
   // letter you have open, so a slide across the list cannot change Tuesday
   // while you meant to look at Friday.
   const land = (want: string | null | undefined) => (want && keys.includes(want) ? want : keys.includes(today) ? today : keys[0])
@@ -802,23 +883,26 @@ function WeekPlan({
     setPickedFor({ start: week.start, focusDay })
     setPicked(land(focusDay))
   }
+  // the kitchen's one order for what to cook next, with the week on screen's own plan left out
+  const rotation = useMemo(() => favouritesRotation([...recipes, ...history], { dayKey: today, week: weekDayKeys(dateKey(week.start)) }), [recipes, history, today, week.start])
   const dinnerOn = (key: string) => {
     const { mine, theirs } = mealsForSlot(meals, key, 'dinner', myId)
     const shown = mine ?? theirs.find(mealIsShared) ?? theirs[0]
     return shown ? mealLabel(shown) : ''
   }
-  const showSlot = (key: string, slot: MealSlot, mine?: Meal, theirs: Meal[] = []) =>
-    slot === 'dinner' || !!mine || theirs.length > 0 || (extraSlots[key] ?? []).includes(slot)
+  /** How many of a day's meals are answered, by anyone whose plan can be seen: the dots under its letter. */
+  const plannedOn = (key: string) =>
+    MEAL_SLOTS.filter(slot => {
+      const { mine, theirs } = mealsForSlot(meals, key, slot, myId)
+      return !!mine || theirs.length > 0
+    }).length
   const stepDay = (dir: -1 | 1) => {
     const i = keys.indexOf(picked)
     const next = keys[i + dir]
     if (next) setPicked(next)
   }
   const pickedDate = days[keys.indexOf(picked)] ?? days[0]
-  const hidden = (['breakfast', 'lunch'] as const).filter(slot => {
-    const { mine, theirs } = mealsForSlot(meals, picked, slot, myId)
-    return !showSlot(picked, slot, mine, theirs)
-  })
+  const planning = !!onPlan && emptyDinners > 0 && (recipes.length > 0 || places.length > 0)
   return (
     <>
       <div className="period-bar kitchen-week-head">
@@ -834,33 +918,38 @@ function WeekPlan({
         {days.map(d => {
           const key = dateKey(d)
           const dish = dinnerOn(key)
+          const planned = plannedOn(key)
           const dow = d.toLocaleDateString(undefined, { weekday: 'short' })
           return (
             <button
               key={key}
               type="button"
               className={'week-strip-day' + (key === today ? ' today' : '') + (key === picked ? ' picked' : '') + (dish ? ' set' : '')}
-              aria-label={`${dow}${dish ? ` ${dish}` : key < today ? ', no dinner' : ', not planned'}`}
+              aria-label={`${dow}${dish ? ` ${dish}` : key < today ? ', no dinner' : ', not planned'}${planned ? `, ${planned} meal${planned === 1 ? '' : 's'} planned` : ''}`}
               aria-pressed={key === picked}
               onClick={() => setPicked(key)}
             >
               <span className="week-strip-dow">{d.toLocaleDateString(undefined, { weekday: 'narrow' })}</span>
+              {/* a dot for each meal of the day that is planned, up to three */}
+              <span className="week-strip-dots" aria-hidden="true">
+                {Array.from({ length: planned }, (_, i) => (
+                  <i key={i} />
+                ))}
+              </span>
             </button>
           )
         })}
       </nav>
-      {onPlan && emptyDinners > 0 && (recipes.length > 0 || places.length > 0) && (
-        <div className="meal-plan-cta">
-          <p>
-            <strong>
-              {emptyDinners === 7 ? 'Nothing planned yet' : `${emptyDinners} dinner${emptyDinners === 1 ? '' : 's'} still to plan`}
-            </strong>
-            <small>Picks from what you cook most, or ask the assistant when you can’t decide.</small>
-          </p>
-          <button className="btn primary" onClick={onPlan}>
+      {/* "Plan this week's meals" was a banner across the week: it is one
+          line of the week's header now, its count and its link */}
+      {planning && (
+        <p className="kitchen-week-todo">
+          <span>{emptyDinners === 7 ? 'Nothing planned yet' : `${emptyDinners} dinner${emptyDinners === 1 ? '' : 's'} still to plan`}</span>
+          <button type="button" className="kitchen-plan-week" aria-haspopup="dialog" onClick={onPlan}>
+            <Icon name="shuffle" size={14} />
             Plan this week’s meals
           </button>
-        </div>
+        </p>
       )}
       <ul className="meal-week">
         <li
@@ -885,43 +974,34 @@ function WeekPlan({
           </div>
           {MEAL_SLOTS.map(slot => {
             const { mine, theirs } = mealsForSlot(meals, picked, slot, myId)
-            if (!showSlot(picked, slot, mine, theirs)) return null
             return (
-            <MealSlotRow
-              key={slot}
-              date={picked}
-              slot={slot}
-              meal={mine}
-              theirs={theirs}
-              nameOf={nameOf}
-              inHousehold={inHousehold}
-              myId={myId}
-              recipes={recipes}
-              places={places}
-              cooked={cooked}
-              visited={visited}
-              onSave={onSaveMeal}
-              onClear={onClearMeal}
-              onCreatePlace={onCreatePlace}
-              onCreateRecipe={onCreateRecipe}
-              onOpenRecipe={onOpenRecipe}
-            />
+              <MealDayCard
+                key={slot}
+                date={picked}
+                slot={slot}
+                today={today}
+                mine={mine}
+                theirs={theirs}
+                ideas={rotationIdeas(rotation, slot)}
+                recipes={recipes}
+                places={places}
+                meals={history}
+                cooked={cooked}
+                visited={visited}
+                myId={myId}
+                inHousehold={inHousehold}
+                members={members}
+                nameOf={nameOf}
+                onPlan={onPlanMeal}
+                onAdjust={onAdjustMeal}
+                onRemove={onRemoveMeal}
+                onCreatePlace={onCreatePlace}
+                onCreateRecipe={onCreateRecipe}
+                onOpenRecipe={onOpenRecipe}
+                onStar={onStar}
+              />
             )
           })}
-          {hidden.length > 0 && (
-            <div className="meal-day-extras">
-              {hidden.map(slot => (
-                <button
-                  key={slot}
-                  type="button"
-                  className="btn subtle"
-                  onClick={() => setExtraSlots(m => ({ ...m, [picked]: [...(m[picked] ?? []), slot] }))}
-                >
-                  + {MEAL_SLOT_META[slot].label}
-                </button>
-              ))}
-            </div>
-          )}
         </li>
       </ul>
     </>
@@ -1312,11 +1392,14 @@ export function RecipeCook({
   backTo,
   onOpenSide,
   onEdit,
+  onStar,
   onClose,
 }: {
   recipe: Recipe
   /** For "Cooked 5 times · last Thu 20 Aug". */
   cooked: CookedIndex
+  /** ★ the recipe, or not: beside the sheet's close button. */
+  onStar?(recipe: Recipe): void
   /** The sides of the meal cook mode was opened from: each saved recipe opens over this one. */
   sides?: MealSide[]
   /** Where a side's recipe is found. */
@@ -1396,7 +1479,9 @@ export function RecipeCook({
             {recipe.name}
           </>
         }
-      />
+      >
+        {onStar && <RecipeStar recipe={recipe} className="recipe-fav" onStar={onStar} />}
+      </ModalHead>
       <div className="modal-body">
         <p className="recipe-cook-meta">
           {recipe.servings ? `${recipe.servings} servings` : 'No yield set'}
@@ -1666,6 +1751,8 @@ function RecipeForm({
       tags: tagList,
       notes: notes.trim() || undefined,
       sourceUrl: safeHttpUrl(sourceUrl) || undefined,
+      // the form has no star of its own: a favourite stays one through an edit
+      favourite: recipe?.favourite || undefined,
       createdAt: recipe?.createdAt ?? stamp,
       updatedAt: recipe ? newerStamp(recipe.updatedAt) : stamp,
     })

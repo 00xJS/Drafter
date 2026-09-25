@@ -1,4 +1,5 @@
 import { memberName } from '../../household'
+import { recipeStarred } from '../../kitchen'
 import type { PlannerCtx } from './ctx'
 import { Calendar } from './lazy'
 
@@ -32,12 +33,15 @@ export function CalendarScreen({ p }: { p: PlannerCtx }) {
         myId={household.myId}
         nameOf={id => memberName(household.info, id)}
         inHousehold={p.inHousehold}
+        // who's cooking a shared dish, in the day sheet's meal picker
+        members={p.inHousehold ? (household.info?.members ?? []) : []}
         recipes={store.recipes}
         places={store.places}
         onSaveMeal={saveMeal}
         onClearMeal={clearMeal}
         onCreatePlace={createPlaceInline}
         onCreateRecipe={createRecipeInline}
+        onStarRecipe={r => p.upsert(recipeStarred(r, !r.favourite))}
         onNewEvent={(startIso, work) => setEventEditor({ startIso, work })}
         onEditEvent={id => {
           const entry = store.events.find(e => e.id === id)

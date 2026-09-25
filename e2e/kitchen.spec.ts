@@ -1,15 +1,19 @@
 import type { Page } from '@playwright/test'
 import { expect, stubAssistant, test, type App } from './fixtures'
 
-/** Keep → Kitchen → This week: tonight's dinner as a new recipe, by name. */
+/** Keep → Kitchen → This week: tonight's dinner as a new recipe, by name, through the meal picker. */
 async function planTonight(page: Page, app: App, dish: string) {
   await app.go('Keep')
   await page.getByRole('tab', { name: 'Kitchen' }).click()
   await page.getByRole('button', { name: 'This week', exact: true }).click()
-  await page.getByRole('combobox', { name: `Dinner on ${app.today}` }).selectOption({ label: '➕ Something new…' })
-  await page.getByRole('textbox', { name: `Name of the new recipe for dinner on ${app.today}` }).fill(dish)
+  const dinner = page.getByRole('region', { name: 'Dinner' })
+  await dinner.getByRole('button', { name: 'Choose…' }).click()
+  const picker = page.getByRole('dialog', { name: / · Dinner$/ })
+  await picker.getByRole('button', { name: 'Something new…' }).click()
+  await picker.getByRole('textbox', { name: `Name of the new recipe for dinner on ${app.today}` }).fill(dish)
   await page.keyboard.press('Enter')
-  await expect(page.getByRole('combobox', { name: `Dinner on ${app.today}` }).getByRole('option', { name: dish })).toBeAttached()
+  await expect(picker).toBeHidden()
+  await expect(dinner.getByText(dish, { exact: true })).toBeVisible()
 }
 
 test('tonight’s dinner, planned in the Kitchen, is on Today and on the Calendar', async ({ page, app }) => {

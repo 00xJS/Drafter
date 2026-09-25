@@ -126,3 +126,306 @@
 .field-hint + .kitchen-gap {
   margin-top: 12px;
 }
+
+/* ---------- This week: the strip's dots, the header's plan button ---------- */
+/* Each letter over a dot for every meal of its day that is planned, up to
+   three. The dots take their line whether or not there are any, so the
+   seven keys stay one height. Scoped to the Kitchen's strip: the wardrobe's
+   week borrows .week-strip-day and draws its own marks. */
+.week-strip > .week-strip-day {
+  flex-direction: column;
+  gap: 5px;
+}
+.week-strip-dots {
+  display: flex;
+  justify-content: center;
+  gap: 3px;
+  height: 5px;
+}
+.week-strip-dots > i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.week-strip-day.picked .week-strip-dots > i {
+  background: var(--accent-text);
+}
+/* "2 dinners still to plan · Plan this week's meals": the count and the
+   sheet's way in, one quiet line where the banner was */
+.kitchen-week-todo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 2px 10px;
+  margin: -4px 0 12px;
+  font-size: 0.8125rem;
+  color: var(--text-2);
+}
+.kitchen-plan-week {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 0;
+  border: 0;
+  background: none;
+  color: var(--accent-text);
+  font-weight: 600;
+}
+@media (pointer: coarse) {
+  .kitchen-plan-week {
+    min-height: 44px;
+  }
+  .kitchen-week-todo {
+    margin-top: -10px;
+    margin-bottom: 6px;
+  }
+}
+/* the open day holds a card for each meal: no frame of its own around theirs */
+.meal-week > .meal-day,
+.meal-week > .meal-day.picked,
+.meal-week > .meal-day.today {
+  gap: 10px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.meal-week > .meal-day > .meal-day-head {
+  padding: 0 2px;
+}
+
+/* ---------- This week: a card for each meal of the open day ---------------- */
+.meal-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+/* an empty meal is a dashed place to put one, not a card with nothing on it */
+.meal-card.empty {
+  gap: 10px;
+  border-style: dashed;
+  border-color: var(--border-strong);
+  background: transparent;
+}
+.meal-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 24px;
+}
+.meal-card-slot {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+.meal-card-change,
+.meal-card-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent-text);
+  font-weight: 600;
+}
+.meal-card-change {
+  font-size: 0.875rem;
+}
+.meal-card-link {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.meal-card-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0;
+  font-size: calc(1.3rem * var(--type-scale));
+  font-weight: 700;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+.meal-card-mark {
+  flex: none;
+}
+.meal-card-who {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--text-2);
+}
+.meal-card-cooking {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.meal-card-label {
+  font-size: 0.8125rem;
+  color: var(--text-2);
+}
+/* the card's last line: who is cooking and cook mode, or its sides — + Side,
+   "with Rice · Naan" — and cook mode at the end. With both a cook to ask and
+   sides, the sides take a line of their own after them. */
+.meal-card-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin-top: 2px;
+}
+.meal-card-sides {
+  display: flex;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  min-width: 0;
+}
+.meal-card-sides.own-line {
+  order: 1;
+  flex-basis: 100%;
+}
+/* on the row the sides line up under the picker; on a card there is nothing to line up with */
+.meal-card-sides > .meal-sides {
+  flex: 0 1 auto;
+  padding-left: 0;
+}
+.meal-card-sides > .meal-side-add {
+  margin-left: -8px;
+}
+.meal-card-sides > .meal-side-form {
+  flex-basis: 100%;
+}
+.meal-card-cook {
+  margin-left: auto;
+}
+.meal-card-notes {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--text-2);
+  white-space: pre-wrap;
+}
+.meal-card-own {
+  margin: 2px 0 0;
+  font-size: 0.8125rem;
+  color: var(--text-2);
+}
+.meal-card-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+.meal-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  min-height: 34px;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.875rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.meal-chip:hover {
+  border-color: var(--border-strong);
+}
+.meal-chip.fav {
+  border-color: var(--accent-ring);
+  background: var(--accent-softer);
+}
+.meal-chip-star {
+  color: var(--accent-text);
+}
+/* the three quick picks, one line of three whatever the width: a long name
+   takes two lines of its own tile rather than pushing Takeout under the rest */
+.meal-card-quick {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  /* three tiles, not three stripes across a desktop */
+  max-width: 30rem;
+}
+.meal-chip.quick {
+  justify-content: center;
+  gap: 4px;
+  max-width: none;
+  padding: 6px;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 0.8125rem;
+  line-height: 1.2;
+  text-align: center;
+  white-space: normal;
+  /* between words only: "Leftovers" never loses its s to the next line */
+  overflow-wrap: normal;
+  word-break: normal;
+}
+@media (pointer: coarse) {
+  .meal-chip,
+  .meal-card-change,
+  .meal-card-link {
+    min-height: 44px;
+  }
+  .meal-card-change {
+    padding-inline: 8px;
+    margin: -10px -8px -10px 0;
+  }
+}
+/* J | M: two letters, not a full-width track. The container is in the
+   selector so it outranks the phone's full-width track (19-native-shell.css) */
+.meal-card-cooking > .segmented.seg-track.meal-cook-seg {
+  flex: none;
+  width: 7rem;
+}
+
+/* ---------- Recipes: the star ------------------------------------------------ */
+/* on a recipe's row, before Edit, and on its cook-mode sheet beside ✕ */
+.recipe-star,
+.recipe-fav {
+  flex: none;
+  padding: 4px 8px;
+  line-height: 0;
+  color: var(--muted);
+}
+.recipe-fav {
+  margin-left: auto;
+  margin-right: 4px;
+}
+.recipe-star.on,
+.recipe-fav.on {
+  color: var(--accent-text);
+}
+/* the row's star takes the push to the end; Edit sits straight after it */
+.recipe-card > .recipe-star + .recipe-card-edit {
+  margin-left: 0;
+}
+@media (max-width: 640px) {
+  /* with the star beside Edit a long name wraps rather than losing its end */
+  .recipe-card .dash-title {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+}
+@media (pointer: coarse) {
+  .recipe-star,
+  .recipe-fav {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}

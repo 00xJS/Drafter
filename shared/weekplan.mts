@@ -310,6 +310,95 @@ export function mealHistory(items: readonly unknown[], { dayKey, now = new Date(
   return { recipes, places }
 }
 
+// ---- the Favourites rotation -----------------------------------------------------
+
+/** A ★ favourite had this recently is not due again yet: the rotation moves on to the others. */
+export const FAVOURITE_REST_DAYS = 7
+
+/** Where a recipe stands in the rotation, first to last. */
+export type RotationTier = 'due' | 'new' | 'rest' | 'planned'
+const TIER_RANK: Readonly<Record<RotationTier, number>> = { due: 0, new: 1, rest: 2, planned: 3 }
+
+export interface RotationPick {
+  recipe: Recipe
+  /** ★ on the recipe. */
+  favourite: boolean
+  /** The last day it was cooked, as the main or a side, up to the day asked about: the Kitchen's last cooked. Null for never. */
+  lastCooked: string | null
+  tier: RotationTier
+  /** The meals it has been the main of. */
+  slots: MealSlot[]
+  /** On the plan only ever as a side: never offered as a meal. */
+  sideOnly: boolean
+}
+
+/**
+ * The Favourites rotation: the kitchen's one order for what to cook next. The
+ * day cards' ideas, the meal picker's Cook list and the week plan's dinners
+ * (proposeWeek, so both planning sheets and the digest) all take it from here.
+ *
+ * - First, ★ favourites not had in the last FAVOURITE_REST_DAYS, the longest
+ *   since last cooked first (one never cooked before any) — `due`;
+ * - then recipes never had, the newest saved first, the one you most likely
+ *   meant to try — `new`;
+ * - then the rest, the longest since last had first — `rest`.
+ * - Anything already on the plan in `week`, as the main or a side, is not
+ *   offered: it comes last, `planned`, for a list that shows everything.
+ *
+ * Had is cookedRecipeIds' rule, the Kitchen's last cooked: a side counts, and
+ * a meal out, a quick pick or a plan still to come does not. Ties go by name,
+ * then id, so the same records give the same order however they arrive.
+ */
+export function favouritesRotation(items: readonly unknown[], { dayKey, week = [] }: { dayKey: string; week?: readonly string[] }): RotationPick[] {
+  if (!isDayKey(dayKey)) return []
+  const live = liveItems(items)
+  const meals = recordsOf(live, 'meal')
+  const upTo = shiftDayKey(dayKey, 1)
+  const had = recipeHistory(meals, dayKey, upTo, mealRecipeIds)
+  const mains = recipeHistory(meals, dayKey, upTo)
+  const inWeek = new Set(week)
+  const planned = new Set(meals.filter(m => inWeek.has(m.date)).flatMap(mealRecipeIds))
+  const onPlan = new Set(meals.flatMap(mealRecipeIds))
+  const asMainEver = new Set(meals.flatMap(asMain))
+  const restFrom = shiftDayKey(dayKey, -FAVOURITE_REST_DAYS)
+  return recordsOf(live, 'recipe')
+    .map((recipe): RotationPick => {
+      const lastCooked = had.get(recipe.id)?.lastCooked || null
+      const favourite = recipe.favourite === true
+      const tier: RotationTier = planned.has(recipe.id) ? 'planned' : favourite && !(lastCooked && lastCooked >= restFrom) ? 'due' : lastCooked ? 'rest' : 'new'
+      return { recipe, favourite, lastCooked, tier, slots: [...(mains.get(recipe.id)?.slots ?? [])], sideOnly: onPlan.has(recipe.id) && !asMainEver.has(recipe.id) }
+    })
+    .sort(
+      (a, b) =>
+        TIER_RANK[a.tier] - TIER_RANK[b.tier] ||
+        (a.tier === 'new' ? cmp(b.recipe.createdAt ?? '', a.recipe.createdAt ?? '') : cmp(a.lastCooked ?? '', b.lastCooked ?? '')) ||
+        cmp(a.recipe.name ?? '', b.recipe.name ?? '') ||
+        cmp(a.recipe.id, b.recipe.id),
+    )
+}
+
+/**
+ * Whether a recipe suits a meal: it has been that meal, or is tagged for it
+ * (SLOT_TAGS, today's ideas' own). One never had as any meal has only its tags
+ * to go on: tagged for another meal it is that meal's, and untagged it suits
+ * lunch or dinner — never breakfast, on nothing at all.
+ */
+function suitsSlot(r: RotationPick, slot: MealSlot): boolean {
+  const tags = (r.recipe.tags ?? []).map(t => String(t).toLowerCase())
+  const tagged = (s: MealSlot) => tags.some(t => (SLOT_TAGS[s] ?? []).includes(t))
+  if (r.slots.includes(slot) || tagged(slot)) return true
+  if (r.slots.length > 0) return false
+  return slot !== 'breakfast' && !(['breakfast', 'lunch', 'dinner'] as const).some(s => s !== slot && tagged(s))
+}
+
+/**
+ * The rotation's first `n` to offer for a slot on a day card: never one
+ * already planned this week, never a side, and only what suits the slot.
+ */
+export function rotationIdeas(rows: readonly RotationPick[], slot: MealSlot, n = 3): RotationPick[] {
+  return rows.filter(r => r.tier !== 'planned' && !r.sideOnly && suitsSlot(r, slot)).slice(0, n)
+}
+
 // ---- the week ----------------------------------------------------------------
 
 /**
@@ -333,12 +422,14 @@ function dinnerWhy(s: RecipeStats | undefined, isNew: boolean, todayKey: string)
 }
 
 /**
- * A recipe for each empty night: the ones cooked most as a meal in six months
- * first (and, among those, the longest since it was had at all), never one had
- * in the last fortnight or already planned that week — as the main or a side —
- * and never twice. One never-cooked recipe a week is offered as something new,
- * on a quiet night — the weekend if one is free. The favourites go to quiet
- * nights; a busy night takes what is left and says why.
+ * A recipe for each empty night, in the Favourites rotation's order: ★
+ * favourites not had lately, the longest since first, then the rest, the
+ * longest since it was had at all. Only what has been a meal before, never one
+ * had in the last fortnight or already planned that week — as the main or a
+ * side — and never twice. One never-cooked recipe a week is offered as
+ * something new (the rotation's first: a ★ one before the newest saved), on a
+ * quiet night — the weekend if one is free. The first of the rotation go to
+ * quiet nights; a busy night takes what is left and says why.
  */
 function proposeDinners({
   days,
@@ -360,23 +451,25 @@ function proposeDinners({
   const filled = new Set(meals.filter(m => m.slot === 'dinner').map(m => m.date))
   const nights = days.filter(d => !filled.has(d) && !skip.has(`dinner:${d}`))
   if (nights.length === 0 || recipes.length === 0) return []
-  const inWeek = new Set(days)
-  // a side counts here too: the week already has it, and a recipe that has been a side is not "never cooked"
-  const plannedThisWeek = new Set(meals.filter(m => inWeek.has(m.date)).flatMap(mealRecipeIds))
+  // a side counts here too: a recipe that has been a side is not "never cooked"
   const everCooked = new Set(meals.flatMap(mealRecipeIds))
   // the week being planned, and anything after it, is not history. What is
-  // offered, and in what order, goes by the meals a recipe was the main of; a
-  // side is still something had, so it cools a recipe down and the reason
-  // counts it, in the Kitchen's own numbers
+  // offered goes by the meals a recipe was the main of; a side is still
+  // something had, so it cools a recipe down and the reason counts it, in the
+  // Kitchen's own numbers
   const mains = recipeHistory(meals, todayKey, startKey)
   const had = recipeHistory(meals, todayKey, startKey, mealRecipeIds)
-  const byName = (a: Recipe, b: Recipe) => cmp(a.name ?? '', b.name ?? '') || cmp(a.id, b.id)
+  // …and in what order is the kitchen's one order for what to cook next, with
+  // whatever the week already has, as the main or a side, left out (planned)
+  const rotation = favouritesRotation([...recipes, ...meals], { dayKey: todayKey, week: days })
+  const starred = new Set(rotation.filter(x => x.favourite).map(x => x.recipe.id))
   // each of the pool has been a main, so it has both histories
-  const pool = recipes
-    .filter(r => (mains.get(r.id)?.total ?? 0) > 0 && !plannedThisWeek.has(r.id) && cooledDown(had.get(r.id), todayKey, COOLDOWN_DAYS))
-    .sort((a, b) => mains.get(b.id)!.count - mains.get(a.id)!.count || cmp(had.get(a.id)!.lastCooked, had.get(b.id)!.lastCooked) || byName(a, b))
-  // the newest saved recipe never cooked: most likely the one you meant to try
-  const fresh = recipes.filter(r => !everCooked.has(r.id)).sort((a, b) => cmp(b.createdAt ?? '', a.createdAt ?? '') || byName(a, b))[0] ?? null
+  const pool = rotation
+    .filter(x => x.tier !== 'planned' && (mains.get(x.recipe.id)?.total ?? 0) > 0 && cooledDown(had.get(x.recipe.id), todayKey, COOLDOWN_DAYS))
+    .map(x => x.recipe)
+  // the rotation's first never cooked — a ★ one, else the newest saved, most
+  // likely the one you meant to try — and never one already on a plan ahead
+  const fresh = rotation.find(x => !x.lastCooked && (x.tier === 'new' || x.tier === 'due') && !everCooked.has(x.recipe.id))?.recipe ?? null
 
   const quiet = nights.filter(d => !busy.get(d))
   const assigned = new Map<string, Recipe>()
@@ -404,7 +497,8 @@ function proposeDinners({
     const offset = out.length * ALTERNATIVES
     const alternatives = Array.from({ length: Math.min(ALTERNATIVES, spare.length) }, (_, j) => spare[(offset + j) % spare.length].id)
     const isNew = r === fresh
-    out.push({ key: `dinner:${d}`, date: d, recipeId: r.id, title: r.name, why: dinnerWhy(had.get(r.id), isNew, todayKey), alternatives, busy: busy.get(d) ?? null, isNew })
+    const why = dinnerWhy(had.get(r.id), isNew, todayKey)
+    out.push({ key: `dinner:${d}`, date: d, recipeId: r.id, title: r.name, why: starred.has(r.id) ? `★ ${why}` : why, alternatives, busy: busy.get(d) ?? null, isNew })
   }
   return out
 }

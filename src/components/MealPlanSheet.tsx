@@ -1,5 +1,5 @@
 import { useId, useMemo, useState } from 'react'
-import { mealHistory, mealIdeasFor, proposeWeek, targetWeek } from '../../shared/weekplan.mts'
+import { favouritesRotation, mealHistory, mealIdeasFor, proposeWeek, targetWeek } from '../../shared/weekplan.mts'
 import type { MealHistory } from '../../shared/weekplan.mts'
 import { weekDayKeys } from '../../shared/weeks.mts'
 import { MealAssist, MealAssistInput, MealSuggestion, mealAssistInput, suggestMeals } from '../ai'
@@ -9,7 +9,7 @@ import { dateKey } from '../utils'
 import { useDayKey } from '../useDayKey'
 import { useNow } from '../useNow'
 import { aiFailureText } from './AskSheet'
-import { MealSlotRow } from './MealSlotRow'
+import { MealPicker } from './MealPicker'
 import { Modal, ModalHead } from './Modal'
 
 // "Plan this week's meals" on the Kitchen tab: a pick for every empty dinner
@@ -63,11 +63,13 @@ const live = (items: readonly unknown[], kind: string) => items.filter((i): i is
 
 /**
  * The proposal for a week's empty slots from today on. Dinners are
- * proposeWeek's: favourites not cooked in a fortnight, one never-cooked recipe,
- * no repeats, a busy evening flagged. It plans "next week" from today, so for
- * any other week it is asked as of that week's Sunday; nights it could not fill
- * take the rest of the never-cooked recipes. Lunches, when included, are
- * mealIdeasFor's for each day — never something already picked that week.
+ * proposeWeek's, in the Favourites rotation's order: ★ favourites not had
+ * lately, nothing cooked in a fortnight, one never-cooked recipe, no repeats, a
+ * busy evening flagged. It plans "next week" from today, so for any other week
+ * it is asked as of that week's Sunday; nights it could not fill take the rest
+ * of the never-cooked recipes, in the rotation's order too. Lunches, when
+ * included, are mealIdeasFor's for each day — never something already picked
+ * that week.
  */
 export function proposeMealWeek(o: {
   items: readonly unknown[]
@@ -90,7 +92,10 @@ export function proposeMealWeek(o: {
   const byId = new Map(recipes.map(r => [r.id, r]))
   const recipeChoice = (id: string, why?: string): SlotChoice | null => {
     const r = byId.get(id)
-    return r ? { kind: 'recipe', id, title: r.name, why: why ?? cookedWhy(history.get(id), o.todayKey) } : null
+    if (!r) return null
+    const said = why ?? cookedWhy(history.get(id), o.todayKey)
+    // a ★ favourite says so, as the week plan's own reasons do
+    return { kind: 'recipe', id, title: r.name, why: r.favourite ? `★ ${said}` : said }
   }
   const used = new Set<string>()
   const rows: MealPlanRow[] = []
@@ -105,13 +110,13 @@ export function proposeMealWeek(o: {
     rows.push({ key: `${d}|dinner`, date: d, slot: 'dinner', choice, options: choice ? [choice, ...alts] : alts, busy: item?.busy ?? null })
   }
   // the ranking offers one never-cooked recipe a week and a young kitchen has
-  // little else, so a night it could not fill takes the next never-cooked one
-  // a recipe that has been a side is not "never cooked" either
+  // little else, so a night it could not fill takes the next never-cooked one,
+  // in the Favourites rotation's order (a ★ one, then the newest saved). A
+  // recipe that has been a side is not "never cooked" either
   const cooked = new Set(meals.flatMap(mealRecipeIds))
-  const fresh = recipes
-    .filter(r => !cooked.has(r.id))
-    .sort((a, b) => cmp(b.createdAt ?? '', a.createdAt ?? '') || cmp(a.name, b.name) || cmp(a.id, b.id))
-    .map((r): SlotChoice => ({ kind: 'recipe', id: r.id, title: r.name, why: NEW_WHY }))
+  const fresh = favouritesRotation(o.items, { dayKey: o.todayKey, week })
+    .filter(x => !cooked.has(x.recipe.id))
+    .map((x): SlotChoice => recipeChoice(x.recipe.id, NEW_WHY)!)
   for (const row of rows) {
     if (row.choice) continue
     const next = fresh.find(c => !used.has(`recipe:${c.id}`))
@@ -215,11 +220,15 @@ const sameChoice = (a: SlotChoice | null, b: SlotChoice | null) => !!a && !!b &&
 /** "Sun 20 Sep", read at local noon so no zone can move it a day. */
 const dayLabel = (key: string) => new Date(`${key}T12:00:00`).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })
 
-/** A synthetic meal for MealSlotRow to show the pick; only its fields are read back. */
-function asMeal(date: string, slot: MealSlot, c: SlotChoice | null): Meal | undefined {
+/**
+ * A stand-in meal for the picker to tick the pick on; only its fields are read
+ * back. It carries the member's own id (mealId), never the household-wide
+ * legacy one, so nothing built on it could ever land in another member's row.
+ */
+export function asMeal(date: string, slot: MealSlot, c: SlotChoice | null, myId: string | null = null): Meal | undefined {
   if (!c || c.kind === 'new') return undefined
   const stamp = '1970-01-01T00:00:00.000Z'
-  const base = { kind: 'meal' as const, id: mealId(date, slot), date, slot, title: c.title, createdAt: stamp, updatedAt: stamp }
+  const base = { kind: 'meal' as const, id: mealId(date, slot, myId), date, slot, title: c.title, createdAt: stamp, updatedAt: stamp }
   if (c.kind === 'recipe') return { ...base, recipeId: c.id }
   return { ...base, out: true, ...(c.kind === 'place' ? { placeId: c.id } : {}) }
 }
@@ -243,8 +252,12 @@ interface Props {
   places: Place[]
   /** Live meals, for what is already planned. */
   meals: Meal[]
+  /** The member planning: the rows a pick becomes are theirs. */
+  myId?: string | null
   onCreatePlace(name: string, category: PlaceCategory): Place
   onCreateRecipe(name: string): Recipe
+  /** ★ a recipe from Pick…'s Cook list. */
+  onStar?(recipe: Recipe): void
   /** Plan the picks through the Kitchen's save path. Returns how many were planned and their Undo, or null when none could be. */
   onApply(picks: MealPick[]): { count: number; undo(): void } | null
   /** When given, the confirmation and its Undo go to the planner's toast and the sheet closes; otherwise they stay in the sheet. */
@@ -256,7 +269,7 @@ interface Props {
   tz?: string
 }
 
-export function MealPlanSheet({ week, items, events, recipes, places, meals, onCreatePlace, onCreateRecipe, onApply, onToast, onClose, suggest = suggestMeals, now, tz }: Props) {
+export function MealPlanSheet({ week, items, events, recipes, places, meals, myId = null, onCreatePlace, onCreateRecipe, onStar, onApply, onToast, onClose, suggest = suggestMeals, now, tz }: Props) {
   const at = () => now ?? new Date()
   // today, and the minute for what counts as a visit yet, from the app's
   // clock hooks: read as the sheet draws, the compiler would keep the first
@@ -440,35 +453,34 @@ export function MealPlanSheet({ week, items, events, recipes, places, meals, onC
                       <button type="button" className="btn subtle" onClick={() => swap(r)} disabled={swapTo(r) === null}>
                         Swap
                       </button>
-                      <button type="button" className="btn subtle" aria-expanded={picking === r.key} onClick={() => setPicking(p => (p === r.key ? null : r.key))}>
+                      <button type="button" className="btn subtle" aria-haspopup="dialog" onClick={() => setPicking(r.key)}>
                         Pick…
                       </button>
                     </div>
                     {picking === r.key && (
-                      <MealSlotRow
+                      <MealPicker
                         date={r.date}
                         slot={r.slot}
-                        meal={asMeal(r.date, r.slot, r.choice)}
+                        meal={asMeal(r.date, r.slot, r.choice, myId)}
                         recipes={recipes}
                         places={places}
+                        meals={meals}
                         cooked={cooked}
                         visited={visited}
                         mainOnly
-                        onSave={m => {
-                          const choice: SlotChoice = m.recipeId
-                            ? { kind: 'recipe', id: m.recipeId, title: m.title, why: 'Your pick' }
-                            : m.placeId
-                              ? { kind: 'place', id: m.placeId, title: m.title, why: 'Your pick' }
-                              : { kind: 'out', title: m.title, why: 'Your pick' }
+                        onPick={({ main }) => {
+                          const choice: SlotChoice = main.recipeId
+                            ? { kind: 'recipe', id: main.recipeId, title: main.title, why: 'Your pick' }
+                            : main.placeId
+                              ? { kind: 'place', id: main.placeId, title: main.title, why: 'Your pick' }
+                              : { kind: 'out', title: main.title, why: 'Your pick' }
                           setRow(r.key, { choice, on: true })
-                          setPicking(null)
                         }}
-                        onClear={() => {
-                          setRow(r.key, { choice: null, on: false })
-                          setPicking(null)
-                        }}
+                        onRemove={() => setRow(r.key, { choice: null, on: false })}
                         onCreatePlace={onCreatePlace}
                         onCreateRecipe={onCreateRecipe}
+                        onStar={onStar}
+                        onClose={() => setPicking(null)}
                       />
                     )}
                   </div>

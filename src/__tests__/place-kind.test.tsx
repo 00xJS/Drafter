@@ -4,7 +4,7 @@ import type { ReactElement, ReactNode } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 import { AttendancePicker, SaveLocation, canLogAttendance, locationPlaceName, placeAtLocation, placeFromLocation } from '../components/AttendancePicker'
-import { SomewhereNew } from '../components/MealSlotRow'
+import { SomewhereNew } from '../components/MealPicker'
 import { PlaceKindChooser } from '../components/PlaceKindChooser'
 import { NewPlaceStep, PlacePicker, enterPlace } from '../components/PlacePicker'
 import { mapsUrl, matchPlace, newPlace, placeFor } from '../places'
@@ -301,7 +301,7 @@ describe('Who was there?', () => {
 })
 
 describe('no path makes a place of a kind nobody chose', () => {
-  const paths = ['../components/PlacePicker.tsx', '../components/AttendancePicker.tsx', '../components/MealSlotRow.tsx', '../components/planner/useLifeActions.ts', '../components/Places.tsx']
+  const paths = ['../components/PlacePicker.tsx', '../components/AttendancePicker.tsx', '../components/MealPicker.tsx', '../components/planner/useLifeActions.ts', '../components/Places.tsx']
 
   it('has no fallback kind left in any of them', () => {
     for (const rel of paths) {
@@ -313,11 +313,12 @@ describe('no path makes a place of a kind nobody chose', () => {
   })
 
   it('asks with the one chooser in each path that names somewhere new', () => {
-    for (const rel of ['../components/PlacePicker.tsx', '../components/AttendancePicker.tsx', '../components/MealSlotRow.tsx']) {
+    for (const rel of ['../components/PlacePicker.tsx', '../components/AttendancePicker.tsx', '../components/MealPicker.tsx']) {
       expect(read(rel), rel).toMatch(/<PlaceKindChooser\b/)
     }
-    // the meal picker's own kind select is gone
-    expect(read('../components/MealSlotRow.tsx')).not.toContain('PLACE_CATEGORIES')
+    // the meal picker's own kind select is gone, and the slot row names nothing new itself: it opens the picker
+    expect(read('../components/MealPicker.tsx')).not.toContain('PLACE_CATEGORIES')
+    expect(read('../components/MealSlotRow.tsx')).not.toMatch(/PLACE_CATEGORIES|<SomewhereNew\b/)
   })
 
   it('keeps Add a place’s Save waiting for a kind too', () => {

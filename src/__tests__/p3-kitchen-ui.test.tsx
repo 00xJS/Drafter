@@ -40,8 +40,9 @@ const place = (id: string, name: string, category: Place['category']): Place => 
 const TODAY = '2026-09-16' // a Wednesday: "next week" is Sunday 20 – Saturday 26 September
 const NOW = new Date(2026, 8, 16, 12, 0)
 const kRecipes: Recipe[] = [
-  recipe('id-fav', 'Lasagne'),
-  recipe('id-mid', 'Curry'),
+  // the two cooked most, starred: the Favourites rotation offers them first
+  recipe('id-fav', 'Lasagne', { favourite: true }),
+  recipe('id-mid', 'Curry', { favourite: true }),
   recipe('id-soup', 'Soup', { tags: ['lunch'] }),
   recipe('id-e', 'Fajitas'),
   recipe('id-d', 'Chilli'),
@@ -76,20 +77,22 @@ const base = { items, todayKey: TODAY, now: NOW, tz: 'UTC' }
 describe('proposeMealWeek', () => {
   const rows = proposeMealWeek({ ...base, weekStart: '2026-09-20', lunches: false })
 
-  it('proposes the ranking’s dinner for every empty night, favourites first, one never-cooked dish, nothing twice', () => {
+  it('proposes the Favourites rotation’s dinner for every empty night, ★ favourites first, one never-cooked dish, nothing twice', () => {
+    // the ★ ones not had lately, the longest since first; then the rest, the longest since first
     expect(rows.map(r => [r.date, r.slot, r.choice?.title])).toEqual([
-      ['2026-09-20', 'dinner', 'Lasagne'],
-      ['2026-09-21', 'dinner', 'Curry'],
-      ['2026-09-23', 'dinner', 'Soup'],
-      ['2026-09-24', 'dinner', 'Fajitas'],
-      ['2026-09-25', 'dinner', 'Chilli'],
+      ['2026-09-20', 'dinner', 'Curry'],
+      ['2026-09-21', 'dinner', 'Lasagne'],
+      ['2026-09-23', 'dinner', 'Fajitas'],
+      ['2026-09-24', 'dinner', 'Chilli'],
+      ['2026-09-25', 'dinner', 'Pie'],
       ['2026-09-26', 'dinner', 'Pho'],
     ])
-    // told from today, whatever week is on screen
-    expect(rows[0].choice?.why).toBe('Cooked 3× in six months · last 4 weeks ago')
+    // told from today, whatever week is on screen, a ★ one saying so
+    expect(rows[0].choice?.why).toBe('★ Cooked 2× in six months · last 7 weeks ago')
+    expect(rows[2].choice?.why).toBe('Cooked 1× in six months · last 6 months ago')
     expect(rows[5].choice?.why).toBe('Something new: saved, never cooked')
     // Swap cycles the spares, never another night's pick; cooked last week is not offered
-    expect(rows[0].options.map(o => o.title)).toEqual(['Lasagne', 'Pie', 'Stew', 'Tacos'])
+    expect(rows[0].options.map(o => o.title)).toEqual(['Curry', 'Stew', 'Tacos', 'Soup'])
     expect(rows.flatMap(r => r.options).some(o => o.title === 'Risotto')).toBe(false)
     const picks = rows.map(r => r.choice?.id)
     for (const r of rows) expect(r.options.slice(1).some(o => picks.includes(o.id))).toBe(false)
@@ -232,19 +235,21 @@ describe('Kitchen', () => {
     expect(css).toMatch(/\.kitchen-recipe-compose \.btn,\s*\.kitchen-empty-actions \.btn \{[^}]*flex:\s*1/)
   })
 
-  it('offers to plan a week with empty dinners, and not one that is planned', () => {
+  it('offers to plan a week with empty dinners in one line of its header, the count and a link — not on one that is planned', () => {
     vi.stubGlobal('localStorage', fakeStorage({ 'drafter:kitchen-tab': 'week' }))
     const empty = renderToStaticMarkup(<Kitchen {...props} />)
-    expect(empty).toContain('meal-plan-cta')
-    expect(empty).toContain('Plan this week’s meals')
-    expect(empty).toMatch(/Nothing planned yet|still to plan/)
+    // slimmer than the banner it was: the count, and the sheet's way in
+    expect(empty).not.toContain('meal-plan-cta')
+    expect(empty).toMatch(/<p class="kitchen-week-todo"><span>(Nothing planned yet|\d dinners? still to plan)<\/span><button type="button" class="kitchen-plan-week" aria-haspopup="dialog">/)
+    expect(empty).toContain('Plan this week’s meals</button>')
     expect(empty).toContain('aria-label="Dinners this week"')
-    expect(empty).toContain('+ Breakfast')
-    expect(empty).toContain('+ Lunch')
-    expect(empty).not.toContain('aria-label="Breakfast on')
+    // the open day, a card for each of its meals, every one of them empty
     expect(empty.match(/<li id="meal-day-[^"]+"/g)).toHaveLength(1)
+    expect([...empty.matchAll(/<section class="meal-card empty" aria-label="([^"]+)"/g)].map(m => m[1])).toEqual(['Breakfast', 'Lunch', 'Dinner'])
     const planned = weekDayKeys(dateKey(new Date())).map(d => meal(d, 'dinner', { recipeId: 'id-fav', title: 'Lasagne' }))
-    expect(renderToStaticMarkup(<Kitchen {...props} meals={planned} />)).not.toContain('meal-plan-cta')
+    const full = renderToStaticMarkup(<Kitchen {...props} meals={planned} />)
+    expect(full).not.toContain('kitchen-plan-week')
+    expect(full).not.toContain('kitchen-week-todo')
   })
 })
 

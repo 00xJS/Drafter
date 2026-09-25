@@ -231,9 +231,12 @@ describe('Plan my day, applied (B2)', () => {
     expect(blocks.map(b => b.taskId).sort()).toEqual(['fresh', 'pick'])
     expect(m.mirrored.map(e => e.id).sort()).toEqual(blocks.map(b => b.id).sort())
 
-    // both meals, and one list holding both — the dinner's rebuild did not drop the lunch's lines
-    expect(w.get(`meal~${TODAY}~lunch`)).toMatchObject({ recipeId: 'soup', title: 'Leek soup' })
-    expect(w.get(`meal~${TODAY}~dinner`)).toMatchObject({ recipeId: 'pasta', title: 'Pasta' })
+    // both meals, each in the member's own row — never the household-wide
+    // meal~<day>~<slot>, which may be the other member's private meal — and
+    // one list holding both: the dinner's rebuild did not drop the lunch's lines
+    expect(w.get(`meal~${TODAY}~lunch`)).toBeUndefined()
+    expect(w.get(`meal~${TODAY}~lunch~me`)).toMatchObject({ recipeId: 'soup', title: 'Leek soup' })
+    expect(w.get(`meal~${TODAY}~dinner~me`)).toMatchObject({ recipeId: 'pasta', title: 'Pasta' })
     expect(groceryNames(w)).toEqual(['Basil', 'Leeks', 'Spaghetti', 'Stock'])
   })
 
@@ -249,7 +252,7 @@ describe('Plan my day, applied (B2)', () => {
     for (const was of seed()) expect(withoutStamp(w.get(was.id)), was.id).toEqual(withoutStamp(was))
     // restored with a stamp that beats the plan's own write
     expect(t(w, 'pick').updatedAt > planned).toBe(true)
-    for (const id of [spawnedFor(w, 'chore'), 'fresh', ...blocks.map(b => b.id), `meal~${TODAY}~lunch`, `meal~${TODAY}~dinner`]) expect(w.get(id)?.deletedAt, id).toBeTruthy()
+    for (const id of [spawnedFor(w, 'chore'), 'fresh', ...blocks.map(b => b.id), `meal~${TODAY}~lunch~me`, `meal~${TODAY}~dinner~me`]) expect(w.get(id)?.deletedAt, id).toBeTruthy()
     expect(
       m.mirrored
         .filter(e => e.deletedAt)

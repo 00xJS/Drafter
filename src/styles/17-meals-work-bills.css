@@ -53,6 +53,265 @@
   cursor: default;
 }
 
+/* ---- The meal picker (components/MealPicker.tsx) ----------------------- */
+/* The one sheet a meal is chosen in: Kitchen's day cards, the calendar's day
+   sheet, an assistant's suggested meal and the planning sheets' Pick… all
+   open it, and any of them may be first, so its rules are here rather than
+   in one view's sheet. */
+
+/* a word for a screen reader that the eye reads another way: "Maria" behind the M */
+.meal-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.meal-pick-sheet .modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.meal-pick-audience {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.meal-pick-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.meal-pick-label {
+  flex: none;
+  width: 6.25rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-2);
+}
+.meal-pick-line > .segmented.seg-track {
+  flex: 1;
+  min-width: 0;
+}
+/* the sheet's own width, not the 520px a track keeps on a mouse page */
+.meal-pick-line > .segmented.seg-track,
+.meal-pick-sheet .segmented.seg-track.meal-pick-tabs {
+  max-width: none;
+}
+/* J | M: two letters, not a full-width track. Width and flex as the phone's
+   track rule has them (19-native-shell.css), so the cap below is what wins */
+.meal-pick-line > .segmented.seg-track.meal-cook-seg {
+  flex: none;
+  width: 100%;
+  max-width: 7rem;
+}
+.segmented.seg-track.meal-cook-seg .seg {
+  min-width: 2.75rem;
+}
+/* nobody cooking yet: no segment is on, so no thumb sits under one */
+.segmented.seg-track.meal-cook-seg.unset .seg-thumb {
+  opacity: 0;
+}
+.meal-pick-search {
+  width: 100%;
+  /* 16px: a phone must not zoom into the sheet when it takes the caret */
+  font-size: max(16px, 1rem);
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+.meal-pick-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.meal-pick-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  border-bottom: 1px solid var(--hairline);
+}
+.meal-pick-item:last-child {
+  border-bottom: 0;
+}
+.meal-pick-row {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 6px 6px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+.meal-pick-row:hover {
+  background: var(--surface-2);
+}
+.meal-pick-row.on {
+  color: var(--accent-text);
+  font-weight: 600;
+}
+.meal-pick-mark {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 9px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+.meal-pick-row.new .meal-pick-mark {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+.meal-pick-row.new .meal-pick-name {
+  color: var(--accent-text);
+  font-weight: 600;
+}
+.meal-pick-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* "11 days ago", "went 3 days ago": what to choose by, quiet beside the name */
+.meal-pick-when {
+  flex: none;
+  max-width: 48%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.8125rem;
+  font-weight: 400;
+  color: var(--muted);
+}
+/* a quick pick's name and what it means, one over the other */
+.meal-pick-row.quick .meal-pick-name {
+  display: flex;
+  flex-direction: column;
+  white-space: normal;
+}
+.meal-pick-hint {
+  font-size: 0.8125rem;
+  font-weight: 400;
+  color: var(--muted);
+}
+.meal-pick-tick {
+  flex: none;
+  color: var(--accent-text);
+}
+.meal-pick-star {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 40px;
+  min-height: 40px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--muted);
+}
+.meal-pick-star:hover {
+  background: var(--surface-2);
+}
+.meal-pick-star.on {
+  color: var(--accent-text);
+}
+.meal-pick-group {
+  margin: 4px 0 2px;
+  text-align: left;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.meal-pick-found {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.meal-pick-empty {
+  margin: 4px 0;
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+.meal-pick-foot {
+  justify-content: flex-start;
+}
+@media (pointer: coarse) {
+  .meal-pick-row {
+    min-height: 52px;
+  }
+  .meal-pick-star {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+@media (max-width: 640px) {
+  /* the label over its track on a phone: "Who's cooking" beside J | M still fits, For's track takes the line */
+  .meal-pick-label {
+    width: auto;
+    min-width: 2.5rem;
+  }
+}
+
+/* the row's choice, a button that opens the picker (the calendar's day sheet) */
+.meal-slot-choose {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--text);
+  text-align: left;
+}
+.meal-slot-chosen {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.meal-slot-placeholder {
+  flex: 1;
+  color: var(--muted);
+  font-weight: 400;
+}
+.meal-slot-chevron {
+  flex: none;
+  color: var(--muted);
+}
+@media (pointer: coarse) {
+  .meal-slot-choose {
+    min-height: 44px;
+  }
+}
+
 /* ---- Add-to-a-day menu, and meals in the day sheet --------------------- */
 /* The + on a week day header asks "task or meal?" rather than silently
    meaning task, which left no route to a meal from the calendar at all. */

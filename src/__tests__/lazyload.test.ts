@@ -138,6 +138,9 @@ const LAZY_VIEWS = ['Calendar', 'TasksTable', 'Board', 'Finance', 'NotesView', '
 /** …and what only they use, which must travel with them. */
 const LAZY_ONLY = [
   ...['TaskCard', 'GithubCard', 'RichNotes', 'MealSlotRow', 'PeoplePicker'].map(component),
+  // the meal picker (the Kitchen's, the calendar's, the chat's and the planning
+  // sheets') and This week's day cards
+  ...['MealPicker', 'kitchen/MealCards'].map(component),
   // Finance draws Bills inside it (v3.27), so the month of bills travels with
   // the paydays and the accounts rather than shipping as a second chunk
   component('Bills'),

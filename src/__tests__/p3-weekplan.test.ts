@@ -36,10 +36,10 @@ const event = (id: string, title: string, start: string, end: string, over: Row 
 
 function items(): Row[] {
   return [
-    // what has been cooked, and when
-    recipe('fav'),
+    // what has been cooked, and when: the two cooked most are ★ favourites
+    recipe('fav', { favourite: true }),
     ...cooked('fav', '2026-08-20', '2026-08-10', '2026-07-20', '2026-06-15', '2026-05-01'),
-    recipe('mid'),
+    recipe('mid', { favourite: true }),
     ...cooked('mid', '2026-08-01', '2026-07-01', '2026-06-01'),
     recipe('a'),
     ...cooked('a', '2026-07-15', '2026-05-15'),
@@ -115,15 +115,18 @@ describe('targetWeek', () => {
 })
 
 describe('dinners', () => {
-  it('fills the empty nights: favourites on quiet ones, one new recipe on Saturday, a busy night named', () => {
+  it('fills the empty nights in the Favourites rotation’s order: ★ favourites on quiet ones, one new recipe on Saturday, a busy night named', () => {
+    // the ★ ones first, the longest since first; then the rest, the longest since first
     expect(plan.dinners.map(d => [d.date, d.recipeId, d.busy, d.isNew])).toEqual([
-      ['2026-09-20', 'fav', null, false],
+      ['2026-09-20', 'mid', null, false],
       ['2026-09-23', 'd', "Parents' evening", false],
-      ['2026-09-24', 'mid', null, false],
-      ['2026-09-25', 'a', null, false],
+      ['2026-09-24', 'fav', null, false],
+      ['2026-09-25', 'old', null, false],
       ['2026-09-26', 'never2', null, true],
     ])
-    expect(plan.dinners[0].why).toBe('Cooked 5× in six months · last 27 days ago')
+    expect(plan.dinners[0].why).toBe('★ Cooked 3× in six months · last 46 days ago')
+    expect(plan.dinners[2].why).toBe('★ Cooked 5× in six months · last 27 days ago')
+    expect(plan.dinners[3].why).toBe('Last cooked 289 days ago')
     expect(plan.dinners[4].why).toBe('Something new: saved, never cooked')
   })
 
@@ -144,7 +147,7 @@ describe('dinners', () => {
       expect(d.alternatives.length).toBeLessThanOrEqual(3)
       for (const alt of d.alternatives) expect(picks).not.toContain(alt)
     }
-    expect(plan.dinners[0].alternatives).toEqual(['c', 'b', 'old'])
+    expect(plan.dinners[0].alternatives).toEqual(['c', 'b', 'a'])
     expect(plan.dinners.filter(d => d.isNew)).toHaveLength(1)
   })
 
@@ -244,7 +247,7 @@ describe('the proposal as a whole', () => {
   it('leaves out whatever was dismissed, and hands a dismissed night’s recipe to another', () => {
     const d = proposeWeek(items(), { ...opts, dismissed: ['dinner:2026-09-20', 'person:p-over', 'resched:u1', 'bill:b-water', 'top:0'] }) as WeekPlan
     expect(d.dinners.map(x => x.date)).not.toContain('2026-09-20')
-    expect(d.dinners.find(x => x.recipeId === 'fav')?.date).toBe('2026-09-24')
+    expect(d.dinners.find(x => x.recipeId === 'mid')?.date).toBe('2026-09-24')
     expect(d.people.map(p => p.personId)).not.toContain('p-over')
     expect(d.overdue.map(r => r.taskId)).not.toContain('u1')
     expect(d.bills).toEqual([])

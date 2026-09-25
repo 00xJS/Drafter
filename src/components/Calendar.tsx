@@ -16,7 +16,7 @@ import {
   weekLabel,
   workByDay,
 } from '../calgrid'
-import { cookedIndex, visitIndex, mealLabel, mealsByDay, mealsForSlot } from '../kitchen'
+import { cookedIndex, visitIndex, mealLabel, mealsByDay, mealsForSlot, type KitchenMember } from '../kitchen'
 import { mealWay, savedPlaces, type MealWay } from '../kitchenstats'
 import { plannedGift } from '../people'
 import { matchPlace, placeEmoji } from '../places'
@@ -46,6 +46,8 @@ interface Props {
   myId?: string | null
   nameOf?(id: string | undefined): string | null
   inHousehold?: boolean
+  /** The household, for who's cooking a shared dish in the meal picker. */
+  members?: readonly KitchenMember[]
   /** For the day sheet's meal pickers: what you can cook, and where you can eat. */
   recipes: Recipe[]
   places: Place[]
@@ -60,6 +62,8 @@ interface Props {
   onCreatePlace(name: string, category: PlaceCategory): Place
   /** Save a new recipe (name only) from the meal picker and hand it back. */
   onCreateRecipe(name: string): Recipe
+  /** ★ a recipe, or not, from the meal picker's Cook list. */
+  onStarRecipe?(recipe: Recipe): void
   /** Open the event editor for a new entry starting at this instant; `work` opens it as a work day. */
   onNewEvent(startIso: string, work?: WorkMode): void
   /** Open the event editor on one of our own entries. */
@@ -129,6 +133,7 @@ export function Calendar({
   myId,
   nameOf,
   inHousehold,
+  members,
   recipes,
   places,
   events,
@@ -139,6 +144,7 @@ export function Calendar({
   onClearMeal,
   onCreatePlace,
   onCreateRecipe,
+  onStarRecipe,
   onNewEvent,
   onEditEvent,
   onReschedule,
@@ -620,13 +626,16 @@ export function Calendar({
                 nameOf={nameOf}
                 inHousehold={inHousehold}
                 myId={myId}
+                members={members}
                 recipes={recipes}
+                meals={meals}
                 cooked={cooked}
                 visited={visited}
                 places={places}
                 onSave={onSaveMeal}
                 onClear={onClearMeal}
                 onCreatePlace={onCreatePlace}
+                onStar={onStarRecipe}
               />
             )
           })}
