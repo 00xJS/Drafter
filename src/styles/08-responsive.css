@@ -561,6 +561,15 @@
   .modal-body {
     overflow-y: auto;
   }
+  /* The body is the one part of a sheet that gives way when it is too tall;
+     its title bar and its footer keep what they hold. The native bar's 80px
+     min-height (19-native-shell.css) is a floor, and a floor on a flex item
+     replaced its content-sized minimum: a long form squeezed the header to
+     that floor, and a title taller than it drew over the form. */
+  .modal-head,
+  .modal-foot {
+    flex-shrink: 0;
+  }
 
   /* "Discard changes?" keeps its own size on a phone, at the foot of the
      screen where the thumb already is, rather than the sheet's full height */

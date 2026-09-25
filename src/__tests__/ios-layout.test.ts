@@ -1,0 +1,49 @@
+import { describe, expect, it } from 'vitest'
+import { sheetSource } from './source'
+
+/*
+ * What an automated WebKit sweep of every screen at 375, 402 and 440pt found
+ * on an iPhone, held here in the sheet as each was fixed. The sweep measures
+ * them (overflow, clipping, titles out of their header, tap targets); these
+ * keep the rules that fixed them from being undone by a later edit.
+ */
+
+const css = sheetSource().replace(/\/\*[\s\S]*?\*\//g, '')
+
+/** Each `@media (…) { … }` block whose condition is exactly `query`, by its body. */
+const media = (query: string) => {
+  const out: string[] = []
+  for (let at = css.indexOf(`@media ${query} {`); at >= 0; at = css.indexOf(`@media ${query} {`, at + 1)) {
+    let depth = 0
+    const open = css.indexOf('{', at)
+    for (let i = open; i < css.length; i++) {
+      if (css[i] === '{') depth++
+      else if (css[i] === '}' && --depth === 0) {
+        out.push(css.slice(open + 1, i))
+        break
+      }
+    }
+  }
+  return out
+}
+const PHONE = '(max-width: 640px)'
+/** The declarations of every rule for exactly `selector` in `text`, run together. */
+const rule = (text: string, selector: string) =>
+  [...text.matchAll(new RegExp(`(?:^|[{}])\\s*${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{([^}]*)\\}`, 'gm'))].map(m => m[1]).join(';')
+/** …in a phone block. */
+const phone = (selector: string) => media(PHONE).map(b => rule(b, selector)).join(';')
+
+describe('a sheet’s title stays in its header', () => {
+  it('gives a compose sheet’s title two lines, then an ellipsis', () => {
+    const title = rule(css, '.modal-head-compose h2')
+    expect(title).toMatch(/-webkit-line-clamp:\s*2/)
+    expect(title).toMatch(/display:\s*-webkit-box/)
+    expect(title).toMatch(/overflow:\s*hidden/)
+  })
+
+  it('never lets a phone sheet’s header or footer shrink below what they hold', () => {
+    // the native header's 80px min-height is a floor, and it replaced the
+    // content-sized minimum: a long form squeezed the header to it
+    expect(phone('.modal-head,\n  .modal-foot')).toMatch(/flex-shrink:\s*0/)
+  })
+})
