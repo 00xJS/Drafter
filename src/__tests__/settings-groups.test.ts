@@ -49,7 +49,7 @@ describe('Settings groups: one registry, every group drawn and styled', () => {
 
   it('folds the groups that are not about you behind More…', () => {
     const advanced = [...shell.matchAll(/\{\s*key:\s*'([\w-]+)'[^}]*?advanced:\s*true/g)].map(m => m[1])
-    expect(advanced).toEqual(['reminders', 'calendars', 'assistants', 'data'])
+    expect(advanced).toEqual(['calendars', 'assistants', 'data'])
     // the group you are ON stays in the nav even while it is folded away,
     // or landing on it from a link would leave nothing showing as selected
     expect(shell).toContain("(!g.advanced || more || g.key === group)")

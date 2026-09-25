@@ -4,7 +4,7 @@
 import { keyHeaders, userHeaders } from './supabasekeys.mjs'
 
 /**
- * Settings → Reminders → "Calendar copies remind me too", kept in the
+ * Settings → Notifications → "Calendar copies remind me too", kept in the
  * account's own sign-in metadata: every device and every mirror function reads
  * the same answer, and no column had to be added for one switch. The app sets
  * it (setCopyReminders in src/calendars.ts); getUser reads it on every request.

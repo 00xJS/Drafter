@@ -21,7 +21,7 @@ import { focusTasks } from '../shared/today.mts'
 // reads it). Everything in the snapshot is decided here, by the rules Today
 // uses, so the widget never disagrees with the page. It carries the signed-in
 // member's own day only: tasks, time blocks and meals, never the journal or
-// anything else personal, and only counts when Settings → Reminders → Hide
+// anything else personal, and only counts when Settings → Notifications → Hide
 // details on the lock screen is on.
 //
 // Siri's intents cannot run it either, and have no network. They queue what
@@ -262,7 +262,7 @@ export interface WidgetBridge {
 export function createWidgetBridge(deps: {
   plugin: WidgetBridgePlugin
   store(): WidgetStore
-  /** Settings → Reminders → Hide details on the lock screen. */
+  /** Settings → Notifications → Hide details on the lock screen. */
   generic(): boolean
   now?(): Date
   newId?(): string

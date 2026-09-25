@@ -299,7 +299,7 @@ export function setGenericRemindersEnabled(on: boolean): void {
 const PLAN_DAY_KEY = 'drafter:plan-day-reminder'
 
 /**
- * The morning's Plan your day on this phone (Settings → Reminders): a local
+ * The morning's Plan your day on this phone (Settings → Notifications): a local
  * notification every day at `time` that opens Plan my day. With push and the
  * email digest off it is the one thing that reaches you outside the app, so it
  * is on by default, at 8:00.

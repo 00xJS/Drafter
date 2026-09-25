@@ -48,7 +48,7 @@ const SETTINGS_GROUPS: SettingsGroupDef[] = [
   { key: 'you', label: 'You', needsAccount: true, sections: [Profile, Account] },
   { key: 'appearance', label: 'Appearance', sections: [Appearance, Lock] },
   { key: 'household', label: 'Household', needsAccount: true, sections: [Household, AdminLink] },
-  { key: 'reminders', label: 'Reminders', advanced: true, sections: [Reminders] },
+  { key: 'reminders', label: 'Notifications', sections: [Reminders] },
   { key: 'calendars', label: 'Calendars', advanced: true, sections: [Calendars] },
   { key: 'assistants', label: 'Assistants', needsAccount: true, advanced: true, sections: [Assistants] },
   { key: 'data', label: 'Data', advanced: true, sections: [Sync, ImportExport, EmailIn, Templates, About] },

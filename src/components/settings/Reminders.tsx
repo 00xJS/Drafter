@@ -291,8 +291,8 @@ export function Reminders({ store, household, supabaseOn }: SettingsCtx) {
 
   return (
     <section className="settings-section g-reminders">
-      <h3>Reminders</h3>
-      <h4>Push notifications (works with the app closed)</h4>
+      <h3>Notifications</h3>
+      <h4>Push notifications: household messages, shared tasks and the morning digest, even with the app closed</h4>
       {push?.configured ? (
         <>
           <p className="sync-line">

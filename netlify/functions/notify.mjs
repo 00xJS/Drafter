@@ -17,7 +17,7 @@
 // actor must be able to read the task, and each recipient must be in the
 // actor's household and able to read it too. A task its owner keeps private
 // tells nobody anything. A recipient who switched "Tell me when someone
-// updates a task we share" off (Settings → Reminders) gets neither.
+// updates a task we share" off (Settings → Notifications) gets neither.
 //
 // What: one notice per recipient, task and quarter of an hour (lib/notices.mjs
 // merges the rest in as lines), and a push under the tag task-<id>, so the

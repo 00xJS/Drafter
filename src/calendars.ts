@@ -978,7 +978,7 @@ export function resetGooglePushCursor(userId?: string | null): void {
 //
 // Drafter sends every reminder itself — the iPhone's own, and push — so the
 // copies the mirrors write into Google and every Outlook account carry none.
-// "Calendar copies remind me too" (Settings → Reminders, off by default) brings
+// "Calendar copies remind me too" (Settings → Notifications, off by default) brings
 // each calendar's own back. It lives in the account's sign-in metadata, which
 // the mirror functions read with the session (COPY_REMINDERS_KEY in
 // netlify/functions/lib/session.mjs), so every device agrees without a column
