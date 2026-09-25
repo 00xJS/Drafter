@@ -147,3 +147,19 @@ describe('a finger’s 44pt round the small controls', () => {
     expect(select).not.toMatch(/url\(/)
   })
 })
+
+describe('press and hold in the app', () => {
+  it('selects nothing the app draws, and calls out nothing', () => {
+    const body = rule(css, 'html.native body')
+    expect(body).toMatch(/-webkit-user-select:\s*none/)
+    expect(body).toMatch(/-webkit-touch-callout:\s*none/)
+    // the web is left alone
+    expect(css).not.toMatch(/(?:^|[},])\s*body\s*\{[^}]*user-select:\s*none/m)
+  })
+
+  it('keeps what is written selectable: fields, the notes pad, the journal, a chat message', () => {
+    const written = rule(css, "html.native input,\nhtml.native textarea,\nhtml.native [contenteditable]:not([contenteditable='false']),\nhtml.native .journal-body,\nhtml.native .chat-bubble,\nhtml.native .ask-answer")
+    expect(written).toMatch(/-webkit-user-select:\s*text/)
+    expect(written).toMatch(/-webkit-touch-callout:\s*default/)
+  })
+})

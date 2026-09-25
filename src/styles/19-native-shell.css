@@ -20,6 +20,29 @@
   -webkit-overflow-scrolling: touch;
 }
 
+/* Press and hold. A long press on a button, a row, a chip, a card or the tab
+   bar selected its words and put up Copy · Look Up, and on a photo the image
+   menu — the other giveaway of a web page. Nothing the app draws selects or
+   calls out; what is written in it still does, as in any notes or messages
+   app: a field, the notes pad, the journal's own words, a chat message, an
+   answer to a question. The two properties are said on those again, as
+   WebKit has left fields under an unselectable page unable to take a caret. */
+html.native body {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+html.native input,
+html.native textarea,
+html.native [contenteditable]:not([contenteditable='false']),
+html.native .journal-body,
+html.native .chat-bubble,
+html.native .ask-answer {
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+}
+
 /* HIG tap floor. Every control below reads this so a 36/40/29 mix cannot
    creep back in as three different guesses. */
 .native {
