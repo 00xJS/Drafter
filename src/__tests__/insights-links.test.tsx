@@ -79,6 +79,16 @@ describe('the monthly recap’s push', () => {
   })
 })
 
+describe('the links to Insights → Stats', () => {
+  it('open an area’s figures, the year, or the Highlights for a bare ?view=stats', () => {
+    const { apply, calls } = links()
+    apply('/?view=stats-people')
+    apply('/?view=stats-year')
+    apply('/?view=stats')
+    expect(calls).toEqual(['lens ["people"]', 'lens ["year"]', 'lens []'])
+  })
+})
+
 describe('the recap’s row in the hub', () => {
   function opener() {
     const calls: string[] = []

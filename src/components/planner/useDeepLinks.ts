@@ -189,6 +189,10 @@ export function useDeepLinks({
       openJournal()
     } else if (insightsTab) {
       openReview()
+    } else if (movedView === 'insights') {
+      // ?view=stats named the lens, a tab of its own until v3.29: Insights →
+      // Stats, on the Highlights, whatever page or segment was up before
+      openLens()
     } else if (movedView) {
       setView(movedView)
     } else if (parsed.view && (VIEWS as string[]).includes(parsed.view)) {
