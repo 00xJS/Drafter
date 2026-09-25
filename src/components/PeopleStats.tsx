@@ -231,7 +231,7 @@ export function PeopleStats({ people, tasks, entries = NO_ENTRIES, filter, onFil
               <StatTile
                 label="This month"
                 value={`${tiles.thisMonth.days} of ${tiles.thisMonth.of}`}
-                sub="days with someone so far"
+                sub="days with someone"
                 trend={<DeltaBadge by={tiles.thisMonth.days - lastMonth} than="on last month so far" />}
               />
             )}

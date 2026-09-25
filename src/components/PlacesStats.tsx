@@ -204,7 +204,7 @@ export function PlacesStats({ places, people, tasks, meals, filter, onFilter, on
           <StatTile
             label="Outings this month"
             value={String(tiles.outingsThisMonth)}
-            sub={`in ${MONTHS[now.getMonth()]} so far`}
+            sub={`in ${MONTHS[now.getMonth()]}`}
             trend={<DeltaBadge by={tiles.outingsThisMonth - before.month} than="on last month so far" />}
           />
         )}
