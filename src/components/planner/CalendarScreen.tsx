@@ -32,6 +32,8 @@ export function CalendarScreen({ p }: { p: PlannerCtx }) {
         myId={household.myId}
         nameOf={id => memberName(household.info, id)}
         inHousehold={p.inHousehold}
+        // who's cooking a shared dish, in the day sheet's meal picker
+        members={p.inHousehold ? (household.info?.members ?? []) : []}
         recipes={store.recipes}
         places={store.places}
         onSaveMeal={saveMeal}

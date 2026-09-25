@@ -388,7 +388,8 @@
     min-height: var(--touch);
     gap: 10px;
   }
-  .native .meal-slot select {
+  .native .meal-slot select,
+  .native .meal-slot-choose {
     min-height: var(--touch);
     padding: 10px 12px;
     border-radius: 10px;

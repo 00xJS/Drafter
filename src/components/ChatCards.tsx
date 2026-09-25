@@ -273,6 +273,7 @@ function MealEdit({ action, data, on, onSave, onCancel }: { action: ActionOf<'pl
         meal={chosen}
         recipes={data.recipes}
         places={data.places}
+        meals={data.meals}
         mainOnly
         onSave={m =>
           setDraft(d => {

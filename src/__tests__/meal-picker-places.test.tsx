@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { MealSlotRow } from '../components/MealSlotRow'
+import { MealPicker } from '../components/MealPicker'
 import { lastWentShort, visitIndex } from '../kitchen'
 import { Meal, Place, Task } from '../types'
 
@@ -28,30 +28,32 @@ describe('when each place was last gone to', () => {
     expect(lastWentShort(ix, 'pizza')).toBe('new')
   })
 
-  it('says it beside each place in the picker, but not on the one chosen', () => {
+  it('says it beside each place under Eat out, and ticks the one chosen', () => {
     const html = text(
       renderToStaticMarkup(
-        <MealSlotRow
+        <MealPicker
           date="2026-09-12"
           slot="dinner"
           meal={ateOut('2026-09-12', 'grill', 'dinner')}
           recipes={[]}
           places={[grill, cafe, pizza]}
           visited={ix}
-          onSave={() => {}}
-          onClear={() => {}}
+          onPick={() => {}}
           onCreatePlace={() => grill}
+          onClose={() => {}}
         />,
       ),
     )
-    expect(html).toContain('Corner Cafe · 3 days ago</option>')
-    expect(html).toContain('Pizza Place · new</option>')
-    // the closed picker is that night's dinner, so the chosen place reads its name alone
-    expect(html).toContain('Grill House</option>')
+    // a meal out opens on Eat out
+    expect(html).toContain('<span class="meal-pick-name">Corner Cafe</span><span class="meal-pick-when">went 3 days ago</span>')
+    expect(html).toContain('<span class="meal-pick-name">Pizza Place</span><span class="meal-pick-when">never been</span>')
+    expect(html).toMatch(/class="meal-pick-row on" aria-pressed="true">[^]*?Grill House/)
   })
 
   it('reads names only when no index is given', () => {
-    const html = text(renderToStaticMarkup(<MealSlotRow date="2026-09-12" slot="dinner" recipes={[]} places={[cafe]} onSave={() => {}} onClear={() => {}} onCreatePlace={() => cafe} />))
-    expect(html).toContain('Corner Cafe</option>')
+    const html = text(
+      renderToStaticMarkup(<MealPicker date="2026-09-12" slot="dinner" meal={ateOut('2026-09-12', 'cafe', 'dinner')} recipes={[]} places={[cafe]} onPick={() => {}} onCreatePlace={() => cafe} onClose={() => {}} />),
+    )
+    expect(html).toContain('<span class="meal-pick-name">Corner Cafe</span><span class="meal-pick-when"></span>')
   })
 })

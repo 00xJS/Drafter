@@ -8,7 +8,7 @@ import { dateKey } from '../utils'
 import { readWeekPlanDismissed, rememberWeekPlanDismissed, weekPlanDismissedKey } from '../weekplanstore'
 import { CalendarEntry, Meal, Person, Place, PlaceCategory, Recipe, Task } from '../types'
 import { aiFailureText } from './AskSheet'
-import { MealSlotRow } from './MealSlotRow'
+import { MealPicker } from './MealPicker'
 import { Modal, ModalHead } from './Modal'
 
 // "Plan next week": the proposal from shared/weekplan.mts as rows to tick —
@@ -98,11 +98,16 @@ export { readWeekPlanDismissed, rememberWeekPlanDismissed, weekPlanDismissedKey 
 /** "Sun 20 Sep", read at local noon so no zone can move it a day. */
 const dayLabel = (key: string) => new Date(`${key}T12:00:00`).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })
 
-/** A synthetic meal for MealSlotRow to show the pick; only its fields are read back. */
-function asMeal(date: string, p: DinnerPick): Meal | undefined {
+/**
+ * A stand-in meal for the picker to tick the night's pick on; only its fields
+ * are read back. It carries the member's own id (mealId), never the
+ * household-wide legacy one, so nothing built on it could land in another
+ * member's row. The dinners themselves are written by weekPlanWrites.
+ */
+export function asMeal(date: string, p: DinnerPick, myId: string | null = null): Meal | undefined {
   if (!p.recipeId && !p.out) return undefined
   const stamp = '1970-01-01T00:00:00.000Z'
-  return { kind: 'meal', id: mealId(date, 'dinner'), date, slot: 'dinner', title: p.title, recipeId: p.recipeId, out: p.out, placeId: p.placeId, createdAt: stamp, updatedAt: stamp }
+  return { kind: 'meal', id: mealId(date, 'dinner', myId), date, slot: 'dinner', title: p.title, recipeId: p.recipeId, out: p.out, placeId: p.placeId, createdAt: stamp, updatedAt: stamp }
 }
 
 type Polish = { status: 'idle' } | { status: 'busy' } | { status: 'done'; input: WeekPolishInput; result: WeekPolish } | { status: 'failed'; message: string }
@@ -262,30 +267,26 @@ export function WeekPlanSheet({ plan, recipes, places, people, meals, tasks, ent
                             <button type="button" className="btn subtle" onClick={() => swap(d)} disabled={swapTo(d) === null}>
                               Swap
                             </button>
-                            <button type="button" className="btn subtle" aria-expanded={picking === d.key} onClick={() => setPicking(p => (p === d.key ? null : d.key))}>
+                            <button type="button" className="btn subtle" aria-haspopup="dialog" onClick={() => setPicking(d.key)}>
                               Pick…
                             </button>
                           </div>
                           {picking === d.key && (
-                            <MealSlotRow
+                            <MealPicker
                               date={d.date}
                               slot="dinner"
-                              meal={asMeal(d.date, x.pick)}
+                              meal={asMeal(d.date, x.pick, myId)}
                               recipes={recipes}
                               places={places}
+                              meals={meals}
                               cooked={cooked}
                               visited={visited}
                               mainOnly
-                              onSave={m => {
-                                setDinner(d.key, { on: true, pick: { recipeId: m.recipeId, out: m.out, placeId: m.placeId, title: m.title } })
-                                setPicking(null)
-                              }}
-                              onClear={() => {
-                                setDinner(d.key, { on: false, pick: { title: '' } })
-                                setPicking(null)
-                              }}
+                              onPick={({ main }) => setDinner(d.key, { on: true, pick: { recipeId: main.recipeId, out: main.out, placeId: main.placeId, title: main.title } })}
+                              onRemove={() => setDinner(d.key, { on: false, pick: { title: '' } })}
                               onCreatePlace={onCreatePlace}
                               onCreateRecipe={onCreateRecipe}
+                              onClose={() => setPicking(null)}
                             />
                           )}
                         </div>

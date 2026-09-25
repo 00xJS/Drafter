@@ -5,6 +5,7 @@ import { mealAssistInput } from '../ai'
 import { buildCorpus, factsFor, parseQuestion } from '../ask'
 import type { AskSources } from '../ask'
 import { Kitchen, RecipeCook } from '../components/Kitchen'
+import { MealPicker } from '../components/MealPicker'
 import { MealSlotRow } from '../components/MealSlotRow'
 import {
   buildGroceryList,
@@ -311,14 +312,25 @@ describe('the meal slot row', () => {
       />,
     )
 
-  it('says beside each recipe when it was last cooked — but not beside the one chosen', () => {
+  it('shows the meal chosen, as the button that opens the picker, and an empty slot as Choose…', () => {
     const html = row({ meal: withSides(DAY, undefined) })
-    expect(html).toContain('<option value="r:curry" selected="">🍛 Chicken curry</option>')
-    expect(html).toContain('<option value="r:rice">🍚 Rice · 2 days ago</option>')
-    expect(html).toContain('<option value="r:chilli">Chilli · 6 weeks ago</option>')
-    expect(html).toContain('<option value="r:pho">Pho · new</option>')
-    // without the history it reads names only, as it always did
-    expect(row({ cooked: undefined })).toContain('<option value="r:rice">🍚 Rice</option>')
+    expect(html).toContain('aria-label="Dinner on 2026-09-17: Chicken curry"')
+    expect(html).toContain('<span class="meal-slot-chosen"><span aria-hidden="true">🍛 </span>Chicken curry</span>')
+    expect(html).not.toContain('<select')
+    expect(row()).toContain('aria-label="Dinner on 2026-09-17: choose"')
+    expect(row()).toContain('<span class="meal-slot-placeholder">Choose…</span>')
+  })
+
+  it('says beside each recipe in the picker when it was last had, and never had for one never cooked', () => {
+    const html = renderToStaticMarkup(
+      <MealPicker date={DAY} slot="dinner" meal={withSides(DAY, undefined)} recipes={recipes} places={[]} meals={meals} cooked={ix} onPick={noop} onCreatePlace={() => { throw new Error('not in a render') }} onClose={noop} />,
+    )
+    const row = (name: string) => html.match(new RegExp(`<span class="meal-pick-name">${name}</span><span class="meal-pick-when">([^<]*)</span>`))?.[1]
+    expect(row('Rice')).toBe('2 days ago')
+    expect(row('Chilli')).toBe('on Tue')
+    expect(row('Pho')).toBe('never had')
+    // the one chosen is ticked where it stands
+    expect(html).toMatch(/<button type="button" class="meal-pick-row on" aria-pressed="true">[\s\S]*?Chicken curry/)
   })
 
   it('offers + Side on a cooked dinner, and shows each side under the main with a way to take it off', () => {
@@ -330,7 +342,7 @@ describe('the meal slot row', () => {
     expect(html).toContain('<span class="meal-side-name">garlic bread</span>')
     expect(html).toContain('aria-label="Remove Rice"')
     expect(html).toContain('aria-label="Remove garlic bread"')
-    expect(html.indexOf('class="meal-sides"')).toBeGreaterThan(html.indexOf('</select>'))
+    expect(html.indexOf('class="meal-sides"')).toBeGreaterThan(html.indexOf('meal-slot-choose'))
     expect(row({ slot: 'lunch', meal: meal(DAY, 'lunch', { recipeId: 'pho', title: 'Pho' }) })).toContain('>+ Side</button>')
   })
 
@@ -342,12 +354,12 @@ describe('the meal slot row', () => {
     expect(html).toContain('meal-slot-label')
   })
 
-  it('offers Just me / Household on your meal, not a Share toggle', () => {
+  it('offers For — Both of us / Just me — on your meal, not a Share toggle', () => {
     const mine = meal(DAY, 'breakfast', { title: 'Oats' })
     const html = row({ slot: 'breakfast', meal: mine, inHousehold: true, myId: 'me' })
-    expect(html).toContain('Who sees this')
+    expect(html).toContain('aria-label="Who breakfast on 2026-09-17 is for"')
     expect(html).toContain('Just me')
-    expect(html).toContain('Household')
+    expect(html).toContain('Both of us')
     expect(html).toContain('Only on your week.')
     expect(html).not.toContain('>Share</button>')
     expect(row({ slot: 'dinner', meal: { ...mine, slot: 'dinner', shared: true }, inHousehold: true, myId: 'me' })).toContain('On their week too, and as a cook task.')
@@ -359,9 +371,9 @@ describe('the meal slot row', () => {
     expect(html).toContain('Tacos')
     expect(html).toContain('Maria shared this with the household')
     expect(html).toContain('Plan my own')
-    expect(html).not.toContain(`aria-label="Dinner on ${DAY}"`)
+    expect(html).not.toContain('meal-slot-choose')
     expect(html).not.toContain('>Share</button>')
-    expect(html).not.toContain('Who sees this')
+    expect(html).not.toContain('meal-audience')
   })
 
   it('names a leftover household plan without offering Share on it', () => {
@@ -370,7 +382,7 @@ describe('the meal slot row', () => {
     const html = row({ meal: mine, theirs: [hers], inHousehold: true, myId: 'me', nameOf: id => (id === 'maria' ? 'Maria' : null) })
     expect(html).toContain('Maria: Tacos')
     expect(html).toContain('shared with the household')
-    expect(html).toContain('Who sees this')
+    expect(html).toContain('meal-audience')
     expect(html).not.toContain('>Share</button>')
   })
 

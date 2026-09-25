@@ -16,7 +16,7 @@ import {
   weekLabel,
   workByDay,
 } from '../calgrid'
-import { cookedIndex, visitIndex, mealLabel, mealsByDay, mealsForSlot } from '../kitchen'
+import { cookedIndex, visitIndex, mealLabel, mealsByDay, mealsForSlot, type KitchenMember } from '../kitchen'
 import { mealWay, savedPlaces, type MealWay } from '../kitchenstats'
 import { plannedGift } from '../people'
 import { matchPlace, placeEmoji } from '../places'
@@ -46,6 +46,8 @@ interface Props {
   myId?: string | null
   nameOf?(id: string | undefined): string | null
   inHousehold?: boolean
+  /** The household, for who's cooking a shared dish in the meal picker. */
+  members?: readonly KitchenMember[]
   /** For the day sheet's meal pickers: what you can cook, and where you can eat. */
   recipes: Recipe[]
   places: Place[]
@@ -129,6 +131,7 @@ export function Calendar({
   myId,
   nameOf,
   inHousehold,
+  members,
   recipes,
   places,
   events,
@@ -620,7 +623,9 @@ export function Calendar({
                 nameOf={nameOf}
                 inHousehold={inHousehold}
                 myId={myId}
+                members={members}
                 recipes={recipes}
+                meals={meals}
                 cooked={cooked}
                 visited={visited}
                 places={places}

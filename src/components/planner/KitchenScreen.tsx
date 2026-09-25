@@ -10,6 +10,8 @@ export function KitchenScreen({ p }: { p: PlannerCtx }) {
       myId={store.myId}
       nameOf={id => memberName(household.info, id)}
       inHousehold={p.inHousehold}
+      // who's cooking a shared dish: J or M on its card and in the picker
+      members={p.inHousehold ? (household.info?.members ?? []) : []}
       recipes={store.recipes}
       meals={store.meals}
       groceries={store.groceries}
