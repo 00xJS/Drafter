@@ -26,7 +26,9 @@
 // still fails the webhook answers 503, so the mail service tries again and the
 // retry, finding the task by its id, hands it over then. A task an older build
 // left with the site owner is handed over the same way when its email comes
-// again.
+// again. And the task is its owner's alone until they share it (shared:
+// false), as every new task is: a forwarded email's whole body used to be on
+// the housemate's Tasks.
 //
 // Every outbound call runs against one deadline (BUDGET_MS), so one slow
 // answer from Supabase cannot hold the webhook open until the platform kills it.
@@ -233,6 +235,8 @@ export default async req => {
     tags: ['email'],
     notes: from ? `From: ${from}` : undefined,
     link: (body.match(/https?:\/\/\S+/) ?? [])[0],
+    // private until its owner shares it, like every new task (v3.23)
+    shared: false,
   }
   // as its owner, from the start; before v3.34, stored and then handed over
   const stored = await writeAs(row.user_id, [task], { handOver: true, request: supabase })

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { TRIAGE_MS, runTriage } from '../../netlify/functions/lib/triage.mjs'
 // @ts-expect-error — a function file ships with no .d.mts: Netlify would deploy one as a function of its own
 import inboundFunction, { BUDGET_MS, CALL_MS, RATE_LIMIT, mailTaskId, titleFromMail } from '../../netlify/functions/inbound.mjs'
+import { readableRow } from '../../shared/kinds.mts'
 
 // Email-in stored the raw task, then asked the model to refine it inside the
 // webhook with nine seconds to go (a model that takes twenty), parsed its
@@ -276,6 +277,16 @@ describe('an email is filed once', () => {
 })
 
 describe('what an email files', () => {
+  // A task is the household's unless it says otherwise, and every other path
+  // that makes one writes shared: false. Email-in did not, so a forwarded
+  // email's whole body was on the housemate's Tasks.
+  it('a task its owner alone reads until they share it', async () => {
+    await answer(email())
+    expect(stored[0]).toMatchObject({ kind: 'task', shared: false })
+    expect(readableRow(stored[0], OWNER, OWNER)).toBe(true)
+    expect(readableRow(stored[0], OWNER, 'user-two')).toBe(false)
+  })
+
   it('the HTML part, as text, when the text part is empty or missing', async () => {
     await answer(email({ subject: 'Your order', text: '', html: '<html><body><p>Hello <b>there</b>,</p><p>Your order ships Friday &amp; arrives Monday.</p><script>track()</script></body></html>' }))
     const html = new FormData()
