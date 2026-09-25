@@ -191,14 +191,15 @@ export function parseLink(params: URLSearchParams, opts?: { host?: string; allow
 }
 
 /**
- * A tapped push's link, as the app's own. The server writes the site's full
- * address into a push (the digest's `https://…/?plan=day`, a task's
- * `https://…/?task=…`, a message's `https://…/?chat=household`), which a
- * browser opens as it is. Inside the iPhone app the page is
- * capacitor://drafter, so that address named some other host and parseLink
- * ignored it: the tap opened the app and nothing in it. Only what the app
- * reads is kept — the path and the query. A drafter:// link, or one already
- * relative, is left as it is.
+ * A tapped push's link, or a Universal Link's, as the app's own. The server
+ * writes the site's full address into a push (the digest's
+ * `https://…/?plan=day`, a task's `https://…/?task=…`, a message's
+ * `https://…/?chat=household`), and a link to the site tapped in Mail or
+ * Messages opens the app with its full address too; a browser opens either as
+ * it is. Inside the iPhone app the page is capacitor://drafter, so that
+ * address named some other host and parseLink ignored it: the tap opened the
+ * app and nothing in it. Only what the app reads is kept — the path and the
+ * query. A drafter:// link, or one already relative, is left as it is.
  */
 export function inAppLink(url: string): string {
   if (!/^https?:\/\//i.test(url)) return url

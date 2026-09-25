@@ -90,9 +90,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     private func deliver(_ shortcutItem: UIApplicationShortcutItem) -> Bool {
         guard let url = Self.url(for: shortcutItem.type) else { return false }
         // AppPlugin observes this and turns it into the JS `appUrlOpen` that
-        // native.ts already routes, retaining it until a listener consumes it.
-        // Deliberately NOT also ApplicationDelegateProxy.lastURL: App.getLaunchUrl()
-        // drains that, and a quick action fed to both channels would be applied twice.
+        // native.ts already routes, retaining it until a listener consumes it —
+        // the one channel the page reads links on. Not ApplicationDelegateProxy.lastURL:
+        // App.getLaunchUrl() answers with that for good, so the page leaves it unread.
         NotificationCenter.default.post(name: .capacitorOpenURL, object: ["url": url, "options": [String: Any]()])
         return true
     }

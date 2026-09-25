@@ -176,15 +176,12 @@ export interface NativeHooks {
    * `fromNotification` is true only for a tap on one of our own local reminders,
    * which is the only source allowed to carry a write-on-arrival `act=` button.
    * Every other producer — an external drafter:// link from Safari, a Shortcut,
-   * a cold-start launch URL, a push tap — leaves it false.
+   * a Universal Link, a cold-start launch URL, a push tap — leaves it false.
    */
   onUrl(url: string, fromNotification?: boolean): void
   /** The app came back to the foreground. */
   onResume(): void
 }
-
-/** How long after launch the same URL is treated as the duplicate it is. */
-const LAUNCH_DEDUPE_MS = 5000
 
 /** Wire the shell's events once. Returns a disposer. No-op on the web. */
 export async function initNative(hooks: NativeHooks): Promise<() => void> {
@@ -192,25 +189,18 @@ export async function initNative(hooks: NativeHooks): Promise<() => void> {
   // the first swipe of a session should buzz like every later one
   void warmHaptics()
   const { App } = await import('@capacitor/app')
-  // A cold-start drafter:// URL is delivered on BOTH channels: Capacitor's scene
-  // proxy replays the launch URL contexts as an `appUrlOpen` (retained until a
-  // listener consumes it) and records the same URL for App.getLaunchUrl(). Applied
-  // twice, `drafter://journal?text=…` writes the line twice. Whichever channel
-  // lands first wins, and the copy from the other one is dropped — but only while
-  // the app is starting, so tapping the same Shortcut again later still works.
-  const startedAt = Date.now()
-  const launchSeen = new Set<string>()
-  const deliverUrl = (url: string, fromNotification = false) => {
-    if (Date.now() - startedAt < LAUNCH_DEDUPE_MS) {
-      if (launchSeen.has(url)) return
-      launchSeen.add(url)
-    }
-    hooks.onUrl(url, fromNotification)
-  }
-  const handles = [await App.addListener('appUrlOpen', e => deliverUrl(e.url)), await App.addListener('resume', () => hooks.onResume())]
-  // a cold start from a link may arrive here rather than as an event
-  const launch = await App.getLaunchUrl().catch(() => null)
-  if (launch?.url) deliverUrl(launch.url)
+  // Every link reaches the page as `appUrlOpen`, and only that way. A cold
+  // start's link — a drafter:// URL, a widget's, a Universal Link — is held by
+  // Capacitor's scene proxy until the bridge's view appears and then sent as
+  // this event, which AppPlugin keeps until a listener takes it; a quick
+  // action and Siri's Open Today are sent the same way (SceneDelegate,
+  // DrafterIntents). App.getLaunchUrl() is not read: it answers with the last
+  // link the app was ever handed and never forgets it, so every reload of the
+  // page — iOS reclaiming the web view, a sign-out, the error screen's Reload —
+  // ran that link again: an empty New task, Plan my day, the journal's Add.
+  // A Universal Link is the site's full address (https://…/?task=…), which in
+  // here names another host, so it keeps only its path and query, as a push does.
+  const handles = [await App.addListener('appUrlOpen', e => hooks.onUrl(inAppLink(e.url))), await App.addListener('resume', () => hooks.onResume())]
   try {
     const { LocalNotifications } = await import('@capacitor/local-notifications')
     handles.push(
@@ -220,7 +210,7 @@ export async function initNative(hooks: NativeHooks): Promise<() => void> {
         // 'tap' is the banner itself; anything else is one of the buttons
         // registered below, and rides along on that row's own link.
         const act = a.actionId && a.actionId !== 'tap' ? a.actionId : ''
-        deliverUrl(act ? `${url}${url.includes('?') ? '&' : '?'}act=${encodeURIComponent(act)}` : url, true)
+        hooks.onUrl(act ? `${url}${url.includes('?') ? '&' : '?'}act=${encodeURIComponent(act)}` : url, true)
       }),
     )
   } catch {
