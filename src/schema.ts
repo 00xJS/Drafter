@@ -638,7 +638,7 @@ export function sanitizeMeal(raw: unknown): Meal | null {
     sides: r.out === true ? undefined : sanitizeSides(r.sides),
     notes: str(r.notes)?.trim() || undefined,
     shared: r.shared === true ? true : r.shared === false ? false : undefined,
-    // one of the three quick picks, or none
+    // Leftovers, the one quick pick, or none
     quick: isQuickPick(r.quick) ? r.quick : undefined,
     // who cooks it: a member's id, as a task's assignee is kept (mealCook decides when it counts)
     cookId: idOrUndefined(r.cookId),

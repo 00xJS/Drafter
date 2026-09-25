@@ -1,7 +1,7 @@
 import { renderToString } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 import { isMineTask, newerStamp } from '../../shared/domain.mts'
-import { QUICK_PICKS, buildGroceryList, cookedRecipeIds, mealRecipeIds, mealSides, mealWasHad, mealWithMain } from '../../shared/kitchen.mts'
+import { QUICK_PICKS, buildGroceryList, cookedRecipeIds, mealRecipeIds, mealSides, mealWithMain } from '../../shared/kitchen.mts'
 import { mealWays, savedPlaces } from '../../shared/mealways.mts'
 import { outingsAt } from '../../shared/places.mts'
 import { FAVOURITE_REST_DAYS, favouritesRotation, proposeWeek, rotationIdeas } from '../../shared/weekplan.mts'
@@ -35,10 +35,10 @@ import type { Store } from '../store'
 import type { GroceryList, Item, Meal, Place, Recipe, Task } from '../types'
 
 // Kitchen → This week, levelled up: the Favourites rotation behind the day
-// cards' ideas, the picker's Cook list and the week plan; the quick picks, each
-// written as the meal it is so every count already knows it; who cooks a
-// shared dish, whose cook task is theirs; and every meal writer landing in the
-// member's own row, never in the household-wide id of a legacy one.
+// cards' ideas, the picker's Cook list and the week plan; Leftovers, written
+// as the meal it is so every count already knows it; who cooks a shared dish,
+// whose cook task is theirs; and every meal writer landing in the member's
+// own row, never in the household-wide id of a legacy one.
 
 const STAMP = '2026-09-01T12:00:00.000Z'
 /** A Thursday: the week on screen is Sunday 20 – Saturday 26 September. */
@@ -133,73 +133,72 @@ describe('the Favourites rotation', () => {
   })
 })
 
-// ---- quick picks ------------------------------------------------------------------
+// ---- Leftovers --------------------------------------------------------------------
 
-describe('a quick pick is written as the meal it is, so every count already knows it', () => {
+describe('Leftovers, the one quick pick, is written as the meal it is, so every count already knows it', () => {
   const luna = place('luna', "Luna's Pizza")
   const steak = recipe('steak', 'Steak', { ingredients: [{ id: 'i1', name: 'Steak', qty: 2 }] })
   const week = [
     meal('2026-09-20', 'dinner', { recipeId: 'steak', title: 'Steak' }),
-    meal('2026-09-21', 'dinner', { ...quickMain('takeout') }),
+    // a meal out with no place named, as one has always been written: bought
+    meal('2026-09-21', 'dinner', { out: true, title: 'Takeaway' }),
+    // a row that carries sides it should not: Leftovers has none, whatever it carries
     meal('2026-09-22', 'lunch', { ...quickMain('leftovers'), sides: [{ recipeId: 'steak', title: 'Steak' }] }),
-    meal('2026-09-23', 'dinner', { ...quickMain('fend') }),
     meal('2026-09-19', 'dinner', { out: true, placeId: 'luna', title: "Luna's Pizza" }),
   ]
-  const [cookedDinner, takeout, leftovers, fend, out] = week
+  const [cookedDinner, takeaway, leftovers, out] = week
 
-  it('takeout is bought: out with no place; leftovers and fend are neither out nor a recipe', () => {
-    expect(quickMain('takeout')).toEqual({ quick: 'takeout', title: 'Takeout', out: true })
+  it('is the only quick pick, and neither out nor a recipe', () => {
+    expect(QUICK_PICKS).toEqual(['leftovers'])
     expect(quickMain('leftovers')).toEqual({ quick: 'leftovers', title: 'Leftovers' })
-    expect(quickMain('fend')).toEqual({ quick: 'fend', title: 'Fend for yourself' })
-    expect(QUICK_PICKS).toEqual(['leftovers', 'fend', 'takeout'])
   })
 
   it('cooks no recipe and has no sides, whatever its row carries — so no grocery line and no "last cooked"', () => {
-    for (const m of [takeout, leftovers, fend]) {
-      expect(mealRecipeIds(m)).toEqual([])
-      expect(mealSides(m)).toEqual([])
-      expect(cookedRecipeIds(m, TODAY)).toEqual([])
-    }
+    expect(mealRecipeIds(leftovers)).toEqual([])
+    expect(mealSides(leftovers)).toEqual([])
+    expect(cookedRecipeIds(leftovers, TODAY)).toEqual([])
     const list = buildGroceryList('2026-W39', week, [steak], null, STAMP)
     expect(list.items.map(i => [i.name, i.recipeIds])).toEqual([['Steak', ['steak']]])
     // leftovers of the steak did not cook the steak again
     expect(cookedIndex([steak], week, TODAY).byId.get('steak')).toMatchObject({ timesCooked: 1, lastCooked: '2026-09-20' })
   })
 
-  it('counts in Kitchen Stats as its meal: takeout bought, leftovers eaten in, and only a meal at a place an outing', () => {
+  it('counts in Kitchen Stats as a meal eaten in; a meal out with no place is bought, and only a meal at a place an outing', () => {
     const ix = kitchenIndex([steak], week, [luna], new Date(2026, 8, 24, 20))
-    expect(ix.ways.get(takeout.id)).toBe('bought')
     expect(ix.ways.get(leftovers.id)).toBe('cooked')
     expect(ix.ways.get(cookedDinner.id)).toBe('cooked')
+    expect(ix.ways.get(takeaway.id)).toBe('bought')
     expect(ix.ways.get(out.id)).toBe('out')
     // leftovers are a meal at home, not a recipe cooked
     expect(ix.days.get('steak')).toEqual(['2026-09-20'])
     expect(outingsAt('luna', [], week, new Date(2026, 8, 24, 20)).map(o => (o.kind === 'meal' ? o.meal.id : ''))).toEqual([out.id])
   })
 
-  it('Fend for yourself is no meal had: the rule every count reads (mealWays) leaves it out of every way', () => {
-    expect(week.map(mealWasHad)).toEqual([true, true, true, false, true])
-    // Kitchen Stats, Insights and the recap all count through mealWays: the night is in no way at all
-    const ix = kitchenIndex([steak], week, [luna], new Date(2026, 8, 24, 20))
-    expect(ix.ways.has(fend.id)).toBe(false)
-    expect([...ix.ways.values()].sort()).toEqual(['bought', 'cooked', 'cooked', 'out'])
-    expect(mealWays(week, savedPlaces([luna]), new Date(2026, 8, 24, 20), TODAY).has(fend.id)).toBe(false)
+  it('is a meal had in every count: mealWays, which Kitchen Stats, Insights and the recap all read, has every meal of the week', () => {
+    const ways = mealWays(week, savedPlaces([luna]), new Date(2026, 8, 24, 20), TODAY)
+    expect(ways.get(leftovers.id)).toBe('cooked')
+    expect([...ways.keys()].sort()).toEqual(week.map(m => m.id).sort())
   })
 
-  it('answers the night: the week plan leaves a night with a quick pick alone', () => {
-    const next = ['2026-09-27', '2026-09-28'].map(d => meal(d, 'dinner', { ...quickMain(d === '2026-09-27' ? 'fend' : 'leftovers') }))
-    const plan = proposeWeek([steak, cooked(steak, '2026-08-01'), ...next], { todayKey: TODAY, now: new Date(2026, 8, 24, 9) })!
-    expect(plan.dinners.map(d => d.date)).not.toContain('2026-09-27')
+  it('answers the night: the week plan leaves a Leftovers night alone and plans the others', () => {
+    const next = meal('2026-09-28', 'dinner', { ...quickMain('leftovers') })
+    const plan = proposeWeek([steak, cooked(steak, '2026-08-01'), next], { todayKey: TODAY, now: new Date(2026, 8, 24, 9) })!
+    expect(plan.dinners.length).toBeGreaterThan(0)
     expect(plan.dinners.map(d => d.date)).not.toContain('2026-09-28')
   })
 
-  it('writes no cook task, and a new main takes the pick off the meal', () => {
-    for (const k of QUICK_PICKS) expect(mealHasCookTask({ ...meal(TODAY, 'dinner', quickMain(k)), shared: true })).toBe(false)
+  it('writes no cook task, takes the cook and the sides off a meal it becomes, and a new main takes it off again', () => {
+    expect(mealHasCookTask({ ...meal(TODAY, 'dinner', quickMain('leftovers')), shared: true })).toBe(false)
     expect(mealHasCookTask({ ...cookedDinner, shared: true })).toBe(true)
-    const back = mealWithMain(takeout, { date: takeout.date, slot: 'dinner' }, { recipeId: 'steak', title: 'Steak' }, '2026-09-21T20:00:00.000Z')
+    const dinner = { ...cookedDinner, shared: true, cookId: MARIA, sides: [{ title: 'Rice' }] }
+    const eaten = mealWithMain(dinner, { date: dinner.date, slot: 'dinner' }, quickMain('leftovers'), '2026-09-20T20:00:00.000Z')
+    expect(eaten).toMatchObject({ id: dinner.id, quick: 'leftovers', title: 'Leftovers', shared: true })
+    for (const gone of ['recipeId', 'out', 'placeId', 'sides', 'cookId']) expect(eaten).not.toHaveProperty(gone)
+    const back = mealWithMain(leftovers, { date: leftovers.date, slot: 'lunch' }, { recipeId: 'steak', title: 'Steak' }, '2026-09-22T20:00:00.000Z')
     expect(back).not.toHaveProperty('quick')
-    expect(back).not.toHaveProperty('out')
-    expect(back).toMatchObject({ id: takeout.id, recipeId: 'steak' })
+    // the sides the Leftovers row carried do not come back with the steak
+    expect(back).not.toHaveProperty('sides')
+    expect(back).toMatchObject({ id: leftovers.id, recipeId: 'steak' })
   })
 })
 
@@ -209,13 +208,29 @@ describe('cookId, quick and favourite through the sanitizers', () => {
   const rawMeal = { kind: 'meal', id: 'm1', date: TODAY, slot: 'dinner', title: 'Hot Dogs', recipeId: 'dogs', shared: true, cookId: ' maria ', createdAt: STAMP, updatedAt: STAMP }
   const rawRecipe = { kind: 'recipe', id: 'r1', name: 'Hot Dogs', ingredients: [], tags: [], favourite: true, createdAt: STAMP, updatedAt: STAMP }
 
-  it('keeps a member id as who cooks, a quick pick by name, and a star only when it is true', () => {
+  it('keeps a member id as who cooks, Leftovers by name, and a star only when it is true', () => {
     expect(sanitizeMeal(rawMeal)?.cookId).toBe('maria')
     for (const junk of ['', '   ', null, {}, ['maria']]) expect(sanitizeMeal({ ...rawMeal, cookId: junk })?.cookId).toBeUndefined()
-    expect(sanitizeMeal({ ...rawMeal, quick: 'fend' })?.quick).toBe('fend')
-    expect(sanitizeMeal({ ...rawMeal, quick: 'pizza' })?.quick).toBeUndefined()
+    expect(sanitizeMeal({ ...rawMeal, quick: 'leftovers' })?.quick).toBe('leftovers')
+    for (const junk of ['pizza', 'Leftovers', true, {}]) expect(sanitizeMeal({ ...rawMeal, quick: junk })?.quick).toBeUndefined()
     expect(sanitizeRecipe(rawRecipe)?.favourite).toBe(true)
     for (const junk of ['yes', 1, false, null]) expect(sanitizeRecipe({ ...rawRecipe, favourite: junk })?.favourite).toBeUndefined()
+  })
+
+  it('drops Fend for yourself and Takeout, which are no quick pick now: the row reads as the meal it says, and nothing more', () => {
+    for (const gone of ['fend', 'takeout']) {
+      const read = sanitizeMeal({ ...rawMeal, quick: gone })
+      expect(read).not.toBeNull()
+      expect(read?.quick).toBeUndefined()
+    }
+    // a Takeout row was written out with no place: without its pick it is bought, as any such meal is
+    const takeout = sanitizeMeal({ kind: 'meal', id: 'm2', date: TODAY, slot: 'dinner', title: 'Takeout', quick: 'takeout', out: true, createdAt: STAMP, updatedAt: STAMP })
+    expect(takeout).toMatchObject({ title: 'Takeout', out: true })
+    expect(takeout?.quick).toBeUndefined()
+    // the same through sanitizeItem, the way a pulled row is read
+    const fend = sanitizeItem({ kind: 'meal', id: 'm3', date: TODAY, slot: 'dinner', title: 'Fend for yourself', quick: 'fend', createdAt: STAMP, updatedAt: STAMP }) as Meal | null
+    expect(fend).toMatchObject({ kind: 'meal', title: 'Fend for yourself' })
+    expect(fend?.quick).toBeUndefined()
   })
 
   it('round-trips: what is stored reads back the same', () => {
@@ -291,7 +306,8 @@ describe('who cooks a shared dish, and the cook task that is theirs', () => {
     expect(mealWho({ ...dinner, shared: false }, o)).toBe('Just you')
     expect(mealWho({ ...dinner, out: true, cookId: undefined }, o)).toBe('Eat out · both of you')
     expect(mealWho({ ...dinner, ownerId: MARIA }, { ...o, mine: false })).toBe('Maria planned · Maria cooks')
-    expect(mealWho(meal(TODAY, 'dinner', { ...quickMain('fend'), shared: true }), o)).toBe('No shared meal')
+    expect(mealWho(meal(TODAY, 'dinner', { ...quickMain('leftovers'), shared: true }), o)).toBe('Nothing to cook · both of you')
+    expect(mealWho(meal(TODAY, 'lunch', { ...quickMain('leftovers'), shared: false }), o)).toBe('Nothing to cook · just you')
     expect(mealWho(dinner, { ...o, inHousehold: false })).toBe('')
   })
 

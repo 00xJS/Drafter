@@ -531,9 +531,8 @@ export interface Meal extends Owned {
    */
   shared?: boolean
   /**
-   * Answered in one tap, with no recipe and no place: Leftovers, Fend for
-   * yourself or Takeout (shared/kitchen.mts QUICK_PICK_META). A takeout is
-   * also `out`, so it counts as bought; none of them cooks a recipe.
+   * Answered in one tap, with no recipe and no place: Leftovers
+   * (shared/kitchen.mts QUICK_PICK_META), a meal at home that cooks no recipe.
    */
   quick?: QuickPick
   /**

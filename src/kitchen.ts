@@ -7,7 +7,6 @@ import { newerStamp } from '../shared/domain.mts'
 import { mealHistory } from '../shared/weekplan.mts'
 import {
   MAX_SIDES,
-  QUICK_PICKS,
   QUICK_PICK_META,
   activeGroceryLines,
   addGroceryItem,
@@ -22,7 +21,6 @@ import {
   mealPicked,
   mealRecipeIds,
   mealSides,
-  mealWasHad,
   mealAdjusted,
   mealWithMain as sharedMealWithMain,
   mergeIngredients,
@@ -38,7 +36,6 @@ import type { MealMain, QuickPick } from '../shared/kitchen.mts'
 // the same list, and count the same dinners as cooked.
 
 export {
-  QUICK_PICKS,
   QUICK_PICK_META,
   activeGroceryLines,
   addGroceryItem,
@@ -52,7 +49,6 @@ export {
   mealPicked,
   mealRecipeIds,
   mealSides,
-  mealWasHad,
   mealAdjusted,
   mergeIngredients,
   quickMain,
@@ -412,10 +408,9 @@ const SLOT_HOUR: Record<MealSlot, number> = { breakfast: 8, lunch: 12, dinner: 1
 export const mealIsShared = (meal: Pick<Meal, 'shared'>): boolean => meal.shared === true
 
 /**
- * Whether a meal writes a household cook task: a shared one, and never a
- * quick pick — leftovers, fend for yourself and a takeout have nothing to cook
- * or to tick off, and a task telling you to "Cook dinner: Fend for yourself"
- * would ring on a phone for nothing.
+ * Whether a meal writes a household cook task: a shared one, and never
+ * Leftovers — there is nothing to cook or to tick off, and a task telling you
+ * to "Cook dinner: Leftovers" would ring on a phone for nothing.
  */
 export const mealHasCookTask = (meal: Pick<Meal, 'shared' | 'quick'>): boolean => mealIsShared(meal) && !meal.quick
 
@@ -462,8 +457,6 @@ export function mealWho(meal: Meal, o: { mine: boolean; myId?: string | null; in
   const how = meal.quick ? QUICK_PICK_META[meal.quick].how : meal.out ? 'Eat out' : ''
   if (!o.inHousehold) return how
   if (!o.mine) return [`${name(meal.ownerId)} planned`, how, cooks].filter(Boolean).join(' · ')
-  // fend for yourself is nobody's meal to share, whoever it is for
-  if (meal.quick === 'fend') return how
   const who = mealIsShared(meal) ? 'both of you' : 'just you'
   if (!how) return [who === 'both of you' ? 'Both of you' : 'Just you', cooks].filter(Boolean).join(' · ')
   return `${how} · ${who}`

@@ -55,42 +55,28 @@ export const MAX_SIDES = 8
 // ---- quick picks ----------------------------------------------------------------
 
 /**
- * A meal answered in one tap, with no recipe and no place. Each is written as
- * the meal it stands for, so every count that reads meals already knows it:
+ * A meal answered in one tap, with no recipe and no place: Leftovers, the one
+ * quick pick. A planned meal is one that is eaten — a recipe, leftovers, or a
+ * named place to eat out — so the week keeps logging real meals.
  *
- * - Takeout is `out` with no place — the "bought" Kitchen Stats has always
- *   split from eating out at a place — so it is no outing and no grocery line.
- * - Leftovers is a meal at home with no recipe: counted as eaten in, never as a
- *   recipe cooked (cookedRecipeIds), so no dish's "last cooked" moves.
- * - Fend for yourself is no shared meal that night. It answers the slot — the
- *   week plan leaves the night alone — but it is not a meal anybody had
- *   (mealWasHad).
- *
- * None has sides, a recipe or a cook task, so none adds a grocery line.
+ * Leftovers is written as the meal it is, a meal at home with no recipe, so
+ * every count that reads meals already knows it: eaten in, never a recipe
+ * cooked (cookedRecipeIds), so no dish's "last cooked" moves. It has no sides,
+ * no recipe and no cook task, so it adds no grocery line.
  */
-export type QuickPick = 'leftovers' | 'fend' | 'takeout'
-export const QUICK_PICKS: readonly QuickPick[] = ['leftovers', 'fend', 'takeout']
-/** Each quick pick's title, its emoji, what the picker says of it, and how a planned one's card says it comes. */
+export type QuickPick = 'leftovers'
+export const QUICK_PICKS: readonly QuickPick[] = ['leftovers']
+/** Leftovers' title, its emoji, what the picker says of it, and how a planned one's card says it comes. */
 export const QUICK_PICK_META: Readonly<Record<QuickPick, { label: string; emoji: string; hint: string; how: string }>> = {
   leftovers: { label: 'Leftovers', emoji: '🍲', hint: 'At home, nothing new to cook', how: 'Nothing to cook' },
-  fend: { label: 'Fend for yourself', emoji: '🤷', hint: 'No shared meal: everyone sorts their own', how: 'No shared meal' },
-  takeout: { label: 'Takeout', emoji: '🥡', hint: 'Bought, with no place to name', how: 'Bought' },
 }
 const QUICK_SET: ReadonlySet<string> = new Set(QUICK_PICKS)
 export const isQuickPick = (v: unknown): v is QuickPick => typeof v === 'string' && QUICK_SET.has(v)
 
-/** A quick pick as a slot's new main: its own title, and `out` for a takeout, which is bought. */
+/** A quick pick as a slot's new main, under its own title. */
 export function quickMain(kind: QuickPick): MealMain {
-  return { quick: kind, title: QUICK_PICK_META[kind].label, ...(kind === 'takeout' ? { out: true } : {}) }
+  return { quick: kind, title: QUICK_PICK_META[kind].label }
 }
-
-/**
- * Whether a meal is one the household had, for anything that counts meals had:
- * cooked at home, eaten out, bought. A Fend for yourself night is an answer on
- * the week, not a meal — nobody cooked it, bought it or went out for it — so
- * it is in no such count. Every other meal is.
- */
-export const mealWasHad = (meal: Pick<Meal, 'quick'> | null | undefined): boolean => !!meal && meal.quick !== 'fend'
 
 /**
  * A meal's sides that can be shown: each with a title, and a saved recipe's id
@@ -162,10 +148,8 @@ export function mealWithMain(prev: Meal | null | undefined, { date, slot }: { da
   delete next.placeId
   delete next.sides
   delete next.quick
-  if (main.quick) {
-    next.quick = main.quick
-    if (main.out) next.out = true
-  } else if (main.out) {
+  if (main.quick) next.quick = main.quick
+  else if (main.out) {
     next.out = true
     if (main.placeId) next.placeId = main.placeId
   } else if (main.recipeId) next.recipeId = main.recipeId

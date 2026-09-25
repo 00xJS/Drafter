@@ -9,7 +9,7 @@ import type { Meal, Person, Place, Recipe } from '../types'
 // Stats counts it (mealWay): cooked at home, eaten out at a saved place, or
 // bought, with no place named or at one since deleted. A plan, its day still
 // to come, is coloured by the way it is planned. The glyphs are as they were:
-// 🥡 for any meal out, 🍽️ for one cooked.
+// 🥡 for any meal out, 🍽️ for one cooked; Leftovers wears its own 🍲.
 
 const STAMP = '2026-01-01T00:00:00.000Z'
 const noop = () => {}
@@ -125,17 +125,9 @@ describe('a meal on the Calendar is the colour of the way Kitchen → Stats coun
     expect(sheetRows(render('week', '2026-09-07'))).toEqual([['🍽️', 'Chicken curry', WAY.cooked]])
   })
 
-  it('marks a quick pick as the Kitchen does, and a Fend for yourself night, no meal had, in none of the three colours', () => {
-    const quick = [
-      meal(TODAY, 'breakfast', 'Leftovers', { quick: 'leftovers' }),
-      meal(TODAY, 'lunch', 'Takeout', { quick: 'takeout', out: true }),
-      meal(TODAY, 'dinner', 'Fend for yourself', { quick: 'fend' }),
-    ]
-    expect(sheetRows(render('week', TODAY, quick))).toEqual([
-      ['🍲', 'Leftovers', WAY.cooked],
-      ['🥡', 'Takeout', WAY.bought],
-      ['🤷', 'Fend for yourself', 'var(--muted)'],
-    ])
+  it('marks Leftovers with its own 🍲, as the Kitchen does, in the colour of a meal cooked at home', () => {
+    const quick = [meal(TODAY, 'dinner', 'Leftovers', { quick: 'leftovers' })]
+    expect(sheetRows(render('week', TODAY, quick))).toEqual([['🍲', 'Leftovers', WAY.cooked]])
   })
 
   it('colours a plan, its day still to come, by the way it is planned, in the week, the month and the day alike', () => {
