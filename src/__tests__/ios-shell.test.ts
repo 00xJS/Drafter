@@ -171,3 +171,19 @@ describe('Open Settings, where iOS has said no to notifications', () => {
     expect(delegation).toMatch(/if !isApplicationNavigation, toplevelNavigation \{[\s\S]*?UIApplication\.shared\.open\(navURL, options: \[:\], completionHandler: nil\)[\s\S]*?decisionHandler\(\.cancel\)/)
   })
 })
+
+describe('capacitor.config.ts', () => {
+  it('runs the keyboard at resize: native, with no Android-only setting', () => {
+    const config = read('capacitor.config.ts')
+    expect(config).toMatch(/Keyboard: \{ resize: 'native' \}/)
+    // the plugin documents it as Android's alone, and there is no Android app
+    expect(config).not.toMatch(/resizeOnFullScreen/)
+    expect(read('node_modules/@capacitor/keyboard/dist/esm/definitions.d.ts')).toMatch(/Only available for Android[\s\S]{0,200}resizeOnFullScreen\?: boolean/)
+  })
+
+  it('leaves pinch-zoom off in the app, as Capacitor has it, so Dynamic Type is how text grows there', () => {
+    expect(read('capacitor.config.ts')).not.toMatch(/zoomEnabled/)
+    const delegation = read('node_modules/@capacitor/ios/Capacitor/Capacitor/WebViewDelegationHandler.swift')
+    expect(delegation).toMatch(/scrollViewWillBeginZooming[\s\S]*?pinchGestureRecognizer\?\.isEnabled = false/)
+  })
+})

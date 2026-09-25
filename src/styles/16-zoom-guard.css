@@ -11,8 +11,11 @@
    because each one counts as a class in the cascade — a bare `textarea` (0,0,1)
    would still lose to `.notes-input` (0,1,0). Anything added below it must not
    set a smaller size on a phone field. Do NOT "fix" this with maximum-scale=1
-   on the viewport meta — that also blocks deliberate pinch-zoom, which is an
-   accessibility control.
+   on the viewport meta: in a browser that also blocks deliberate pinch-zoom,
+   which is an accessibility control there. The iOS app has no pinch-zoom at
+   all — Capacitor turns it off, and it stays off — so there Dynamic Type
+   (--type-scale, src/native.ts) is how text gets bigger, and this guard is
+   what keeps a field from zooming the page anyway.
 
    Not only below 640px: an iPhone turned sideways and an iPad are wider than
    that and zoom all the same, so the guard holds on any touch screen, and
