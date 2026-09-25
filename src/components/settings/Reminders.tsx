@@ -19,6 +19,7 @@ import { enableNotifications, notificationPermission } from '../../notify'
 import { PushInfo, currentEndpoint, disablePush, enablePush, fetchPushInfo, pushSupported, savePushPrefs, testPush } from '../../push'
 import { deviceReminders } from '../../reminders'
 import { isSupabaseConfigured } from '../../supabase'
+import { TURN_ON } from '../PushNudge'
 import type { SettingsCtx } from './context'
 import { useAsyncAction } from './useAsyncAction'
 
@@ -312,7 +313,8 @@ export function Reminders({ store, household, supabaseOn }: SettingsCtx) {
             ) : (
               <>
                 <button className="btn primary" disabled={pushBusy || !pushSupported() || (!isNative() && !push.publicKey)} onClick={() => runPush(() => enablePush(push.publicKey ?? ''))}>
-                  {pushBusy ? 'Enabling…' : 'Enable on this device'}
+                  {/* the bell's nudge says the same: one phrase for one switch */}
+                  {pushBusy ? 'Turning on…' : TURN_ON}
                 </button>
                 <small>
                   {!pushSupported()
