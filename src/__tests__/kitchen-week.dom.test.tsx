@@ -109,6 +109,12 @@ function openKitchen(items: Item[] = seed()) {
   return { toasts, savedMeals, saved, cleared }
 }
 
+/** What an idea chip says for itself, its reason (drawn on a phone, in its name everywhere) left out. */
+const chipWords = (b: HTMLElement) =>
+  Array.from(b.childNodes)
+    .filter(n => !(n instanceof Element && n.classList.contains('meal-chip-why')))
+    .map(n => n.textContent)
+    .join('')
 const strip = () => screen.getByRole('navigation', { name: 'Dinners this week' })
 const day = (name: RegExp) => within(strip()).getByRole('button', { name })
 const card = (slot: 'Breakfast' | 'Lunch' | 'Dinner') => screen.getByRole('region', { name: slot })
@@ -135,7 +141,7 @@ describe('the open day’s cards', () => {
       expect(empty.className).toContain('empty')
       expect(within(empty).getByRole('button', { name: 'Choose…' })).toBeTruthy()
       const ideas = within(empty).getByRole('group', { name: `Ideas for ${slot.toLowerCase()}` })
-      expect(within(ideas).getAllByRole('button').map(b => b.textContent?.trim())).toEqual(offered[slot])
+      expect(within(ideas).getAllByRole('button').map(b => chipWords(b).trim())).toEqual(offered[slot])
       // one row of chips, and no other one-tap answers
       expect(within(empty).getAllByRole('group').length).toBe(1)
       expect(within(empty).queryByText(/Fend for yourself|Takeout/)).toBeNull()
@@ -153,13 +159,25 @@ describe('the open day’s cards', () => {
     openKitchen()
     fireEvent.click(day(/^Fri/))
     const ideas = within(card('Dinner')).getByRole('group', { name: 'Ideas for dinner' })
-    expect(within(ideas).getAllByRole('button').map(b => b.textContent)).toEqual(['★Spaghetti', '★Chicken Parm', 'Enchiladas', '🍲 Leftovers'])
+    expect(within(ideas).getAllByRole('button').map(chipWords)).toEqual(['★Spaghetti', '★Chicken Parm', 'Enchiladas', '🍲 Leftovers'])
+  })
+
+  it('says why each idea is offered in its name, and on the chip in short where nothing hovers', () => {
+    openKitchen()
+    fireEvent.click(day(/^Fri/))
+    const ideas = within(card('Dinner')).getByRole('group', { name: 'Ideas for dinner' })
+    const spag = within(ideas).getByRole('button', { name: 'Spaghetti: A favourite, last had 2 weeks ago' })
+    expect(spag.querySelector('.meal-chip-why')?.textContent).toBe('2 weeks ago')
+    const ench = within(ideas).getByRole('button', { name: 'Enchiladas: Never had' })
+    expect(ench.querySelector('.meal-chip-why')?.textContent).toBe('new')
+    // …and still as the pointer's tooltip
+    expect(spag.getAttribute('title')).toBe('A favourite, last had 2 weeks ago')
   })
 
   it('plans a dinner from an idea in one tap, in Joe’s own row and for both of them, and Undo takes it back', () => {
     const k = openKitchen()
     fireEvent.click(day(/^Fri/))
-    fireEvent.click(within(within(card('Dinner')).getByRole('group', { name: 'Ideas for dinner' })).getByRole('button', { name: 'Spaghetti' }))
+    fireEvent.click(within(within(card('Dinner')).getByRole('group', { name: 'Ideas for dinner' })).getByRole('button', { name: /^Spaghetti:/ }))
     expect(k.savedMeals.at(-1)).toMatchObject({ id: 'meal~2026-09-25~dinner~joe', date: '2026-09-25', slot: 'dinner', recipeId: 'spag', title: 'Spaghetti', shared: true })
     expect(k.toasts.map(t => t.msg)).toEqual(['Planned “Spaghetti” for dinner'])
     // the card is the meal now
@@ -271,7 +289,7 @@ describe('the meal picker', () => {
   it('keeps a planned meal’s own For, changes it there and then, and Remove takes the meal off with an Undo', () => {
     const k = openKitchen()
     fireEvent.click(day(/^Fri/))
-    fireEvent.click(within(within(card('Dinner')).getByRole('group', { name: 'Ideas for dinner' })).getByRole('button', { name: 'Enchiladas' }))
+    fireEvent.click(within(within(card('Dinner')).getByRole('group', { name: 'Ideas for dinner' })).getByRole('button', { name: /^Enchiladas:/ }))
     fireEvent.click(within(card('Dinner')).getByRole('button', { name: 'Change dinner' }))
     const picker = sheet(/Fri 25 · Dinner/)
     const forGroup = within(picker).getByRole('group', { name: 'Who this meal is for' })
@@ -366,7 +384,7 @@ describe('starring a recipe', () => {
     fireEvent.click(screen.getByRole('button', { name: 'This week' }))
     fireEvent.click(day(/^Fri/))
     const ideas = within(card('Dinner')).getByRole('group', { name: 'Ideas for dinner' })
-    expect(within(ideas).getAllByRole('button').map(b => b.textContent)).toEqual(['★Spaghetti', '★Beef Stew', '★Chicken Parm', '🍲 Leftovers'])
+    expect(within(ideas).getAllByRole('button').map(chipWords)).toEqual(['★Spaghetti', '★Beef Stew', '★Chicken Parm', '🍲 Leftovers'])
     fireEvent.click(within(card('Dinner')).getByRole('button', { name: 'Choose…' }))
     const picker = sheet(/Fri 25 · Dinner/)
     fireEvent.click(within(picker).getByRole('button', { name: 'Favourite: Chicken Parm' }))

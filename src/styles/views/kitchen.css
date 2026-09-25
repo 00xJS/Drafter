@@ -351,6 +351,18 @@
 .meal-chip-star {
   color: var(--accent-text);
 }
+/* an idea's reason, short ("12 days ago", "new"): the pointer's tooltip says
+   it in full, so it is drawn on the chip only where nothing hovers */
+.meal-chip-why {
+  display: none;
+  color: var(--text-2);
+  font-size: 0.75rem;
+}
+@media (hover: none) {
+  .meal-chip-why {
+    display: inline;
+  }
+}
 /* Leftovers, last among the ideas: no recipe, so an outline beside the dishes */
 .meal-chip.leftovers {
   gap: 4px;
