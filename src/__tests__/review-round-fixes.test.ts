@@ -91,10 +91,11 @@ describe('removing a household member', () => {
   })
 
   it('re-attributes the shared work only, by the one list of personal kinds', () => {
-    expect(src).toContain("import { PERSONAL_KINDS } from '../../shared/kinds.mts'")
-    // notes are excluded here and moved by a statement of their own, so a
-    // private one never travels (v3.16, v3.19 — srv-household.test.ts drives it)
-    expect(src).toContain("kind=not.in.(${[...PERSONAL_KINDS, 'note'].join(',')})")
+    expect(src).toContain("import { PERSONAL_KINDS, SHARED_BY_DEFAULT } from '../../shared/kinds.mts'")
+    // the kinds decided per record (notes, tasks, meals) are excluded here and
+    // moved by statements of their own, so a private one never travels, and
+    // an event never moves (v3.16, v3.19, v3.22, v3.24 — srv-household.test.ts drives it)
+    expect(src).toContain("kind=not.in.(${[...PERSONAL_KINDS, ...Object.keys(SHARED_BY_DEFAULT), 'event'].join(',')})")
   })
 
   it('no longer swallows a failed re-attribution', () => {

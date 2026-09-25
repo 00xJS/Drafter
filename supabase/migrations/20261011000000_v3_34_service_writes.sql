@@ -39,10 +39,10 @@
 -- ## 2. rate_limits (window_start)
 --
 -- rate_limit_take (v3.33) deletes every window over for a day on each call,
--- and nothing indexed window_start, so each call read the whole table. Email-
--- in counted every key it was sent before looking it up, so a flood of made-up
--- keys was a row each, and every count after it swept all of them. The
--- function no longer counts a key nobody holds; this index keeps the sweep a
+-- and nothing indexed window_start, so each call read the whole table.
+-- Email-in counted every key it was sent before looking it up, so a flood of
+-- made-up keys was a row each, and every count after it swept all of them.
+-- Email-in no longer counts a key nobody holds; this index keeps the sweep a
 -- lookup however many rows there are.
 --
 -- ## Deploy

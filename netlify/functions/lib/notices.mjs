@@ -30,7 +30,7 @@ import { keyHeaders } from './supabasekeys.mjs'
 import { writeAs } from './writeas.mjs'
 
 const DAY = 86_400_000
-/** Tombstones a nightly expiry writes per sync_posts call. */
+/** Tombstones a nightly expiry writes per call, for one recipient. */
 const EXPIRE_BATCH = 100
 /** The most notices one night lets go; the rest wait for the next. */
 const EXPIRE_MAX = 1000
