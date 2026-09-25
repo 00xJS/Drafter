@@ -153,6 +153,9 @@ export function StatsLens(p: StatsLensProps) {
               onSaw={a.onSaw}
               onOpenPerson={a.onOpenPerson}
               onOpenDay={a.onOpenDay}
+              // whom you saw is your own log (v3.24): without it, a household
+              // member's visits counted as yours here and nowhere else
+              myId={p.myId}
             />
           )}
           {tab === 'places' && (
@@ -167,6 +170,7 @@ export function StatsLens(p: StatsLensProps) {
               onPlan={a.onPlanAt}
               onOpenPerson={a.onOpenPerson}
               onOpenDay={a.onOpenDay}
+              myId={p.myId}
             />
           )}
           {tab === 'kitchen' && <KitchenStats recipes={p.recipes} meals={p.meals} groceries={p.groceries} places={p.places} onOpenRecipe={a.onOpenRecipe} onGoDay={a.onGoMealDay} />}

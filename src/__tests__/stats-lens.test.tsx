@@ -425,6 +425,14 @@ describe('the lens drawn', () => {
     expect(view.props.tasks).toBe(LENS_PROPS.tasks)
   })
 
+  it('hands People and Places whose log it is, so a housemate’s visits are never counted as yours', () => {
+    for (const [tab, Component] of [['people', PeopleStats], ['places', PlacesStats]] as const) {
+      const tree = settled(StatsLens, { ...LENS_PROPS, tab, myId: 'me' })
+      const view = elements(tree).find(e => e.type === Component)!
+      expect(view.props.myId, tab).toBe('me')
+    }
+  })
+
   it('counts a day you saw someone, not a day you finished a chore', () => {
     // seenTasks is a HAYSTACK — every task, plus past events with people on
     // them — which People narrows per person. Mapping it raw made "Days seen"
