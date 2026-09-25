@@ -41,9 +41,11 @@
 // which each message renews and sounds. A tap opens the chat on its Household
 // side (?chat=household).
 //
-// Best effort per instance, like /api/ai's: a ceiling per account on calls,
-// one for tasks and one for messages, so a lively chat never holds up word of
-// a task.
+// A ceiling per account on calls, one for tasks and one for messages, so a
+// lively chat never holds up word of a task. Counted across instances, as
+// /api/ai's is (lib/ratelimit.mjs, v3.33): each instance's own count alone let
+// calls spread over cold starts through, and falls back to that only while the
+// shared count cannot be reached.
 
 import { isRecord, legacyPostToTask } from '../../shared/domain.mts'
 import { readableRow } from '../../shared/kinds.mts'
@@ -63,7 +65,7 @@ import {
 } from '../../shared/notices.mts'
 import { withCors } from './lib/cors.mjs'
 import { putNotice } from './lib/notices.mjs'
-import { slidingWindow } from './lib/ratelimit.mjs'
+import { sharedWindow } from './lib/ratelimit.mjs'
 import { requireUser, settingsGet, settingsSet, settingsStoreConfigured } from './lib/session.mjs'
 import { keyHeaders } from './lib/supabasekeys.mjs'
 import { pushConfigured, sendToAll } from './push.mjs'
@@ -73,9 +75,9 @@ const MAX_BODY = 32 * 1024
 const MAX_EVENTS = 20
 const MAX_DETAIL = 2000
 // 30 calls per 10 minutes per account: a device sends one a task every ten seconds at most
-const perActor = slidingWindow({ limit: 30, windowMs: 10 * 60_000 })
+const perActor = sharedWindow({ bucket: 'notify', limit: 30, windowMs: 10 * 60_000 })
 // 60 per 10 minutes for messages, one call a message: counted apart, so a lively chat never starves the tasks'
-const perActorMessages = slidingWindow({ limit: 60, windowMs: 10 * 60_000 })
+const perActorMessages = sharedWindow({ bucket: 'notify-message', limit: 60, windowMs: 10 * 60_000 })
 
 async function rest(path) {
   const url = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL
@@ -145,7 +147,7 @@ const tooMany = slot =>
 
 /** What changed on a task, told to whoever it concerns. */
 async function tellTask(user, body) {
-  const slot = perActor.take(user.id)
+  const slot = await perActor.take(user.id)
   if (!slot.ok) return tooMany(slot)
   const taskId = typeof body?.taskId === 'string' ? body.taskId.trim() : ''
   const events = readEvents(body?.events)
@@ -214,7 +216,7 @@ async function tellTask(user, body) {
 
 /** A message the caller sent the household, told to everyone else in it. */
 async function tellMessage(user, body) {
-  const slot = perActorMessages.take(user.id)
+  const slot = await perActorMessages.take(user.id)
   if (!slot.ok) return tooMany(slot)
   const messageId = typeof body.messageId === 'string' ? body.messageId.trim() : ''
   // a message, and nothing of a task's beside it

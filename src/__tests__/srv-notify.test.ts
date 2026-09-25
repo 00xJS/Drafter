@@ -41,6 +41,10 @@ let settings: Map<string, Record<string, any>>
 let households: { household_id: string; user_id: string }[]
 let kindStored: boolean
 let writes: string[]
+/** Each shared rate-limit count asked for, as bucket:subject. */
+let limits: string[]
+/** Buckets whose shared count says no, whatever this instance has counted. */
+let sharedRefuses: Set<string>
 
 const task = (id: string, owner: string, over: Record<string, unknown> = {}): Row => ({
   user_id: owner,
@@ -61,6 +65,8 @@ beforeEach(() => {
   pushState.gone = []
   kindStored = true
   writes = []
+  limits = []
+  sharedRefuses = new Set()
   rows = new Map()
   households = [
     { household_id: 'h1', user_id: JOE },
@@ -101,6 +107,12 @@ beforeEach(() => {
         return new Response(null, { status: 201 })
       }
       if (path === 'rpc/record_kind_allowed' && method === 'POST') return Response.json(kindStored)
+      // the count every instance shares (lib/ratelimit.mjs, v3.33)
+      if (path === 'rpc/rate_limit_take' && method === 'POST') {
+        limits.push(`${body.p_bucket}:${body.p_subject}`)
+        if (sharedRefuses.has(body.p_bucket)) return Response.json({ allowed: false, remaining: 0, retry_after_ms: 42_000 })
+        return Response.json({ allowed: true, remaining: body.p_limit - 1, retry_after_ms: 0 })
+      }
       if (path === 'posts' && method === 'POST') {
         if (rows.has(body.id)) return Response.json({ code: '23505' }, { status: 409 })
         writes.push(`insert ${body.id}`)
@@ -501,6 +513,32 @@ describe('a message nobody may be told of', () => {
       expect((await call(body)).status, JSON.stringify(body).slice(0, 60)).toBe(400)
     }
     expect(pushes).toEqual([])
+  })
+})
+
+// Each Netlify instance kept its own count, so calls spread over cold starts
+// were never counted together; /api/ai has had the shared count since v3.33.
+describe('the ceilings are counted across instances', () => {
+  beforeEach(() => {
+    rows.set('bins', task('bins', JOE, { assigneeId: MARIA, assignedBy: JOE, shared: true }))
+    rows.set('m1', { user_id: MARIA, data: { kind: 'message', id: 'm1', body: 'Hi', createdAt: NOW, updatedAt: NOW } })
+  })
+
+  it('asks the shared count for each call, a bucket for tasks and one for messages, per account', async () => {
+    await call({ taskId: 'bins', events: [{ type: 'comment', detail: 'On it' }] })
+    await call({ messageId: 'm1' })
+    expect(limits).toEqual([`notify:${MARIA}`, `notify-message:${MARIA}`])
+  })
+
+  it('the shared count’s no is a 429, whatever this instance has counted, and tells nobody', async () => {
+    sharedRefuses.add('notify')
+    const res = await call({ taskId: 'bins', events: [{ type: 'comment', detail: 'On it' }] })
+    expect(res.status).toBe(429)
+    expect(res.headers.get('retry-after')).toBe('42')
+    expect(noticesOf(JOE)).toEqual([])
+    expect(pushes).toEqual([])
+    // the messages' count is its own
+    expect((await call({ messageId: 'm1' })).status).toBe(200)
   })
 })
 
