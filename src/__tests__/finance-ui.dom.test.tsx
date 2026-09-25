@@ -484,6 +484,19 @@ describe('the short sheets', () => {
     expect(saved.dueAt).toBe(rows[2].dueAt)
   })
 
+  it('say a payday has no owner yet, rather than light a member for it', () => {
+    const nobody = task('pay-x', { title: 'Bonus', bill: { kind: 'income' }, estimateCost: 500, recurrence: { freq: 'monthly' }, dueAt: day(10, 5) })
+    const p = props({ tasks: [...rows, nobody] })
+    render(<Finance {...p} />)
+    fireEvent.click(screen.getByRole('button', { name: /^Bonus Mon, Oct 5/ }))
+    const sheet = screen.getByRole('dialog', { name: '💵 Bonus' })
+    expect(within(sheet).getByRole('button', { name: 'Not said', pressed: true })).toBeTruthy()
+    expect(within(sheet).getByRole('button', { name: 'Joseph', pressed: false })).toBeTruthy()
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Maria' }))
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Save' }))
+    expect(vi.mocked(p.onSaveTask).mock.calls[0][0]).toMatchObject({ id: 'pay-x', bill: { kind: 'income', forMemberId: MARIA } })
+  })
+
   it('archive a bill, delete one, and hand the rest to the full editor, saving what was changed first', () => {
     const p = props()
     render(<Finance {...p} />)
