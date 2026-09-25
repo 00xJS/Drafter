@@ -209,7 +209,8 @@ export function PaydayEditSheet({ task, members, myId, inHousehold, onSave, onAr
         {members.length > 1 && (
           <div className="field">
             <span>Whose pay</span>
-            <Segmented items={members.map(m => ({ key: m.id, label: m.displayName }))} value={whose} onChange={setWhose} label="Whose pay" role="group" />
+            {/* one written before whose it was said stays so until it is picked: no member is lit for it */}
+            <Segmented items={[...(task.bill.forMemberId ? [] : [{ key: '', label: 'Not said' }]), ...members.map(m => ({ key: m.id, label: m.displayName }))]} value={whose} onChange={setWhose} label="Whose pay" role="group" />
           </div>
         )}
         <label className="field">
