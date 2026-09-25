@@ -490,6 +490,6 @@ html.native .ask-answer {
    (typingField in src/native.ts, block 'nearest'). Without a margin it landed
    flush against the sheet's edge, and its focus ring, drawn outside it, was
    cut off there. */
-.native :is(input, textarea, select, [contenteditable='true']) {
+.native :is(input, textarea, select, [contenteditable]) {
   scroll-margin-block: 12px;
 }
