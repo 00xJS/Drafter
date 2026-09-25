@@ -75,7 +75,7 @@ function TaskList({ tasks, onOpen, onStatus, max = 12 }: { tasks: Task[]; onOpen
               type="checkbox"
               className="tcheck"
               checked={t.status === 'done'}
-              aria-label="Mark done"
+              aria-label={`Mark “${t.title || 'Untitled'}” done`}
               onClick={e => e.stopPropagation()}
               onChange={() => onStatus(t.id, t.status === 'done' ? 'todo' : 'done')}
             />
@@ -360,7 +360,7 @@ export function Review({
             <ul className="dash-list">
               {prevSaved.top.map((line, i) => (
                 <li key={i} className={prevSaved.topDone?.[i] ? 'trow done' : 'trow'}>
-                  <input type="checkbox" className="tcheck" checked={!!prevSaved.topDone?.[i]} onChange={() => togglePrevTop(i)} aria-label="Kept" />
+                  <input type="checkbox" className="tcheck" checked={!!prevSaved.topDone?.[i]} onChange={() => togglePrevTop(i)} aria-label={`Kept “${line}”`} />
                   <div className="dash-main">
                     <span className="dash-title">{line}</span>
                   </div>

@@ -50,6 +50,16 @@ export function excerpt(s: string, n = 90): string {
   return t.length > n ? t.slice(0, n - 1) + '…' : t
 }
 
+/**
+ * A YYYY-MM-DD day as it is said aloud — "Thursday, September 24" — for a
+ * name a screen reader speaks, where the key itself reads as a string of
+ * numbers. Read at local noon, so no zone can move it a day.
+ */
+export function spokenDay(key: string): string {
+  const d = new Date(`${key}T12:00:00`)
+  return Number.isNaN(d.getTime()) ? key : d.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })
+}
+
 export function dateKey(d: Date | string): string {
   const dt = typeof d === 'string' ? new Date(d) : d
   const p = (x: number) => String(x).padStart(2, '0')

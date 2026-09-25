@@ -130,11 +130,11 @@ export function TasksTable({ tasks, onOpen, onNew, onDelete, inHousehold, myId, 
           ))}
         </select>
         {isNarrow && (
-          <span className="segmented sort-seg">
-            <button className={sort.key === 'due' ? 'seg on' : 'seg'} onClick={() => toggleSort('due')}>
+          <span className="segmented sort-seg" role="group" aria-label="Sort by">
+            <button type="button" className={sort.key === 'due' ? 'seg on' : 'seg'} aria-pressed={sort.key === 'due'} onClick={() => toggleSort('due')}>
               Due{sortArrow('due')}
             </button>
-            <button className={sort.key === 'priority' ? 'seg on' : 'seg'} onClick={() => toggleSort('priority')}>
+            <button type="button" className={sort.key === 'priority' ? 'seg on' : 'seg'} aria-pressed={sort.key === 'priority'} onClick={() => toggleSort('priority')}>
               Prio{sortArrow('priority')}
             </button>
           </span>

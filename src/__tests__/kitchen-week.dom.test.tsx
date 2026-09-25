@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Kitchen } from '../components/Kitchen'
 import { MealSlotRow } from '../components/MealSlotRow'
 import type { GroceryList, Item, Meal, Place, PlaceCategory, Recipe } from '../types'
+import { weekKeyOf, weekStartKey } from '../../shared/weeks.mts'
 
 // Kitchen → This week as a thumb uses it, in a household of two: the open
 // day's cards, planned and empty; an idea planning a dinner in one tap, and
@@ -199,6 +200,22 @@ describe('the open day’s cards', () => {
   })
 })
 
+describe('the Kitchen’s switches, to a screen reader', () => {
+  it('say which segment and which grocery filter is on', () => {
+    const week = weekKeyOf(weekStartKey('2026-09-24')!)!
+    openKitchen([...seed(), { kind: 'grocery', id: `grocery~${week}`, weekKey: week, ownerId: JOE, items: [{ id: 'g1', name: 'Milk', state: 'need', recipeIds: [], manual: true }], createdAt: T0, updatedAt: T0 }])
+    const view = screen.getByRole('group', { name: 'Kitchen view' })
+    const on = (group: HTMLElement) => within(group).getAllByRole('button').filter(b => b.getAttribute('aria-pressed') === 'true').map(b => b.textContent)
+    expect(on(view)).toEqual(['This week'])
+    fireEvent.click(within(view).getByRole('button', { name: 'Grocery' }))
+    expect(on(view)).toEqual(['Grocery'])
+    const show = screen.getByRole('group', { name: 'Show' })
+    expect(on(show)).toEqual(['Need 1'])
+    fireEvent.click(within(show).getByRole('button', { name: /^All/ }))
+    expect(on(show)).toEqual(['All 1'])
+  })
+})
+
 describe('the open day under a thumb', () => {
   /** A touch on the day's cards at (x, y), as React reads it: changedTouches. */
   const touch = (type: 'touchstart' | 'touchmove' | 'touchend', x: number, y: number) => {
@@ -301,7 +318,7 @@ describe('the meal picker', () => {
     expect(screen.getByRole('dialog')).toBeTruthy()
     const remove = within(picker).getByRole('button', { name: 'Remove Enchiladas' })
     fireEvent.click(remove)
-    fireEvent.click(within(picker).getByRole('button', { name: 'Remove Enchiladas: Remove?' }))
+    fireEvent.click(within(picker).getByRole('button', { name: 'Remove Enchiladas: Tap again to remove' }))
     expect(k.cleared).toEqual(['meal~2026-09-25~dinner~joe'])
     expect(screen.queryByRole('dialog')).toBeNull()
     expect(k.toasts.at(-1)?.msg).toBe('Removed “Enchiladas” from dinner')
@@ -415,7 +432,7 @@ describe('the slot row, as the calendar’s day sheet draws it', () => {
       />,
     )
     expect(screen.queryByRole('combobox')).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: /^Lunch on 2026-09-24/ }))
+    fireEvent.click(screen.getByRole('button', { name: /^Lunch on Thursday, September 24:/ }))
     const picker = sheet(/Thu 24 · Lunch/)
     // it is not his to change, so the sheet is for a new meal of his, and has nothing to remove
     expect(within(picker).queryByRole('button', { name: /^Remove/ })).toBeNull()

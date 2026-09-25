@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useRef } from 'react'
+import { scrollBehavior } from '../utils'
 import type { BackupList } from '../admin'
 import { isEnvelope, type Snapshot } from '../backupcrypto'
 
@@ -78,7 +79,7 @@ export function SnapshotFiles({ users, busy, pending, opened, link, passphrase, 
   // covered the very box it was typing into.
   useEffect(() => {
     if (!shown) return
-    panel.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+    panel.current?.scrollIntoView({ block: 'nearest', behavior: scrollBehavior() })
     if (window.matchMedia?.('(pointer: fine)').matches) field.current?.focus({ preventScroll: true })
   }, [shown])
 

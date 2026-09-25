@@ -272,7 +272,13 @@ export function freeTimeWishlist(tasks: Task[], limit = 5): Task[] {
  * "never" on it; each option carries the day the nudge comes back, so nothing
  * is quietly dropped and nobody is forgotten by a mis-tap.
  */
-function SnoozeButton({ label, onPick }: { label: string; onPick(days: number): void }) {
+/** A snooze option as it is said aloud, where the button shows "1w": 7 → "1 week", 30 → "1 month", 90 → "3 months". */
+export function spokenSnooze(days: number): string {
+  const [n, unit] = days % 7 === 0 && days < 28 ? [days / 7, 'week'] : [Math.round(days / 30), 'month']
+  return `${n} ${unit}${n === 1 ? '' : 's'}`
+}
+
+export function SnoozeButton({ label, onPick }: { label: string; onPick(days: number): void }) {
   const [open, setOpen] = useState(false)
   if (!open) {
     return (
@@ -289,6 +295,7 @@ function SnoozeButton({ label, onPick }: { label: string; onPick(days: number): 
           type="button"
           className="btn subtle nudge-snooze-opt"
           title={`Ask again in ${o.label}`}
+          aria-label={spokenSnooze(o.days)}
           onClick={() => {
             setOpen(false)
             onPick(o.days)
@@ -422,7 +429,7 @@ export function bandOf(dx: number, prev: DragBand, canDefer: boolean): DragBand 
  * only mounted once the row has actually moved, so it is never in the way of a
  * screen reader or a stray tap.
  */
-function TaskRow({
+export function TaskRow({
   task,
   reason,
   onOpen,
@@ -543,7 +550,8 @@ function TaskRow({
           type="checkbox"
           className="tcheck"
           checked={done}
-          aria-label={done ? 'Reopen' : 'Mark done'}
+          // named with its task: a list of "Mark done, Mark done" says nothing
+          aria-label={`${done ? 'Reopen' : 'Mark'} “${task.title || excerpt(task.description, 60) || 'Untitled'}”${done ? '' : ' done'}`}
           onClick={e => e.stopPropagation()}
           onChange={() => onStatus(task.id, done ? 'todo' : 'done')}
         />
@@ -1238,7 +1246,7 @@ export function Today({
           <ul className="dash-list">
             {top3.map((line, i) => (
               <li key={i} className={topDone[i] ? 'trow done' : 'trow'}>
-                <input type="checkbox" className="tcheck" checked={!!topDone[i]} aria-label="Mark done" onChange={() => toggleTop(i)} />
+                <input type="checkbox" className="tcheck" checked={!!topDone[i]} aria-label={`Mark “${line}” done`} onChange={() => toggleTop(i)} />
                 <div className="dash-main">
                   <span className="dash-title">{line}</span>
                   {/* the line stays; its task is also on the focus card above */}
@@ -1484,7 +1492,15 @@ export function Today({
           <ul className="dash-list tlist">
             {s.doneRecent.slice(0, 8).map(t => (
               <li key={t.id} className="trow done" onClick={() => onOpen(t)}>
-                <input type="checkbox" className="tcheck" checked readOnly aria-label="Done" onClick={e => e.stopPropagation()} onChange={() => onStatus(t.id, 'todo')} />
+                <input
+                  type="checkbox"
+                  className="tcheck"
+                  checked
+                  readOnly
+                  aria-label={`Reopen “${t.title || excerpt(t.description, 60) || 'Untitled'}”`}
+                  onClick={e => e.stopPropagation()}
+                  onChange={() => onStatus(t.id, 'todo')}
+                />
                 <div className="dash-main">
                   <button type="button" className="row-open">
                     <span className="dash-title">{t.title || excerpt(t.description, 60) || 'Untitled'}</span>

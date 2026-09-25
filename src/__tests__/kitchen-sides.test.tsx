@@ -314,10 +314,10 @@ describe('the meal slot row', () => {
 
   it('shows the meal chosen, as the button that opens the picker, and an empty slot as Choose…', () => {
     const html = row({ meal: withSides(DAY, undefined) })
-    expect(html).toContain('aria-label="Dinner on 2026-09-17: Chicken curry"')
+    expect(html).toContain('aria-label="Dinner on Thursday, September 17: Chicken curry"')
     expect(html).toContain('<span class="meal-slot-chosen"><span aria-hidden="true">🍛 </span>Chicken curry</span>')
     expect(html).not.toContain('<select')
-    expect(row()).toContain('aria-label="Dinner on 2026-09-17: choose"')
+    expect(row()).toContain('aria-label="Dinner on Thursday, September 17: choose"')
     expect(row()).toContain('<span class="meal-slot-placeholder">Choose…</span>')
   })
 
@@ -335,9 +335,9 @@ describe('the meal slot row', () => {
 
   it('offers + Side on a cooked dinner, and shows each side under the main with a way to take it off', () => {
     const html = row({ meal: withSides(DAY, [{ recipeId: 'rice', title: 'Rice' }, { title: 'garlic bread' }]) })
-    expect(html).toContain('aria-label="Add a side to dinner on 2026-09-17"')
+    expect(html).toContain('aria-label="Add a side to dinner on Thursday, September 17"')
     expect(html).toContain('>+ Side</button>')
-    expect(html).toContain('aria-label="Sides with dinner on 2026-09-17"')
+    expect(html).toContain('aria-label="Sides with dinner on Thursday, September 17"')
     expect(html).toContain('<span class="meal-side-name">🍚 Rice</span>')
     expect(html).toContain('<span class="meal-side-name">garlic bread</span>')
     expect(html).toContain('aria-label="Remove Rice"')
@@ -357,7 +357,7 @@ describe('the meal slot row', () => {
   it('offers For — Both of us / Just me — on your meal, not a Share toggle', () => {
     const mine = meal(DAY, 'breakfast', { title: 'Oats' })
     const html = row({ slot: 'breakfast', meal: mine, inHousehold: true, myId: 'me' })
-    expect(html).toContain('aria-label="Who breakfast on 2026-09-17 is for"')
+    expect(html).toContain('aria-label="Who breakfast on Thursday, September 17 is for"')
     expect(html).toContain('Just me')
     expect(html).toContain('Both of us')
     expect(html).toContain('Only on your week.')

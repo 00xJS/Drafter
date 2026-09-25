@@ -148,9 +148,15 @@ export function AttendancePicker({ event, people, places = [], onSavePlace, onSa
         ) : (
           <>
             {people.length > 0 && (
-              <div className="platform-toggles">
+              <div className="platform-toggles" role="group" aria-label="Who was there">
                 {people.map(p => (
-                  <button key={p.id} type="button" className={ids.includes(p.id) ? 'toggle on' : 'toggle'} onClick={() => setIds(cur => (cur.includes(p.id) ? cur.filter(x => x !== p.id) : [...cur, p.id]))}>
+                  <button
+                    key={p.id}
+                    type="button"
+                    className={ids.includes(p.id) ? 'toggle on' : 'toggle'}
+                    aria-pressed={ids.includes(p.id)}
+                    onClick={() => setIds(cur => (cur.includes(p.id) ? cur.filter(x => x !== p.id) : [...cur, p.id]))}
+                  >
                     {p.emoji ? `${p.emoji} ` : ''}
                     {p.name}
                   </button>

@@ -1,4 +1,5 @@
 import { CSSProperties, Fragment, RefObject, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { scrollBehavior } from '../utils'
 import { JournalEntry, MOODS, MOOD_META, Mood, Person } from '../types'
 import { useDayKey } from '../useDayKey'
 import {
@@ -383,7 +384,7 @@ export function JournalView({ entries, people, onSave, onDelete, openDate, onOpe
     // …unless the mount above is putting the reader back where they were, which
     // only ever happens for today's key. Cleared straight away: a past day
     // opened later in this same visit is a target again.
-    if (!restored.current) window.setTimeout(() => document.getElementById(`journal-day-${openDate}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' }), 60)
+    if (!restored.current) window.setTimeout(() => document.getElementById(`journal-day-${openDate}`)?.scrollIntoView({ block: 'start', behavior: scrollBehavior() }), 60)
     restored.current = false
     openDateUsed()
   }, [openDate])
@@ -469,7 +470,7 @@ export function JournalView({ entries, people, onSave, onDelete, openDate, onOpe
   const openDay = (date: string) => {
     showDay(date)
     restored.current = false
-    window.setTimeout(() => document.getElementById(`journal-day-${date}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' }), 60)
+    window.setTimeout(() => document.getElementById(`journal-day-${date}`)?.scrollIntoView({ block: 'start', behavior: scrollBehavior() }), 60)
   }
 
   /**

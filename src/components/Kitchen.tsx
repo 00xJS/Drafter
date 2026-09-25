@@ -498,9 +498,9 @@ export function Kitchen({ myId = null, nameOf, inHousehold, members = NO_MEMBERS
       {/* four segments on one row: a phone narrows their thumbs and caps their
           labels (.kitchen-seg), as Home's four are */}
       <div className="people-tab-seg kitchen-seg">
-        <span className="segmented">
+        <span className="segmented" role="group" aria-label="Kitchen view">
           {KITCHEN_TABS.map(t => (
-            <button key={t.key} className={seg === t.key ? 'seg on' : 'seg'} onClick={() => setTab(t.key)}>
+            <button key={t.key} type="button" aria-pressed={seg === t.key} className={seg === t.key ? 'seg on' : 'seg'} onClick={() => setTab(t.key)}>
               {t.label}
             </button>
           ))}
@@ -1199,9 +1199,9 @@ function GroceryPane({
       ) : (
         <>
           <div className="grocery-filter-row">
-            <div className="segmented">
+            <div className="segmented" role="group" aria-label="Show">
               {(['need', 'have', 'done', 'all'] as const).map(f => (
-                <button key={f} className={filter === f ? 'seg on' : 'seg'} onClick={() => changeFilter(f)}>
+                <button key={f} type="button" className={filter === f ? 'seg on' : 'seg'} aria-pressed={filter === f} onClick={() => changeFilter(f)}>
                   {f === 'all' ? `All ${counts.all}` : `${GROCERY_STATE_META[f].label} ${counts[f]}`}
                 </button>
               ))}
@@ -1830,7 +1830,9 @@ export function RecipeForm({
         </div>
         <div className="field">
           <span>Ingredients</span>
-          {ingredients.map(ing => (
+          {ingredients.map((ing, n) => (
+            // three boxes a row with only placeholders to say what they are:
+            // each is named, with its row, for a screen reader
             <div key={ing.id} className="ing-row">
               <input
                 className="ing-qty"
@@ -1839,13 +1841,15 @@ export function RecipeForm({
                 value={qtyText[ing.id] ?? (ing.qty != null ? String(ing.qty) : '')}
                 onChange={e => typeQty(ing.id, e.target.value)}
                 placeholder="1"
+                aria-label={`Ingredient ${n + 1}: amount`}
               />
-              <input className="ing-unit" value={ing.unit ?? ''} onChange={e => setIng(ing.id, { unit: e.target.value })} placeholder="cup" />
+              <input className="ing-unit" value={ing.unit ?? ''} onChange={e => setIng(ing.id, { unit: e.target.value })} placeholder="cup" aria-label={`Ingredient ${n + 1}: unit`} />
               <input
                 className="ing-name"
                 value={ing.name}
                 onChange={e => setIng(ing.id, { name: e.target.value })}
                 placeholder="onion"
+                aria-label={`Ingredient ${n + 1}: what it is`}
               />
             </div>
           ))}

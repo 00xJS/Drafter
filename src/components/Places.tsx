@@ -39,7 +39,8 @@ import { Bars } from './bits'
 import { requestDevicePosition, tidyCoords } from '../geo'
 import { FindAddress } from './AddressFinder'
 import type { AddressCandidate } from '../geocode'
-import { fmtDate, fromLocalInput, uid } from '../utils'
+import { fmtDate, fromLocalInput, scrollBehavior, uid } from '../utils'
+import { ColorSwatches } from './ColorSwatches'
 import { ConfirmButton } from './ConfirmButton'
 import { Modal, ModalHead, useChanged } from './Modal'
 
@@ -187,9 +188,9 @@ export function PlaceForm({
         </div>
         <div className="field">
           <span>Category</span>
-          <div className="segmented" style={{ flexWrap: 'wrap' }}>
+          <div className="segmented" role="group" aria-label="Category" style={{ flexWrap: 'wrap' }}>
             {PLACE_CATEGORIES.map(c => (
-              <button key={c} type="button" className={category === c ? 'seg on' : 'seg'} onClick={() => setCategory(c)}>
+              <button key={c} type="button" className={category === c ? 'seg on' : 'seg'} aria-pressed={category === c} onClick={() => setCategory(c)}>
                 {PLACE_CATEGORY_META[c].emoji} {PLACE_CATEGORY_META[c].label}
               </button>
             ))}
@@ -247,11 +248,7 @@ export function PlaceForm({
         </label>
         <div className="field">
           <span>Color</span>
-          <div className="swatches">
-            {PROJECT_COLORS.map(c => (
-              <button key={c} type="button" className={color === c ? 'swatch on' : 'swatch'} style={{ background: c }} onClick={() => setColor(c)} aria-label={c} />
-            ))}
-          </div>
+          <ColorSwatches value={color} onChange={setColor} />
         </div>
         <label className="field">
           <span>Notes</span>
@@ -321,6 +318,7 @@ export function LogOuting({
                   key={p.id}
                   type="button"
                   className={ids.includes(p.id) ? 'toggle on' : 'toggle'}
+                  aria-pressed={ids.includes(p.id)}
                   onClick={() => setIds(cur => (cur.includes(p.id) ? cur.filter(x => x !== p.id) : [...cur, p.id]))}
                 >
                   {p.emoji ? `${p.emoji} ` : ''}
@@ -557,7 +555,7 @@ export function Places({ places, people, tasks, myId, onSave, onDelete, onLogOut
   useEffect(() => {
     if (!wantOpen) return
     // a long list can hold the row below the fold; one already in view stays put
-    window.setTimeout(() => document.getElementById(`place-${wantOpen}`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 60)
+    window.setTimeout(() => document.getElementById(`place-${wantOpen}`)?.scrollIntoView({ block: 'nearest', behavior: scrollBehavior() }), 60)
     openConsumed()
   }, [wantOpen])
   useEffect(() => {

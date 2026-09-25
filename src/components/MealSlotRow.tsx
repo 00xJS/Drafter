@@ -17,6 +17,7 @@ import {
   type VisitIndex,
 } from '../kitchen'
 import { placeEmoji } from '../places'
+import { spokenDay } from '../utils'
 import { ConfirmButton } from './ConfirmButton'
 import { Icon } from './Icon'
 import { MealPicker, type MealChoice } from './MealPicker'
@@ -101,7 +102,7 @@ export function MealSides({
           type="button"
           className="btn subtle meal-side-add"
           aria-expanded={open}
-          aria-label={`Add a side to ${slotName} on ${date}`}
+          aria-label={`Add a side to ${slotName} on ${spokenDay(date)}`}
           onClick={() => {
             setName('')
             setOpen(o => !o)
@@ -115,7 +116,7 @@ export function MealSides({
           <span className="meal-sides-with" aria-hidden="true">
             with
           </span>
-          <ul aria-label={`Sides with ${slotName} on ${date}`}>
+          <ul aria-label={`Sides with ${slotName} on ${spokenDay(date)}`}>
             {sides.map((s, i) => (
               <li key={`${i}:${s.recipeId ?? s.title}`} className="meal-side">
                 <span className="meal-side-name">
@@ -144,7 +145,7 @@ export function MealSides({
                 const r = recipes.find(x => x.id === e.target.value)
                 if (r) addSide({ recipeId: r.id, title: r.name })
               }}
-              aria-label={`A recipe to have with ${slotName} on ${date}`}
+              aria-label={`A recipe to have with ${slotName} on ${spokenDay(date)}`}
             >
               <option value="">Pick a recipe…</option>
               {sideChoices.map(r => (
@@ -168,7 +169,7 @@ export function MealSides({
               if (e.key === 'Escape') setOpen(false)
             }}
             placeholder={sideChoices.length > 0 ? 'or type one' : 'Garlic bread, salad…'}
-            aria-label={`A side to have with ${slotName} on ${date}, by name`}
+            aria-label={`A side to have with ${slotName} on ${spokenDay(date)}, by name`}
           />
           <button className="btn" onClick={addTyped} disabled={!name.trim()}>
             Add
@@ -332,7 +333,7 @@ export function MealSlotRow({
           type="button"
           className={meal ? 'meal-slot-choose set' : 'meal-slot-choose'}
           aria-haspopup="dialog"
-          aria-label={`${meta.label} on ${date}: ${chosen || 'choose'}`}
+          aria-label={`${meta.label} on ${spokenDay(date)}: ${chosen || 'choose'}`}
           onClick={() => setPicking('slot')}
         >
           {meal && shownMark ? (
@@ -363,7 +364,7 @@ export function MealSlotRow({
           </span>
           <Segmented
             role="group"
-            label={`Who ${slotName} on ${date} is for`}
+            label={`Who ${slotName} on ${spokenDay(date)} is for`}
             className="meal-audience-seg"
             items={[
               { key: 'both', label: 'Both of us' },

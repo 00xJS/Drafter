@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { BOARD_STATUSES, GithubProjectSync, Milestone, PROJECT_COLORS, PROJECT_STATUSES, PROJECT_STATUS_META, Project, ProjectStatus, STATUS_META, Task, Template } from '../types'
+import { BOARD_STATUSES, GithubProjectSync, Milestone, PROJECT_STATUSES, PROJECT_STATUS_META, Project, ProjectStatus, STATUS_META, Task, Template } from '../types'
 import { BUILT_IN_TEMPLATES, extendProject, templateFromProject } from '../templates'
 import { DraftedPlan, draftPlan } from '../ai'
 import { newerStamp } from '../itemops'
@@ -7,6 +7,7 @@ import { fromLocalInput, toLocalInput, uid } from '../utils'
 import { GithubProjectFields, fetchProjectFields, parseGithubUrl } from '../github'
 import { defaultColumnMap } from '../githubsync'
 import { GithubCard } from './GithubCard'
+import { ColorSwatches } from './ColorSwatches'
 import { ConfirmButton } from './ConfirmButton'
 import { Modal, ModalHead } from './Modal'
 
@@ -344,11 +345,7 @@ export function ProjectEditor({ project, tasks, getLatest, onSave, onDelete, onC
 
         <div className="field">
           <span>Color</span>
-          <div className="swatches">
-            {PROJECT_COLORS.map(c => (
-              <button key={c} type="button" className={color === c ? 'swatch on' : 'swatch'} style={{ background: c }} onClick={() => setColor(c)} aria-label={c} />
-            ))}
-          </div>
+          <ColorSwatches value={color} onChange={setColor} />
         </div>
 
         <label className="field">
@@ -358,9 +355,9 @@ export function ProjectEditor({ project, tasks, getLatest, onSave, onDelete, onC
 
         <div className="field">
           <span>Status</span>
-          <div className="segmented">
+          <div className="segmented" role="group" aria-label="Status">
             {PROJECT_STATUSES.map(s => (
-              <button key={s} type="button" className={status === s ? 'seg on' : 'seg'} onClick={() => setStatus(s)}>
+              <button key={s} type="button" className={status === s ? 'seg on' : 'seg'} aria-pressed={status === s} onClick={() => setStatus(s)}>
                 {PROJECT_STATUS_META[s].label}
               </button>
             ))}

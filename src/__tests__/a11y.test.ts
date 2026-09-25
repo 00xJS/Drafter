@@ -151,3 +151,10 @@ describe('the dialog shell and the top bar stay quiet', () => {
     }
   })
 })
+
+describe('Reduce Motion', () => {
+  it('is asked by every scroll a component starts (scrollBehavior): none is smooth by hand', () => {
+    const byHand = files.filter(f => /behavior:\s*['"]smooth['"]/.test(f.src)).map(f => f.path)
+    expect(byHand).toEqual([])
+  })
+})

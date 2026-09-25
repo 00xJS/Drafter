@@ -4,8 +4,9 @@ import { newerStamp } from '../itemops'
 import { PersonFilter, PersonStats, SEEN_META, cadenceChoice, compareStats, countOf, personMatcher, personStats, seenLabel, seenTasks } from '../people'
 import { PlaceWithPerson, favourites, placesWith } from '../places'
 import { localDayKey, mentions } from '../journal'
-import { fmtDate, fromLocalInput, uid } from '../utils'
+import { fmtDate, fromLocalInput, scrollBehavior, uid } from '../utils'
 import { Bars } from './bits'
+import { ColorSwatches } from './ColorSwatches'
 import { ConfirmButton } from './ConfirmButton'
 import { Modal, ModalHead, useChanged } from './Modal'
 import { PlacePicker } from './PlacePicker'
@@ -119,9 +120,9 @@ export function PersonForm({ person, onSave, onDelete, onClose }: { person?: Per
         </div>
         <div className="field">
           <span>Group</span>
-          <div className="segmented">
+          <div className="segmented" role="group" aria-label="Group">
             {PERSON_GROUPS.map(g => (
-              <button key={g} type="button" className={group === g ? 'seg on' : 'seg'} onClick={() => setGroup(g)}>
+              <button key={g} type="button" className={group === g ? 'seg on' : 'seg'} aria-pressed={group === g} onClick={() => setGroup(g)}>
                 {PERSON_GROUP_META[g]}
               </button>
             ))}
@@ -153,11 +154,7 @@ export function PersonForm({ person, onSave, onDelete, onClose }: { person?: Per
         </div>
         <div className="field">
           <span>Color</span>
-          <div className="swatches">
-            {PROJECT_COLORS.map(c => (
-              <button key={c} type="button" className={color === c ? 'swatch on' : 'swatch'} style={{ background: c }} onClick={() => setColor(c)} aria-label={c} />
-            ))}
-          </div>
+          <ColorSwatches value={color} onChange={setColor} />
         </div>
         <label className="field">
           <span>Notes</span>
@@ -468,7 +465,7 @@ export function People({ people, places = [], tasks, entries = NO_ENTRIES, journ
   useEffect(() => {
     if (!wantOpen) return
     // a long list can hold the row below the fold; one already in view stays put
-    window.setTimeout(() => document.getElementById(`person-${wantOpen}`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 60)
+    window.setTimeout(() => document.getElementById(`person-${wantOpen}`)?.scrollIntoView({ block: 'nearest', behavior: scrollBehavior() }), 60)
     openConsumed()
   }, [wantOpen])
   useEffect(() => {
