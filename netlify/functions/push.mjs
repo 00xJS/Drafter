@@ -31,6 +31,61 @@ export function configureWebPush() {
 const isApns = sub => sub?.type === 'apns' && typeof sub.token === 'string'
 
 /**
+ * The longest one browser push may take, from connecting to the push
+ * service's answer, as APNs has (lib/apns.mjs). web-push had no timeout at
+ * all, so one endpoint that stalled held the hourly digest until Netlify
+ * stopped it, and every account after it lost that hour.
+ */
+export const WEB_PUSH_TIMEOUT_MS = 8_000
+
+/**
+ * The push services browsers subscribe with: Google's (Chrome, Edge on
+ * Android, Opera, Samsung Internet, Brave), Mozilla's (Firefox), Apple's
+ * (Safari) and Microsoft's (Edge on Windows).
+ */
+const PUSH_HOSTS = new Set(['fcm.googleapis.com', 'updates.push.services.mozilla.com', 'web.push.apple.com'])
+const PUSH_HOST_SUFFIXES = ['.push.services.mozilla.com', '.notify.windows.com']
+/** A browser's public key (P-256, uncompressed) and its auth secret, as the Push API gives them: base64url. */
+const PUSH_KEY = /^[A-Za-z0-9_-]+={0,2}$/
+
+/**
+ * Whether an endpoint is a push service this site sends to: https, on one of
+ * their hosts, on the standard port, with no credentials in it. The server
+ * POSTs to whatever a subscription names, so anything else would let a
+ * signed-in account point it at an address of its choosing.
+ */
+export function knownPushEndpoint(endpoint) {
+  if (typeof endpoint !== 'string' || endpoint.length > 2048) return false
+  let url
+  try {
+    url = new URL(endpoint)
+  } catch {
+    return false
+  }
+  if (url.protocol !== 'https:' || url.username || url.password || url.port) return false
+  const host = url.hostname.toLowerCase()
+  return PUSH_HOSTS.has(host) || PUSH_HOST_SUFFIXES.some(suffix => host.endsWith(suffix))
+}
+
+/** A subscription's keys as the Push API gives them, or null: a 65-byte public key and an auth secret of 16 bytes or more. */
+function pushKeys(keys) {
+  const p256dh = keys?.p256dh
+  const auth = keys?.auth
+  if (typeof p256dh !== 'string' || typeof auth !== 'string' || !PUSH_KEY.test(p256dh) || !PUSH_KEY.test(auth)) return null
+  const bytes = key => Buffer.from(key, 'base64url').length
+  return bytes(p256dh) === 65 && bytes(auth) >= 16 && bytes(auth) <= 64 ? { p256dh, auth } : null
+}
+
+/** Settle within `ms` whatever `promise` does: a push service that never answers is a failure, not a wait. */
+function within(promise, ms, what) {
+  let timer
+  const late = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${what} did not answer within ${ms} ms`)), ms)
+  })
+  return Promise.race([promise, late]).finally(() => clearTimeout(timer))
+}
+
+/**
  * Send to every subscription. Returns `gone` (expired endpoints to drop),
  * `failed` (everything else that errored), and `updated` (APNs entries whose
  * sandbox/production env was discovered and should be persisted).
@@ -63,8 +118,11 @@ export async function sendToAll(subscriptions, payload) {
         return
       }
       if (!webPushConfigured()) return failed.push({ endpoint: sub.endpoint, kind: 'web', statusCode: 501, body: 'VAPID keys are not set on the host' })
+      // an address no push service answers at is never sent to, and is dropped like an expired one
+      if (!knownPushEndpoint(sub?.endpoint)) return gone.push(sub?.endpoint)
       try {
-        await webpush.sendNotification(sub, JSON.stringify(payload), { TTL: 6 * 3600 })
+        // web-push's own timeout ends a socket that goes quiet; `within` ends the send whatever the socket does
+        await within(webpush.sendNotification(sub, JSON.stringify(payload), { TTL: 6 * 3600, timeout: WEB_PUSH_TIMEOUT_MS }), WEB_PUSH_TIMEOUT_MS, 'The push service')
       } catch (e) {
         if (e?.statusCode === 404 || e?.statusCode === 410) gone.push(sub.endpoint)
         else failed.push({ endpoint: sub.endpoint, kind: 'web', statusCode: e?.statusCode ?? 0, body: String(e?.body ?? e?.message ?? '').slice(0, 200) })
@@ -171,9 +229,11 @@ const handler = async req => {
         if (!apnsConfigured()) return Response.json({ error: `APNs is not configured on the host: set ${missingApnsEnv().join(', ')}` }, { status: 501 })
         entry = { endpoint: `apns:${token}`, type: 'apns', token }
       } else {
-        if (!sub?.endpoint || !sub?.keys?.p256dh || !sub?.keys?.auth) return Response.json({ error: 'invalid subscription' }, { status: 400 })
+        const keys = pushKeys(sub?.keys)
+        // a browser's subscription names its push service, and nothing else is sent to
+        if (!knownPushEndpoint(sub?.endpoint) || !keys) return Response.json({ error: 'invalid subscription' }, { status: 400 })
         if (!webPushConfigured()) return Response.json({ error: 'Browser push is not configured on the host: set VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY' }, { status: 501 })
-        entry = { endpoint: sub.endpoint, keys: sub.keys, expirationTime: sub.expirationTime ?? null }
+        entry = { endpoint: sub.endpoint, keys, expirationTime: Number.isFinite(sub.expirationTime) ? sub.expirationTime : null }
       }
       const next = [...subs.filter(x => x.endpoint !== entry.endpoint), entry].slice(-8)
       await settingsSet(user.id, { push_subscriptions: next, timezone: typeof body.timezone === 'string' ? body.timezone : (s.timezone ?? null) })
