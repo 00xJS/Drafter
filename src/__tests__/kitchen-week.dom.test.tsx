@@ -174,6 +174,19 @@ describe('the open day’s cards', () => {
   })
 })
 
+describe('Plan this week’s meals, from the week’s header', () => {
+  it('plans the dinners it proposes for both of them, as the picker starts a dinner, in Joe’s own rows', () => {
+    const k = openKitchen()
+    fireEvent.click(screen.getByRole('button', { name: 'Plan this week’s meals' }))
+    const plan = sheet(/Plan this week’s meals/)
+    fireEvent.click(within(plan).getByRole('button', { name: /^Plan \d meals?$/ }))
+    // Saturday's is the week's something new; Friday has nothing cooled down enough to offer
+    const planned = k.savedMeals.filter(m => m.date > '2026-09-24')
+    expect(planned.map(m => [m.id, m.slot, m.recipeId, m.shared])).toEqual([['meal~2026-09-26~dinner~joe', 'dinner', 'ench', true]])
+    expect(k.toasts.at(-1)?.msg).toBe('Planned 1 meal — the grocery list is updated')
+  })
+})
+
 describe('the meal picker', () => {
   it('opens on For — Just me for a lunch — asks who is cooking only for both of them and a dish, searches recipes and places, and a tap saves', () => {
     const k = openKitchen()

@@ -407,7 +407,9 @@ export function Kitchen({ myId = null, nameOf, inHousehold, members = NO_MEMBERS
    * nothing uses and nobody edited, and rebuilds the list again.
    */
   const applyMealPlan = (picks: MealPick[]): { count: number; undo(): void } | null => {
-    const { meals: planned, created } = mealsForPicks(picks, { recipes, places, meals, createRecipe: onCreateRecipe, now: new Date(), myId })
+    const { meals: picked, created } = mealsForPicks(picks, { recipes, places, meals, createRecipe: onCreateRecipe, now: new Date(), myId })
+    // for whom the picker starts a new meal: in a household, a dinner for both of you, and a lunch for you
+    const planned = inHousehold ? picked.map(m => (m.shared === undefined ? { ...m, shared: m.slot === 'dinner' } : m)) : picked
     if (planned.length === 0) return null
     for (const m of planned) onSaveMeal(m)
     const dates = planned.map(m => m.date)
