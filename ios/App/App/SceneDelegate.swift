@@ -239,11 +239,43 @@ public class AppearancePlugin: CAPPlugin, CAPBridgedPlugin {
 /// injects the plugin's JS proxy as a user script, and capacitorDidLoad is the
 /// last moment before the page loads.
 class DrafterBridgeViewController: CAPBridgeViewController {
+    /// The page's answers to the bridge's start-up questions (BridgeAnswers, below):
+    /// made where the configuration is, added where the web view is.
+    private var bridgeAnswers: WKUserScript?
+
     override func capacitorDidLoad() {
         bridge?.registerPluginInstance(AppearancePlugin())
         bridge?.registerPluginInstance(SubjectLiftPlugin())
         bridge?.registerPluginInstance(WidgetBridgePlugin())
         paintGround()
+    }
+
+    /// iOS 27's WebKit holds every JavaScript alert, confirm and prompt until the
+    /// page's Safe Browsing lookup answers, with no timeout. Capacitor's
+    /// native-bridge.js asks two questions through a synchronous prompt() at
+    /// document start, so a lookup of capacitor://drafter that never answered left
+    /// the app blank until it was force-quit. This web view only ever shows the
+    /// bundled app (Capacitor sends every outside page to Safari), so it does
+    /// without Safe Browsing, and the two questions are answered in the page
+    /// before the bridge asks them, from the same config Capacitor's own handler
+    /// reads (WebViewDelegationHandler's runJavaScriptTextInputPanel).
+    override func webViewConfiguration(for instanceConfiguration: InstanceConfiguration) -> WKWebViewConfiguration {
+        let configuration = super.webViewConfiguration(for: instanceConfiguration)
+        configuration.preferences.isFraudulentWebsiteWarningEnabled = false
+        let cookies = instanceConfiguration.getPluginConfig("CapacitorCookies").getBoolean("enabled", false)
+        let http = instanceConfiguration.getPluginConfig("CapacitorHttp").getBoolean("enabled", false)
+        bridgeAnswers = WKUserScript(source: BridgeAnswers.script(cookies: cookies, http: http), injectionTime: .atDocumentStart, forMainFrameOnly: true)
+        return configuration
+    }
+
+    /// Capacitor swaps its own user content controller into the configuration
+    /// between the two hooks, so a script added in webViewConfiguration(for:) would
+    /// be dropped; here it goes in first, before the bridge adds native-bridge.js.
+    override func webView(with frame: CGRect, configuration: WKWebViewConfiguration) -> WKWebView {
+        if let script = bridgeAnswers {
+            configuration.userContentController.addUserScript(script)
+        }
+        return super.webView(with: frame, configuration: configuration)
     }
 
     func applyAppearance(_ style: UIUserInterfaceStyle) {
@@ -263,5 +295,35 @@ class DrafterBridgeViewController: CAPBridgeViewController {
     override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
         super.traitCollectionDidChange(previousTraitCollection)
         paintGround()
+    }
+}
+
+/// The two questions Capacitor's native-bridge.js asks through prompt() at
+/// document start (is CapacitorCookies on? is CapacitorHttp on?), answered in the
+/// page so no synchronous round trip to native code is left for WebKit to hold.
+/// Any other prompt goes to the real one, which comes back once both are answered.
+/// bridgeanswers.test.ts runs this script and holds its two names to the bridge
+/// in node_modules/@capacitor/ios, and that version to the framework the app links.
+enum BridgeAnswers {
+    static let source = """
+    (function () {
+      var answers = { 'CapacitorCookies.isEnabled': '__COOKIES__', 'CapacitorHttp': '__HTTP__' };
+      var left = 2, ask = window.prompt;
+      window.prompt = function (message) {
+        var type;
+        try { type = JSON.parse(message).type; } catch (e) {}
+        if (typeof type === 'string' && Object.prototype.hasOwnProperty.call(answers, type)) {
+          if (--left === 0) window.prompt = ask;
+          return answers[type];
+        }
+        return ask.apply(window, arguments);
+      };
+    })();
+    """
+
+    static func script(cookies: Bool, http: Bool) -> String {
+        source
+            .replacingOccurrences(of: "__COOKIES__", with: cookies ? "true" : "false")
+            .replacingOccurrences(of: "__HTTP__", with: http ? "true" : "false")
     }
 }
