@@ -74,6 +74,10 @@ let jobRuns: Map<string, Record<string, any>>
 let started: Record<string, any>[]
 /** record_kinds lists recipedraft: the v3.35 migration is applied. */
 let kindStored: boolean
+/** The database predates v3.34: PostgREST has no sync_posts_as. */
+let writeAsMissing: boolean
+/** Each hand-over PATCH: which row, to whom. */
+let handOvers: { id: string; user_id: string }[]
 
 const at = (day: number, hour = 0) => new Date(Date.parse(NIGHT) + day * DAY + hour * HOUR)
 const dayKey = (days: number) => new Date(Date.parse(`${TODAY}T12:00:00Z`) + days * DAY).toISOString().slice(0, 10)
@@ -114,6 +118,8 @@ beforeEach(() => {
   jobRuns = new Map()
   started = []
   kindStored = true
+  writeAsMissing = false
+  handOvers = []
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -159,6 +165,25 @@ beforeEach(() => {
           .sort((a, b) => (a.data.id < b.data.id ? -1 : 1))
         const page = found.slice(0, Number(q.get('limit') ?? 1000)).map(r => ({ id: r.data.id, ...structuredClone(r) }))
         return new Response(JSON.stringify(page), { headers: { 'content-range': page.length ? `0-${page.length - 1}/${found.length}` : `*/${found.length}` } })
+      }
+      if (path === 'rpc/sync_posts_as' && method === 'POST' && writeAsMissing) {
+        return Response.json({ code: 'PGRST202', message: 'Could not find the function public.sync_posts_as(incoming, p_owner) in the schema cache' }, { status: 404 })
+      }
+      if (path === 'rpc/sync_posts' && method === 'POST') {
+        // as the service key's sync_posts writes: a new row is the site owner's until it is handed over
+        for (const item of body.incoming) {
+          const stored = rows.find(r => r.data.id === item.id)
+          if (!stored) rows.push({ user_id: JOE, data: structuredClone(item) })
+          else if (item.updatedAt > stored.data.updatedAt) stored.data = structuredClone(item)
+        }
+        return Response.json({ items: [], rejected: [], stale: [], gone: [] })
+      }
+      if (path.startsWith('posts?id=eq.') && method === 'PATCH') {
+        const id = decodeURIComponent(path.slice('posts?id=eq.'.length))
+        handOvers.push({ id, user_id: body.user_id })
+        const stored = rows.find(r => r.data.id === id)
+        if (stored) stored.user_id = body.user_id
+        return new Response(null, { status: 204 })
       }
       if (path === 'rpc/sync_posts_as' && method === 'POST') {
         // as the database does since v3.34: a new row is the named owner's from
@@ -229,6 +254,18 @@ describe('a night’s drafts', () => {
     expect(writes.flatMap(w => w.items).every(i => i.kind === 'recipedraft')).toBe(true)
     // and the job's own record says so
     expect(jobRuns.get('recipe-drafts')).toMatchObject({ ok: true, counts: { asked: 2, drafted: 2, noAnswer: 0, steppedAside: 0, removed: 0, waiting: 0 } })
+  })
+
+  it('on a database before v3.34, still ends up its recipe’s owner’s: written, then handed over', async () => {
+    writeAsMissing = true
+    rows = [recipe(MARIA, 'tacos', 'Tacos'), recipe(JOE, 'chili', 'Chili')]
+    const out = await job([JOE])
+    expect(out.counts).toMatchObject({ drafted: 2 })
+    expect(handOvers.sort((a, b) => a.id.localeCompare(b.id))).toEqual([
+      { id: 'recipedraft~chili', user_id: JOE },
+      { id: 'recipedraft~tacos', user_id: MARIA },
+    ])
+    expect([drafted('tacos')!.user_id, drafted('chili')!.user_id]).toEqual([MARIA, JOE])
   })
 
   it('asks exactly as the app asks: its prompt and brief, JSON, no thinking, in the background', async () => {

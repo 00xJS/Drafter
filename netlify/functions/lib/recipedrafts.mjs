@@ -336,7 +336,8 @@ export async function draftRecipe(pick, { read, write, ask, deadline, now }) {
   const row = draft
     ? { ...base, ...(draft.servings ? { servings: draft.servings } : {}), ingredients: draft.ingredients, steps: draft.steps, draftedAt: stamp, ...(model ? { model } : {}) }
     : { ...base, ingredients: [], steps: [], tries: (Number(prev?.tries) || 0) + 1 }
-  const out = await write(pick.writer, [row])
+  // a new row, on a database before v3.34, is born the site owner's and handed over after, as Sunday's draft is
+  const out = await write(pick.writer, [row], { handOver: !prev })
   if (!out.ok) return { state: 'failed', why: out.why }
   if ([...out.rejected, ...out.stale, ...out.gone].includes(draftId)) return { state: 'stepped aside' }
   return { state: draft ? 'drafted' : 'no answer' }

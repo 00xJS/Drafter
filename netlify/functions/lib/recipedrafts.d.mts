@@ -61,7 +61,7 @@ export declare function draftRecipe(
   pick: Pick<RecipePick, 'recipe' | 'ownerId' | 'writer' | 'row'>,
   ctx: {
     read: Rest
-    write: (ownerId: string, items: Record<string, unknown>[]) => Promise<WriteAsOutcome>
+    write: (ownerId: string, items: Record<string, unknown>[], opts?: { handOver?: boolean }) => Promise<WriteAsOutcome>
     ask: (input: CompletionInput) => Promise<Completion>
     deadline: number
     now: () => number
@@ -73,7 +73,7 @@ export declare function runRecipeDrafts(
   deps?: {
     rest?: Rest
     restAll?: (path: string) => Promise<any[]>
-    writeAs?: (ownerId: string, items: Record<string, unknown>[]) => Promise<WriteAsOutcome>
+    writeAs?: (ownerId: string, items: Record<string, unknown>[], opts?: { handOver?: boolean }) => Promise<WriteAsOutcome>
     complete?: (input: CompletionInput) => Promise<Completion>
     now?: () => number
   },
