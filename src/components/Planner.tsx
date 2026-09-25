@@ -13,17 +13,11 @@ import { useSignOut } from './SignOutGuard'
 import { forgetRetiredKeys } from '../retiredkeys'
 import { garmentMediaIds } from '../../shared/media.mts'
 import { usePlannerCtx } from './planner/ctx'
-import { CalendarScreen } from './planner/CalendarScreen'
-import { AdminScreen } from './planner/AdminScreen'
-import { ChatScreen } from './planner/ChatScreen'
 import { HomeScreen } from './planner/HomeScreen'
-import { InsightsScreen } from './planner/InsightsScreen'
-import { KeepScreen } from './planner/KeepScreen'
-import { SettingsScreen } from './planner/SettingsScreen'
-import { useWarmChunks } from './planner/lazy'
+// Home is drawn at launch; every other screen is a chunk of its own, fetched with its views
+import { AdminScreen, CalendarScreen, ChatScreen, InsightsScreen, KeepScreen, SCREEN_VIEWS, SettingsScreen, TasksScreen, useWarmChunks } from './planner/lazy'
 import { Overlays } from './planner/Overlays'
 import { ScreenBoundary } from './planner/ScreenBoundary'
-import { TasksScreen } from './planner/TasksScreen'
 import { ToastHost } from './planner/Toast'
 import { TopBar, TopBarCrash } from './planner/TopBar'
 import { useCalendarSync } from './planner/useCalendarSync'
@@ -151,6 +145,7 @@ export default function Planner() {
     ...lifeActions,
     ...taskActions,
     ...focusActions,
+    views: SCREEN_VIEWS,
     // the weekly balance check-in opens where it is done, Finance's Check in
     // sheet, wherever it is tapped: Home, the calendar, the list, search
     openTask: (t: Task) => (isCheckIn(t) ? nav.openFinanceCheckIn() : overlays.openTask(t)),

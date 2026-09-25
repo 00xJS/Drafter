@@ -19,9 +19,6 @@ vi.mock('../api', () => ({
     return Response.json({ ok: true, notified: 1 })
   }),
 }))
-// the chat's own chunk, straight: this is about what the screen does with it
-vi.mock('../components/planner/lazy', async () => ({ Chat: (await import('../components/Chat')).Chat, EventEditor: () => null, TaskEditor: () => null }))
-
 import { MESSAGE_WAIT_MS, watchActivity } from '../activity'
 import { newMessage } from '../chat'
 import { Chat, type ChatSide } from '../components/Chat'
@@ -32,6 +29,9 @@ import { hubOpener } from '../components/planner/hubRouting'
 import { useNavigation } from '../components/planner/useNavigation'
 import { useOverlays } from '../components/planner/useOverlays'
 import type { HouseholdInfo } from '../household'
+
+/** The chat screen's views, as the shell hands them down: the chat's own chunk, straight (this is about what the screen does with it), and no editors. */
+const VIEWS = { Chat, EventEditor: () => null, TaskEditor: () => null }
 
 const ME = 'me-00000-4000-8000-00000000000a'
 const THEM = 'them-000-4000-8000-00000000000b'
@@ -76,7 +76,7 @@ describe('a message’s row in the bell', () => {
   function Shell({ notices, onRead }: { notices: Notice[]; onRead(n: Notice): void }) {
     const nav = useNavigation()
     const overlays = useOverlays()
-    const p = { store: { tasks: [], events: [] }, showToast: noop, ...nav, ...overlays } as unknown as PlannerCtx
+    const p = { store: { tasks: [], events: [] }, showToast: noop, views: VIEWS, ...nav, ...overlays } as unknown as PlannerCtx
     return (
       <>
         <button type="button" onClick={() => overlays.openSheet({ kind: 'notices' })}>
@@ -197,6 +197,7 @@ describe('the chat screen', () => {
       setChatSide: setSide,
       chatSeenAt: seenAt,
       markChatSeen: (at: string) => setSeenAt(at),
+      views: VIEWS,
     }
     const p = new Proxy(given, { get: (target, key: string) => (key in target ? target[key] : noop) }) as unknown as PlannerCtx
     return <ChatScreen p={p} />

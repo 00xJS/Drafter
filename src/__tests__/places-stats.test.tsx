@@ -698,8 +698,9 @@ describe('the shell’s ways into Places → Stats', () => {
     // from the Stats registry lazy.ts re-exports (lazystats.ts)
     expect(read('../components/planner/lazystats.ts')).toContain("import('../PlacesStats')")
     expect(lazy).toContain("from './lazystats'")
-    expect(lazy).toMatch(/keep: \[People\.preload, Places\.preload, PeopleStats\.preload, PlacesStats\.preload, ImHereSheet\.preload/)
-    expect(screen).toMatch(/import \{ People, PeopleStats, Places, PlacesStats \} from '\.\/lazy'/)
+    // …after the Keep screen's own chunk, which draws the views the shell hands it (p.views)
+    expect(lazy).toMatch(/keep: \[KeepScreen\.preload, People\.preload, Places\.preload, PeopleStats\.preload, PlacesStats\.preload, ImHereSheet\.preload/)
+    expect(screen).toMatch(/const \{ People, PeopleStats, Places, PlacesStats \} = p\.views/)
   })
 
   it('remembers List · Stats from its switch alone; a tab tap re-reads it, the palette and a link move it for the visit', () => {

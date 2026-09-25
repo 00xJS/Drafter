@@ -5,7 +5,6 @@ import { newerStamp, trashedLine } from '../../itemops'
 import type { CalendarEntry, Meal, Task } from '../../types'
 import type { ChatOpen, ChatShell } from '../Chat'
 import { ErrorBoundary } from '../ErrorBoundary'
-import { Chat, EventEditor, TaskEditor } from './lazy'
 import { askDocOpener } from './askRouting'
 import type { PlannerCtx } from './ctx'
 import { PushedScreen } from './PushedScreen'
@@ -49,6 +48,7 @@ function onShownChange(listener: () => void): () => void {
  * this thread has shown is read here too.
  */
 export function ChatScreen({ p }: { p: PlannerCtx }) {
+  const { Chat, EventEditor, TaskEditor } = p.views
   const { store, upsert, remove, restore, household, allEvents, setPushed, chatSide, setChatSide, chatSeenAt, markChatSeen, showToast } = p
   const [editing, setEditing] = useState<Editing | null>(null)
 

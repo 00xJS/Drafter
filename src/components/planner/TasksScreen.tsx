@@ -4,7 +4,6 @@ import { Icon } from '../Icon'
 import { inTrash, newerStamp, trashedLine } from '../../itemops'
 import type { Account } from '../../types'
 import type { PlannerCtx } from './ctx'
-import { Board, Finance, NotesView, TasksTable } from './lazy'
 import { TASKS_TABS } from './routes'
 
 /** Set once this device has shown the line that says what Tasks is. */
@@ -30,6 +29,7 @@ function markTasksNoteSeen(): void {
 
 /** Tasks: the list, the board, Finance and the project notes, four segments of one tab. */
 export function TasksScreen({ p }: { p: PlannerCtx }) {
+  const { Board, Finance, NotesView, TasksTable } = p.views
   const { store, upsert, remove, restore, household, projectMap, inHousehold } = p
   const { tasksTab, setTasksTab, notesProjectId, setNotesProjectId, setTrashOpen, noteOpenId, setNoteOpenId, financeCheckIn, setFinanceCheckIn, financeBill, setFinanceBill, taskShown, setTaskShown } = p
   const { openTask, newTask, deleteTask, changeStatus, applyStatus, showToast } = p

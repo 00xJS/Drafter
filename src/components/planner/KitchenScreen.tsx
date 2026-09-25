@@ -1,10 +1,10 @@
 import { memberName } from '../../household'
 import { trashedLine } from '../../itemops'
 import type { PlannerCtx } from './ctx'
-import { Kitchen } from './lazy'
 
 /** Kitchen: recipes, the week's meals, the grocery list and the figures. */
 export function KitchenScreen({ p }: { p: PlannerCtx }) {
+  const { Kitchen } = p.views
   const { store, upsert, remove, restore, household, showToast, kitchenRecipe, setKitchenRecipe, kitchenOpen, setKitchenOpen, kitchenDay, setKitchenDay, saveMeal, clearMeal, createPlaceInline, createRecipeInline, calendars } = p
   return (
     <Kitchen

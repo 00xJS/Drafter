@@ -546,6 +546,8 @@ const ctx = (nav: Nav, filters: ReturnType<typeof useListFilters>) =>
     mineOnly: false,
     // whose log the rows count (v3.24): the tab hands it to all four views
     household: { info: null, myId: null, refresh: noop, error: undefined },
+    // the lazy views, as the shell hands them to its screens
+    views: lazy.SCREEN_VIEWS,
   }) as unknown as PlannerCtx
 /** What the tab hands the lazy view of this type, or undefined when it draws none. */
 const handed = (tree: ReactNode, type: unknown) => elements(tree).find(e => e.type === type)?.props as Record<string, any> | undefined

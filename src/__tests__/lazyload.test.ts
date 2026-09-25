@@ -296,3 +296,33 @@ describe('the warm-up parses no assistant code and no calendar mirrors', () => {
     expect(readFileSync(component('Settings'), 'utf8')).toContain("import('./settings/Calendars')")
   })
 })
+
+/*
+ * The screens behind every tab but Home, and the pushed ones, are chunks of
+ * their own, fetched with their views: none is drawn at launch. A screen
+ * draws the views the shell hands it (p.views), and imports neither the
+ * views' files nor planner/lazy.ts, which names every lazy chunk — a chunk
+ * that did was renamed whenever any view changed. Today's wardrobe card is
+ * fetched when the wardrobe can dress you.
+ */
+describe('the screens and the wardrobe card load on demand', () => {
+  const SCREENS = ['CalendarScreen', 'TasksScreen', 'KeepScreen', 'InsightsScreen', 'SettingsScreen', 'ChatScreen', 'AdminScreen']
+  const planner = (name: string) => resolve(SRC, 'components/planner', `${name}.tsx`)
+  const lazySrc = readFileSync(resolve(SRC, 'components/planner/lazy.ts'), 'utf8')
+
+  it('loads each through planner/lazy.ts, and Home with the shell', () => {
+    for (const name of SCREENS) expect(lazySrc).toContain(`import('./${name}')`)
+    expect(lazySrc).toContain("import('../wardrobe/WardrobeCard')")
+    const shell = reachable([resolve(SRC, 'main.tsx'), component('Planner')])
+    expect(shell).toContain(planner('HomeScreen'))
+    expect([...SCREENS.map(planner), component('wardrobe/WardrobeCard')].filter(f => shell.has(f)).map(f => f.slice(SRC.length))).toEqual([])
+  })
+
+  it('draws the views the shell hands it, reaching neither lazy.ts nor a view’s file', () => {
+    for (const name of SCREENS) {
+      const reach = reachable([planner(name)])
+      expect(reach.has(resolve(SRC, 'components/planner/lazy.ts')), name).toBe(false)
+      expect(LAZY_VIEWS.map(component).filter(f => reach.has(f)).map(f => f.slice(SRC.length)), name).toEqual([])
+    }
+  })
+})

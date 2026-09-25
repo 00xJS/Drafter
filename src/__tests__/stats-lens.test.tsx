@@ -716,7 +716,9 @@ describe('the Insights tab', () => {
     expect(readSource('components/planner/lazystats.ts')).toContain("import('../wardrobe/WardrobeStats')")
     // …and a finger on the Insights tab warms every view it can draw: the
     // lens's areas, then the journal's archive and the review
-    expect(lazySrc).toMatch(/insights: \[StatsLens\.preload, PeopleStats\.preload, PlacesStats\.preload, KitchenStats\.preload, WardrobeStats\.preload, JournalView\.preload, Review\.preload\]/)
+    // lens's areas, then the journal's archive and the review — after the
+    // Insights screen's own chunk, which draws what the shell hands it
+    expect(lazySrc).toMatch(/insights: \[InsightsScreen\.preload, StatsLens\.preload, PeopleStats\.preload, PlacesStats\.preload, KitchenStats\.preload, WardrobeStats\.preload, JournalView\.preload, Review\.preload\]/)
     // the lens reaches them through the registry, never by importing the files
     const lens = readSource('components/StatsLens.tsx')
     expect(lens).toContain("from './planner/lazystats'")

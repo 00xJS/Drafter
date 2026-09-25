@@ -5,7 +5,7 @@ import { syncPillLabel } from '../../sync'
 import { timeAgo } from '../../utils'
 import { Icon } from '../Icon'
 import type { PlannerCtx } from './ctx'
-import { Chat, Search, Settings, TaskEditor, preloadView } from './lazy'
+import { Chat, ChatScreen, Search, Settings, SettingsScreen, TaskEditor, preloadView } from './lazy'
 import { COMPACT_TABS, VIEW_ICONS, VIEW_LABELS, type View } from './routes'
 
 /**
@@ -23,8 +23,9 @@ export function TopBar({ p }: { p: PlannerCtx }) {
     goView(v)
   }
   const warmSearch = () => warm(Search.preload)
-  const warmSettings = () => warm(Settings.preload)
-  const warmChat = () => warm(Chat.preload)
+  // the pushed screens, each with the screen it opens in (a chunk of its own too)
+  const warmSettings = () => warm(Settings.preload, SettingsScreen.preload)
+  const warmChat = () => warm(Chat.preload, ChatScreen.preload)
   const warmEditor = () => warm(TaskEditor.preload)
   // what the pill says: synced, offline, the server failing, or the session gone — never "Offline" on a working connection
   const syncLabel = syncPillLabel(isSupabaseConfigured(), store.syncInfo)

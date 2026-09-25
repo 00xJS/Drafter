@@ -1,6 +1,5 @@
 import { trashedLine } from '../../itemops'
 import type { PlannerCtx } from './ctx'
-import { People, PeopleStats, Places, PlacesStats } from './lazy'
 import { ListStatsSwitch } from './ListStatsSwitch'
 
 /** Who, and how often, from the List · Stats row: one word, so the row still fits a 375pt phone. */
@@ -21,6 +20,7 @@ function RhythmsButton({ onOpen }: { onOpen(): void }) {
  * job done twice.
  */
 export function PeopleScreen({ p }: { p: PlannerCtx }) {
+  const { People, PeopleStats, Places, PlacesStats } = p.views
   const { store, upsert, remove, restore, household, showToast, keepTab, placeOpenId, setPlaceOpenId, personOpenId, setPersonOpenId, openPlace, openPerson, openJournal } = p
   const { openTask, newTask, logOuting, logVisit, sawThem, planAt, planWith, setEventEditor, innerViews, setInnerView, openCalendarDay, openSheet } = p
   // Each list's find box and chip. They live on the shell (useListFilters), not

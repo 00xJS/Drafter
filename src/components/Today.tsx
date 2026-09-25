@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { Suspense, useCallback, useMemo, useRef, useState } from 'react'
 import { readFolded, toggleFold, writeFolded } from '../homefolds'
 import { Fold, HomeFolds, useFold } from './HomeFold'
 import { CardBoundary } from './ErrorBoundary'
@@ -58,9 +58,11 @@ import { MealIdeasCard } from './MealIdeasCard'
 import { blocksOn } from '../focus'
 import type { PlanStep } from './PlanDaySheet'
 import { dayClosed } from '../dayclose'
-// the card and its thumbnails only: the rest of the wardrobe is Home → Wardrobe's own chunk
+// the rule for the card only: the card is a chunk of its own, fetched when
+// the wardrobe can dress you, and the rest of the wardrobe is Home → Wardrobe's
 import { canDress } from '../wardrobe'
-import { WardrobeCard, type CardLog } from './wardrobe/WardrobeCard'
+import type { CardLog } from './wardrobe/WardrobeCard'
+import { WardrobeCard } from './planner/lazy'
 import type { WardrobeOpen } from './planner/useNavigation'
 import type { SyncAlarm } from '../syncalarm'
 import type { SignInTrouble } from '../calendarstate'
@@ -796,21 +798,26 @@ export function Today({
    * at mount like `evening`, so it never jumps under a thumb at noon.
    */
   const [morning] = useState(() => new Date().getHours() < 12)
+  // The card draws nothing until the wardrobe can dress you (canDress), so it
+  // is asked for only then: its chunk is fetched the first time it is, and
+  // this page never waits on it — it takes its place a moment later.
   const wardrobeCard =
-    garments && outfits && wears && onLogWear && onOpenWardrobe ? (
+    garments && outfits && wears && onLogWear && onOpenWardrobe && canDress(garments) ? (
       <CardBoundary name="the wardrobe card">
-        <WardrobeCard
-          garments={garments}
-          outfits={outfits}
-          wears={wears}
-          dayKey={todayKey}
-          // "Forgot yesterday?" asks before noon: the page's minute, not the card's own clock
-          now={at}
-          // a work day of your own on the calendar puts the looks for work first
-          workDay={workDaysOf(entries, myId).has(todayKey)}
-          onLog={onLogWear}
-          onOpen={onOpenWardrobe}
-        />
+        <Suspense fallback={null}>
+          <WardrobeCard
+            garments={garments}
+            outfits={outfits}
+            wears={wears}
+            dayKey={todayKey}
+            // "Forgot yesterday?" asks before noon: the page's minute, not the card's own clock
+            now={at}
+            // a work day of your own on the calendar puts the looks for work first
+            workDay={workDaysOf(entries, myId).has(todayKey)}
+            onLog={onLogWear}
+            onOpen={onOpenWardrobe}
+          />
+        </Suspense>
       </CardBoundary>
     ) : null
   // NOT frozen: Today stays mounted across a night on the phone, and a routines
@@ -939,7 +946,7 @@ export function Today({
 
   // a wardrobe that can dress you has its card to show, tasks or not; and
   // news in the hub is something to see, so its bell has the page to sit on
-  const dressable = !!(wardrobeCard && garments && canDress(garments))
+  const dressable = !!wardrobeCard
   if (tasks.length === 0 && projects.length === 0 && !dinner && !sundayDraft && !dressable && notices.length === 0) {
     return (
       <>

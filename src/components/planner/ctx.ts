@@ -4,6 +4,7 @@ import type { Store, StoreActions } from '../../store'
 import type { projectById } from '../../taskutils'
 import type { Command } from '../Search'
 import { buildPaletteCommands, type PaletteNav, type PaletteOverlays } from './commands'
+import type { SCREEN_VIEWS } from './lazy'
 import type { useCalendarSync } from './useCalendarSync'
 import type { useListFilters } from './useListFilters'
 import type { useFocusActions } from './useFocusActions'
@@ -45,6 +46,13 @@ export type PlannerCtx = {
    * one control, on the record, where it can be seen and changed.
    */
   inHousehold: boolean
+  /**
+   * The lazy views a screen draws (planner/lazy.ts SCREEN_VIEWS). A screen is
+   * a chunk of its own, and takes them from here rather than importing
+   * lazy.ts, which names every lazy chunk: a screen that imported it was
+   * renamed whenever any view changed.
+   */
+  views: typeof SCREEN_VIEWS
 } & StoreActions &
   ReturnType<typeof useNavigation> &
   ReturnType<typeof useListFilters> &

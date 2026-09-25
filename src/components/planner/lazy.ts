@@ -62,20 +62,39 @@ export const RhythmSheet = preloadable(() => import('../RhythmSheet').then(m => 
 // The notification hub, behind the bell on Home: only the bell is in the launch
 export const NoticesSheet = preloadable(() => withSheet(import('../NoticesSheet'), import('../../styles/views/notices.css')).then(m => m.NoticesSheet), 'NoticesSheet')
 
+// The screens behind every tab but Home, and the pushed ones: each hands the
+// planner's context on to its views, none is drawn at launch, and so each is
+// a chunk of its own, fetched with its views (VIEW_CHUNKS, the warm-up). A
+// screen draws its views from `p.views` (SCREEN_VIEWS), never from this file:
+// this file names every lazy chunk, and a chunk that imported it was renamed
+// whenever any view changed (scripts/lib/chunkplan.mjs).
+export const CalendarScreen = preloadable(() => import('./CalendarScreen').then(m => m.CalendarScreen), 'CalendarScreen')
+export const TasksScreen = preloadable(() => import('./TasksScreen').then(m => m.TasksScreen), 'TasksScreen')
+export const KeepScreen = preloadable(() => import('./KeepScreen').then(m => m.KeepScreen), 'KeepScreen')
+export const InsightsScreen = preloadable(() => import('./InsightsScreen').then(m => m.InsightsScreen), 'InsightsScreen')
+export const SettingsScreen = preloadable(() => import('./SettingsScreen').then(m => m.SettingsScreen), 'SettingsScreen')
+export const ChatScreen = preloadable(() => import('./ChatScreen').then(m => m.ChatScreen), 'ChatScreen')
+export const AdminScreen = preloadable(() => import('./AdminScreen').then(m => m.AdminScreen), 'AdminScreen')
+// Today's wardrobe card, drawn only when the wardrobe can dress you (Today.tsx)
+export const WardrobeCard = preloadable(() => import('../wardrobe/WardrobeCard').then(m => m.WardrobeCard), 'WardrobeCard')
+
+/** The views the lazy screens draw: handed down in the planner's context, as `p.views`, so a screen's chunk names none of them. */
+export const SCREEN_VIEWS = { Admin, Board, Calendar, Chat, EventEditor, Finance, JournalView, Kitchen, NotesView, People, PeopleStats, Places, PlacesStats, Review, Settings, StatsLens, TaskEditor, TasksTable, Wardrobe }
+
 /** What each tab can show, so a finger landing on it starts the fetch before the tap completes. */
 const VIEW_CHUNKS: Record<View, (() => Promise<void>)[]> = {
-  home: [Review.preload, Chat.preload, PlanDaySheet.preload, ShutdownSheet.preload, WeekPlanSheet.preload, NoticesSheet.preload],
-  tasks: [TasksTable.preload, Board.preload, Finance.preload, NotesView.preload],
-  calendar: [Calendar.preload],
+  home: [Review.preload, ChatScreen.preload, Chat.preload, PlanDaySheet.preload, ShutdownSheet.preload, WeekPlanSheet.preload, NoticesSheet.preload],
+  tasks: [TasksScreen.preload, TasksTable.preload, Board.preload, Finance.preload, NotesView.preload],
+  calendar: [CalendarScreen.preload, Calendar.preload],
   // four segments, and a finger cannot say which — so all four, as the lens does
-  keep: [People.preload, Places.preload, PeopleStats.preload, PlacesStats.preload, ImHereSheet.preload, RhythmSheet.preload, Kitchen.preload, KitchenStats.preload, Wardrobe.preload],
+  keep: [KeepScreen.preload, People.preload, Places.preload, PeopleStats.preload, PlacesStats.preload, ImHereSheet.preload, RhythmSheet.preload, Kitchen.preload, KitchenStats.preload, Wardrobe.preload],
   // the lens draws every area's Stats, so a finger on it warms all of them
-  insights: [StatsLens.preload, PeopleStats.preload, PlacesStats.preload, KitchenStats.preload, WardrobeStats.preload, JournalView.preload, Review.preload],
+  insights: [InsightsScreen.preload, StatsLens.preload, PeopleStats.preload, PlacesStats.preload, KitchenStats.preload, WardrobeStats.preload, JournalView.preload, Review.preload],
 }
 export const preloadView = (v: View) => warm(...VIEW_CHUNKS[v])
 
 /** The background warm-up on the web, most-opened first. Admin is not in it:
- *  only the owner fetches that chunk.
+ *  only the owner fetches that chunk (and the screen it opens in).
  *
  *  Settings sits near the front because the top bar reaches it from every
  *  screen — it was dead last of 29, from when it was a dialog you rarely
@@ -84,10 +103,49 @@ export const preloadView = (v: View) => warm(...VIEW_CHUNKS[v])
  *  actions, the retrieval Ask runs), it was parsed at the front while the
  *  first sync ran, and a finger on the chat's button or the Home tab warms
  *  them anyway. */
-export const PRELOAD_ORDER = [TaskEditor, Search, Settings, NoticesSheet, PlanDaySheet, ShutdownSheet, WeekPlanSheet, ImHereSheet, RhythmSheet, Calendar, TasksTable, Board, Finance, NotesView, People, Places, PeopleStats, PlacesStats, Kitchen, KitchenStats, StatsLens, Review, JournalView, Wardrobe, WardrobeStats, ProjectEditor, EventEditor, AttendancePicker, Trash, Chat, AskSheet].map(c => c.preload)
+export const PRELOAD_ORDER = [
+  TaskEditor,
+  Search,
+  Settings,
+  SettingsScreen,
+  WardrobeCard,
+  NoticesSheet,
+  PlanDaySheet,
+  ShutdownSheet,
+  WeekPlanSheet,
+  ImHereSheet,
+  RhythmSheet,
+  CalendarScreen,
+  Calendar,
+  TasksScreen,
+  TasksTable,
+  Board,
+  Finance,
+  NotesView,
+  KeepScreen,
+  People,
+  Places,
+  PeopleStats,
+  PlacesStats,
+  Kitchen,
+  KitchenStats,
+  InsightsScreen,
+  StatsLens,
+  Review,
+  JournalView,
+  Wardrobe,
+  WardrobeStats,
+  ProjectEditor,
+  EventEditor,
+  AttendancePicker,
+  Trash,
+  ChatScreen,
+  Chat,
+  AskSheet,
+].map(c => c.preload)
 
-/** The warm-up in the iOS app: what the top bar opens from every screen, and nothing else. */
-export const NATIVE_PRELOAD_ORDER = [TaskEditor, Search, Settings].map(c => c.preload)
+/** The warm-up in the iOS app: what the top bar opens from every screen (Settings, and the screen it opens in), and nothing else. */
+export const NATIVE_PRELOAD_ORDER = [TaskEditor, Search, Settings, SettingsScreen].map(c => c.preload)
 
 /**
  * Which warm-up a launch runs. On the web every chunk is a download the next
@@ -104,6 +162,6 @@ export function useWarmChunks(isOwner: boolean) {
   useEffect(() => schedulePreload(preloadOrder(isNative())), [])
   useEffect(() => {
     // in the app its code is on disk, and parsed when the owner opens it
-    if (isOwner && !isNative()) warm(Admin.preload)
+    if (isOwner && !isNative()) warm(Admin.preload, AdminScreen.preload)
   }, [isOwner])
 }

@@ -4,7 +4,6 @@ import { liveById, retired, saveOutfit, wearIndex } from '../../wardrobe'
 import { outfitLabel } from '../../../shared/wardrobe.mts'
 import { useDayKey } from '../../useDayKey'
 import type { PlannerCtx } from './ctx'
-import { StatsLens } from './lazy'
 import type { AreaProps } from '../StatsLens'
 
 /**
@@ -28,6 +27,7 @@ import type { AreaProps } from '../StatsLens'
  * neither place.
  */
 export function StatsScreen({ p }: { p: PlannerCtx }) {
+  const { StatsLens } = p.views
   const { store, upsert, remove, household, inHousehold, statsTab, goStatsTab, setView, goTasksTab, showToast } = p
   const { insightsPeriod, setInsightsPeriod, insightsAt, setInsightsAt } = p
   const { peopleFilter, setPeopleFilter, placeFilter, setPlaceFilter } = p

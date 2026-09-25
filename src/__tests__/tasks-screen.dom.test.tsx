@@ -7,14 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 // the Finance segment goes back to the pay periods, the way a tab tapped
 // again goes back to its top; Manage used to stay up until its ‹ Back.
 
-// the segments' own chunks, straight: Finance is the one under test here
-vi.mock('../components/planner/lazy', async () => ({
-  Finance: (await import('../components/Finance')).Finance,
-  TasksTable: () => null,
-  Board: () => null,
-  NotesView: () => null,
-}))
-
+import { Finance } from '../components/Finance'
 import { TASKS_NOTE_KEY, TasksScreen } from '../components/planner/TasksScreen'
 import type { PlannerCtx } from '../components/planner/ctx'
 import type { TasksTab } from '../components/planner/routes'
@@ -59,6 +52,8 @@ function Shell({ start }: { start: TasksTab }) {
     changeStatus: noop,
     applyStatus: () => null,
     showToast: noop,
+    // the segments' views, as the shell hands them down: Finance is the one under test here
+    views: { Finance, TasksTable: () => null, Board: () => null, NotesView: () => null },
   } as unknown as PlannerCtx
   return <TasksScreen p={p} />
 }
