@@ -187,14 +187,16 @@ export function previousPhrase(span: PeriodSpan, today: string): string {
 }
 
 /**
- * The line under a period's name: its days, and what it is set against —
- * "Sep 20 – 26 · against the same days of last week", "August · against July".
+ * The line under a period's name: its days, where the name does not already
+ * say them, and what it is set against — "Sep 20 – 26 · against the same days
+ * of last week" under This week, "against July" under August.
  */
 export function periodNote(span: PeriodSpan, today: string): string {
   const days = span.period === 'week' ? weekRange(span) : span.period === 'month' ? monthName(span.key, today) : span.key
   const prev = previousSpan(span, today)
   const before = span.period === 'week' ? (span.current ? 'last week' : 'the week before') : span.period === 'month' ? monthName(prev.key, today) : prev.key
-  return `${days} · against ${span.current ? `the same days of ${before}` : before}`
+  const against = `against ${span.current ? `the same days of ${before}` : before}`
+  return periodName(span, today) === days ? against : `${days} · ${against}`
 }
 
 /** "Your September in Drafter": the monthly recap's headline, for a month's key. */

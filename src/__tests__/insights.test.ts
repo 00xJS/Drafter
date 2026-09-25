@@ -9,6 +9,7 @@ import {
   nextSpan,
   parsePeriodKey,
   periodName,
+  periodNote,
   periodPhrase,
   periodSpan,
   pickHighlights,
@@ -96,6 +97,12 @@ describe('periods', () => {
     expect([periodName(august, TODAY), periodPhrase(august, TODAY), previousPhrase(august, TODAY)]).toEqual(['August', 'in August', 'on July'])
     expect(previousPhrase(periodSpan('month', '2026-01-09', TODAY), TODAY)).toBe('on December 2025')
     expect(periodName(periodSpan('year', '2025-05-05', TODAY), TODAY)).toBe('2025')
+    // the line under the name: the days where the name does not say them, and what they are set against
+    expect(periodNote(week, TODAY)).toBe('Sep 20 – 26 · against the same days of last week')
+    expect(periodNote(last, TODAY)).toBe('Sep 13 – 19 · against the week before')
+    expect(periodNote(august, TODAY)).toBe('against July')
+    expect(periodNote(periodSpan('month', TODAY, TODAY), TODAY)).toBe('September · against the same days of August')
+    expect(periodNote(periodSpan('year', '2025-05-05', TODAY), TODAY)).toBe('against 2024')
   })
 
   it('reads a period named in a link or a notice, and nothing else', () => {
