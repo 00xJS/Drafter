@@ -111,7 +111,9 @@ export function buildRecap(rows, userId, peerIds, ownerId, timezone, now, month)
     dayKeyOf,
   }
   const figures = insightFigures(input, periodSpan('month', `${month}-01`, today))
-  const cards = pickHighlights(figures)
+  // in a household the tasks are the household's work, and its lines say so
+  const household = [...(peerIds ?? [])].some(id => id !== userId)
+  const cards = pickHighlights(figures, { household })
   // the lines go in the notice, which only its reader opens; the push, on a
   // lock screen, carries the household's counts and nothing with a name in it
   return { month, title: recapTitle(month), lines: recapLines(cards, RECAP_LINES), push: recapPushBody(figures.current), cards }

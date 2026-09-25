@@ -32,7 +32,7 @@ import { payments } from './payments.mts'
 import { seenTasks, visitDays, visitsFor } from './people.mts'
 import { outingsAt } from './places.mts'
 import { habitsKept, inRange, workDone } from './review.mts'
-import { dayStreaks, daysBetween, type Streaks } from './stats.mts'
+import { dayStreaks, daysBetween, soFarBefore, type Streaks } from './stats.mts'
 import { neverWorn, wearIndex } from './wardrobe.mts'
 import { isDayKey, weekKeyOf, weekKeyStart, weekStartKey } from './weeks.mts'
 
@@ -117,15 +117,19 @@ export const previousSpan = (span: PeriodSpan, today: string): PeriodSpan => per
 export const nextSpan = (span: PeriodSpan, today: string): PeriodSpan | null => (span.current ? null : periodSpan(span.period, shiftDayKey(span.end, 1), today))
 
 /**
- * What a period is compared with: the one before it, cut to as many days as
- * this one has counted while it is still going. On the 24th, this month is
- * the 1st to the 24th and so is last month; a finished month is set against
- * the whole month before it.
+ * What a period is compared with: the one before it, cut where this one has
+ * got to while it is still going. On the 24th, this month is the 1st to the
+ * 24th and so is last month; a finished month is set against the whole month
+ * before it. A week is cut by its days (Sunday to Thursday against Sunday to
+ * Thursday); a month or a year by the calendar date, the rule soFarBefore
+ * keeps (shared/stats.mts), so a year still going is set against last year to
+ * the same month and day — not to the same number of days, which a leap day
+ * moved a day off.
  */
 export function comparedSpan(span: PeriodSpan, today: string): PeriodSpan {
   const prev = previousSpan(span, today)
   if (!span.current) return prev
-  const cut = shiftDayKey(prev.start, daysBetween(span.start, span.last))
+  const cut = span.period === 'week' ? shiftDayKey(prev.start, daysBetween(span.start, span.last)) : soFarBefore(span.last, span.period).end
   return { ...prev, last: cut < prev.end ? cut : prev.end }
 }
 
@@ -562,9 +566,15 @@ function leaders(list: readonly Tally[], mostOften = 'most often'): string | und
  * The cards worth drawing for a period, most interesting first, at most
  * MAX_HIGHLIGHTS: each made by a rule over the figures, never for a figure of
  * nothing. The same answer on the device and in the recap for the same records.
+ *
+ * `household`: more than one member shares the planner. The tasks count the
+ * household's work, so a line about them says the household's, not yours;
+ * alone, it is yours. What only you log — the journal, whom you saw — is
+ * always yours.
  */
-export function pickHighlights(figs: InsightFigures): Highlight[] {
+export function pickHighlights(figs: InsightFigures, o: { household?: boolean } = {}): Highlight[] {
   const { current: cur, previous: prev, today } = figs
+  const whose = o.household ? 'the household’s' : 'your'
   const span = cur.span
   const phrase = periodPhrase(span, today)
   const than = previousPhrase(span, today)
@@ -594,7 +604,7 @@ export function pickHighlights(figs: InsightFigures): Highlight[] {
       kind: 'tasks-streak',
       area: 'tasks',
       title: `Something done ${runs.current} days in a row`,
-      detail: record ? 'your longest yet' : `your best is ${runs.best}`,
+      detail: record ? `${whose} longest yet` : `${whose} best is ${runs.best}`,
       score: 48 + Math.min(20, runs.current) + (record ? 15 : 0),
     })
   }

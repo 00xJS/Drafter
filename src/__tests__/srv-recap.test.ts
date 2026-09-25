@@ -284,6 +284,16 @@ describe('what the recap says, and to whom', () => {
     for (const c of [...joe, ...maria]) expect(c.line, c.id).not.toMatch(/^(Both of us|Just you)/)
   })
 
+  it('says a run of the household’s work is the household’s, in a household, and Joe’s alone', () => {
+    const now = new Date('2026-10-01T15:00:00.000Z')
+    // something done every day of the last week of September
+    const run = Array.from({ length: 7 }, (_, i) => done(JOE, `run${i}`, `2026-09-${24 + i}`))
+    const streak = (peers: string[]) => buildRecap(run, JOE, peers, JOE, 'America/Phoenix', now, '2026-09').cards.find(c => c.id === 'tasks-streak')
+    expect(streak([JOE, MARIA])?.detail).toBe('the household’s longest yet')
+    expect(streak([JOE])?.detail).toBe('your longest yet')
+    expect(streak([])?.detail).toBe('your longest yet')
+  })
+
   it('agrees line for line with what the app’s Highlights say about the same month', () => {
     const now = new Date('2026-10-01T15:00:00.000Z')
     const recap = buildRecap(september(), JOE, [MARIA], JOE, 'America/Phoenix', now, '2026-09')
@@ -298,6 +308,8 @@ describe('what the recap says, and to whom', () => {
         { tasks: of('task'), people: of('person'), journal: of('journal'), myId: JOE, now, today: '2026-10-01', dayKeyOf: iso => day(Date.parse(iso)) },
         periodSpan('month', '2026-09-01', '2026-10-01'),
       ),
+      // Joe is in a household of two, as the app's Highlights are told
+      { household: true },
     )
     expect(recap.lines).toEqual(recapLines(cards))
   })

@@ -22,6 +22,7 @@ import {
   type InsightPeriod,
 } from '../../shared/insights.mts'
 import { localDayKey } from '../../shared/journal.mts'
+import { soFarBefore } from '../../shared/stats.mts'
 import { dayKeysIn } from '../../shared/people.mts'
 import { STATS_AREAS } from '../components/planner/routes'
 import type { CalendarEntry, Garment, Habit, JournalEntry, Meal, Person, Place, Recipe, Task, Wear } from '../types'
@@ -84,6 +85,26 @@ describe('periods', () => {
     expect(comparedSpan(periodSpan('month', '2026-08-05', TODAY), TODAY)).toMatchObject({ key: '2026-07', start: '2026-07-01', last: '2026-07-31' })
     expect(nextSpan(periodSpan('month', '2026-08-05', TODAY), TODAY)?.key).toBe('2026-09')
     expect(nextSpan(periodSpan('month', TODAY, TODAY), TODAY)).toBeNull()
+  })
+
+  it('cuts a year still going on the calendar date, as soFarBefore does, whatever a leap day does to the count', () => {
+    const cut = (today: string) => comparedSpan(periodSpan('year', today, today), today).last
+    // after a leap day: the 1st of March against the 1st of March, not the 2nd
+    expect(cut('2028-03-01')).toBe('2027-03-01')
+    expect(cut('2028-12-31')).toBe('2027-12-31')
+    // the year after one: against its 1st of March, not its 29th of February
+    expect(cut('2029-03-01')).toBe('2028-03-01')
+    expect(cut('2029-02-28')).toBe('2028-02-28')
+    // the leap day itself: against the last day of that February
+    expect(cut('2028-02-29')).toBe('2027-02-28')
+    // and always the date soFarBefore gives, over four years of days
+    for (let d = new Date(Date.UTC(2027, 0, 1)); d < new Date(Date.UTC(2031, 0, 1)); d.setUTCDate(d.getUTCDate() + 1)) {
+      const key = d.toISOString().slice(0, 10)
+      expect(cut(key), key).toBe(soFarBefore(key, 'year').end)
+    }
+    // a month still going already went by the date; a week by its days
+    expect(comparedSpan(periodSpan('month', '2028-03-30', '2028-03-30'), '2028-03-30').last).toBe('2028-02-29')
+    expect(comparedSpan(periodSpan('week', '2028-03-01', '2028-03-01'), '2028-03-01')).toMatchObject({ start: '2028-02-20', last: '2028-02-23' })
   })
 
   it('names a period for the header and inside a sentence', () => {
@@ -203,6 +224,18 @@ describe('what the highlights count', () => {
     // a shorter run than the best there has been says what the best is
     const again = [...run('2026-08-01', 9), ...run('2026-09-21', 4)].map((d, i) => done(`r${i}`, d))
     expect(card(cards({ tasks: again }), 'tasks-streak')).toMatchObject({ title: 'Something done 4 days in a row', detail: 'your best is 9' })
+  })
+
+  it('says a run of the household’s work is the household’s, in a household, and yours alone', () => {
+    const tasks = run('2026-09-18', 7).map((d, i) => done(`t${i}`, d))
+    const shared = (list: Task[]) => pickHighlights(insightFigures(input({ tasks: list }), periodSpan('week', TODAY, TODAY)), { household: true })
+    expect(card(shared(tasks), 'tasks-streak')?.detail).toBe('the household’s longest yet')
+    const again = [...run('2026-08-01', 9), ...run('2026-09-21', 4)].map((d, i) => done(`r${i}`, d))
+    expect(card(shared(again), 'tasks-streak')?.detail).toBe('the household’s best is 9')
+    // no line about the household's tasks says "your", and the journal, yours alone, still does
+    const both = pickHighlights(insightFigures(input({ tasks, journal: run('2026-09-18', 7).map(d => entry(d, { ownerId: JOE })) }), periodSpan('week', TODAY, TODAY)), { household: true })
+    for (const c of both.filter(c => c.area === 'tasks')) expect(c.line, c.id).not.toMatch(/\byour?\b/i)
+    expect(card(both, 'journal')?.detail).toBe('your longest yet')
   })
 
   it('adds up what was paid by the app’s one rule: a bill’s own amount, never a payday', () => {

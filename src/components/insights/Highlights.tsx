@@ -52,7 +52,7 @@ export function Highlights({ input, household, period, onPeriod, at, onAt, onOpe
   const asked = parsePeriodKey(at)
   const anchor = asked && asked.period === period ? asked.anchor : today
   const span = useMemo(() => periodSpan(period, anchor, today), [period, anchor, today])
-  const cards = useMemo(() => pickHighlights(insightFigures(input, span)), [input, span])
+  const cards = useMemo(() => pickHighlights(insightFigures(input, span), { household }), [input, span, household])
   const before = previousSpan(span, today)
   const after = nextSpan(span, today)
   return (
