@@ -20,7 +20,7 @@ import { QUICK_PICK_META, cookedIndex, visitIndex, mealLabel, mealsByDay, mealsF
 import { mealWay, savedPlaces, type MealWay } from '../kitchenstats'
 import { plannedGift } from '../people'
 import { matchPlace, placeEmoji } from '../places'
-import { MealSlotRow } from './MealSlotRow'
+import { MealSlotRow, SlotPicker, dinnerPick } from './MealSlotRow'
 import { billEmoji, formatMoney } from '../bills'
 import { readableInk } from '../contrast'
 import { useTheme } from '../theme'
@@ -184,6 +184,8 @@ export function Calendar({
   // The + used to mean "new task" silently, so there was no route to a meal
   // from the calendar at all. It now asks which.
   const [addFor, setAddFor] = useState<string | null>(null)
+  /** The day whose dinner the + menu's Meal is choosing, straight in the meal picker. */
+  const [dinnerFor, setDinnerFor] = useState<string | null>(null)
   // a pill written in a feed's or a project's colour moves only as far as it takes to read in this theme
   const theme = useTheme()
 
@@ -485,12 +487,15 @@ export function Calendar({
 
   const sheetItems = sheetDay ? dayItems(sheetDay, sources) : []
   const dayFace = (day: Date, leave: () => void) => {
-    const items = dayItems(day, sources)
+    // a day's meals are its Eating rows below, where they are chosen and
+    // changed: listed up here as well, each one was on the sheet twice
+    const all = dayItems(day, sources)
+    const items = all.filter(item => item.kind !== 'meal')
     return (
       <>
         <div className="cal-sheet-body">
           {lookLine(day)}
-          {items.length === 0 && <p className="empty">Nothing on this day yet.</p>}
+          {all.length === 0 && <p className="empty">Nothing on this day yet.</p>}
           <ul className="cal-rows">
             {items.map(item => {
               if (item.kind === 'occasion') {
@@ -572,19 +577,7 @@ export function Calendar({
                   </li>
                 )
               }
-              if (item.kind === 'meal') {
-                return (
-                  <li key={item.id} className="cal-row">
-                    <span className="cal-item-dot" style={{ background: mealColor(item.meal) }} />
-                    <div className="cal-row-main">
-                      <span className="cal-row-title">
-                        {mealGlyph(item.meal)} {mealLabel(item.meal)}
-                      </span>
-                      <span className="cal-row-meta">{itemMeta(item)}</span>
-                    </div>
-                  </li>
-                )
-              }
+              if (item.kind !== 'task') return null
               const t = item.task
               const project = taskProject(t)
               return (
@@ -741,7 +734,7 @@ export function Calendar({
                           role="menuitem"
                           onClick={() => {
                             setAddFor(null)
-                            setSheetDay(d)
+                            setDinnerFor(k)
                           }}
                         >
                           🍽️ Meal
@@ -867,6 +860,27 @@ export function Calendar({
           </header>
           {dayFace(sheetDay, closeSheet)}
         </Modal>
+      )}
+      {dinnerFor && (
+        <SlotPicker
+          date={dinnerFor}
+          slot="dinner"
+          {...dinnerPick(meals, dinnerFor, myId)}
+          myId={myId}
+          inHousehold={inHousehold}
+          members={members}
+          recipes={recipes}
+          places={places}
+          meals={meals}
+          cooked={cooked}
+          visited={visited}
+          onSave={onSaveMeal}
+          onClear={onClearMeal}
+          onCreatePlace={onCreatePlace}
+          onCreateRecipe={onCreateRecipe}
+          onStar={onStarRecipe}
+          onClose={() => setDinnerFor(null)}
+        />
       )}
     </div>
   )

@@ -5,11 +5,12 @@ import { kitchenIndex, mealWay, savedPlaces, type MealWay } from '../kitchenstat
 import type { Meal, Person, Place, Recipe } from '../types'
 
 // A meal is one colour wherever a colour is drawn for it. The Calendar's month
-// pills, its week list and its day sheet colour each meal by the way Kitchen →
-// Stats counts it (mealWay): cooked at home, eaten out at a saved place, or
-// bought, with no place named or at one since deleted. A plan, its day still
-// to come, is coloured by the way it is planned. The glyphs are as they were:
-// 🥡 for any meal out, 🍽️ for one cooked; Leftovers wears its own 🍲.
+// pills and its week list colour each meal by the way Kitchen → Stats counts
+// it (mealWay): cooked at home, eaten out at a saved place, or bought, with no
+// place named or at one since deleted. A plan, its day still to come, is
+// coloured by the way it is planned. The glyphs are as they were: 🥡 for any
+// meal out, 🍽️ for one cooked; Leftovers wears its own 🍲. The day sheet lists
+// a day's meals once, in its Eating rows, where they are chosen and changed.
 
 const STAMP = '2026-01-01T00:00:00.000Z'
 const noop = () => {}
@@ -78,9 +79,14 @@ const weekDots = (html: string): Record<string, string> =>
 /** The month grid's meal pills: each meal's title, and its outline and its text. */
 const monthPills = (html: string): Record<string, [string, string]> =>
   Object.fromEntries([...html.matchAll(/<button class="cal-pill meal" style="border-color:([^;"]+);color:([^"]+)" title="([^"]+)"/g)].map(m => [m[3].split(' · ')[0], [m[1], m[2]]]))
-/** The day sheet's meal rows: the glyph, the meal, and the colour of its dot. */
+/** The day sheet, from its body to its foot. */
+const sheetOf = (html: string) => html.slice(html.indexOf('class="cal-sheet-body"'), html.indexOf('class="cal-sheet-foot"'))
+/** The day sheet's rows of meals above its Eating section: the glyph, the meal, and the colour of its dot. */
 const sheetRows = (html: string) =>
-  [...html.matchAll(/<li class="cal-row"><span class="cal-item-dot" style="background:([^"]+)"><\/span><div class="cal-row-main"><span class="cal-row-title">(\S+) ([^<]+)<\/span>/g)].map(m => [m[2], m[3], m[1]])
+  [...sheetOf(html).matchAll(/<li class="cal-row"><span class="cal-item-dot" style="background:([^"]+)"><\/span><div class="cal-row-main"><span class="cal-row-title">(\S+) ([^<]+)<\/span>/g)].map(m => [m[2], m[3], m[1]])
+/** The day sheet's Eating rows that hold a meal: the slot, its mark and the meal. */
+const eatingRows = (html: string) =>
+  [...sheetOf(html).matchAll(/aria-label="(Breakfast|Lunch|Dinner) on [^":]+: ([^"]+)"><span class="meal-slot-chosen">(?:<span aria-hidden="true">(\S+) <\/span>)?/g)].map(m => [m[1], m[3] ?? '', m[2]])
 
 const HAD = MEALS.filter(m => m.date <= TODAY)
 const PLANS = MEALS.filter(m => m.date > TODAY)
@@ -115,19 +121,25 @@ describe('a meal on the Calendar is the colour of the way Kitchen → Stats coun
     ])
   })
 
-  it('in the day sheet: each meal’s dot in its way’s colour, beside the glyph it has always had', () => {
-    expect(sheetRows(render('week', '2026-09-09'))).toEqual([
-      ['🥡', 'Old Ivy', WAY.bought],
-      ['🥡', 'Takeaway', WAY.bought],
+  it('in the day sheet: each meal once, in its Eating rows, and not again in a row above them', () => {
+    const html = render('week', '2026-09-09')
+    expect(sheetRows(html)).toEqual([])
+    // each with the Kitchen's own mark (mealShown): a bought one with no place is 🥡
+    expect(eatingRows(html).map(([slot, , t]) => [slot, t])).toEqual([
+      ['Lunch', 'Old Ivy'],
+      ['Dinner', 'Takeaway'],
     ])
-    // 🥡 for a meal out at a saved place too, where Kitchen → Stats draws the place's own emoji
-    expect(sheetRows(render('week', '2026-09-08'))).toEqual([['🥡', 'Nopi', WAY.out]])
-    expect(sheetRows(render('week', '2026-09-07'))).toEqual([['🍽️', 'Chicken curry', WAY.cooked]])
+    expect(eatingRows(html)[1][1]).toBe('🥡')
+    expect(sheetOf(html).match(/Takeaway/g)).toHaveLength(2) // the row's name for it, and what it says
+    expect(eatingRows(render('week', '2026-09-07'))).toEqual([['Dinner', '', 'Chicken curry']])
+    // a day with meals and nothing else is not "nothing on this day"
+    expect(sheetOf(render('week', '2026-09-07'))).not.toContain('Nothing on this day yet.')
   })
 
   it('marks Leftovers with its own 🍲, as the Kitchen does, in the colour of a meal cooked at home', () => {
     const quick = [meal(TODAY, 'dinner', 'Leftovers', { quick: 'leftovers' })]
-    expect(sheetRows(render('week', TODAY, quick))).toEqual([['🍲', 'Leftovers', WAY.cooked]])
+    expect(weekDots(render('week', undefined, quick)).Leftovers).toBe(WAY.cooked)
+    expect(eatingRows(render('week', TODAY, quick))).toEqual([['Dinner', '🍲', 'Leftovers']])
   })
 
   it('colours a plan, its day still to come, by the way it is planned, in the week, the month and the day alike', () => {
@@ -140,7 +152,11 @@ describe('a meal on the Calendar is the colour of the way Kitchen → Stats coun
     expect(titles(PLANS).map(t => [t, dots[t]])).toEqual(planned)
     const pills = monthPills(render('month'))
     expect(titles(PLANS).map(t => [t, pills[t][0]])).toEqual(planned)
-    expect(sheetRows(render('week', '2026-09-12')).map(([, t, colour]) => [t, colour])).toEqual([planned[1], planned[2]])
+    // the day's own sheet lists them once, where they are changed
+    expect(eatingRows(render('week', '2026-09-12')).map(([slot, , t]) => [slot, t])).toEqual([
+      ['Lunch', 'Beans on toast'],
+      ['Dinner', 'Pizza night'],
+    ])
   })
 
   it('reads the Kitchen’s own rule, not a copy: every meal Stats counts is the colour of the way it counts it', () => {
