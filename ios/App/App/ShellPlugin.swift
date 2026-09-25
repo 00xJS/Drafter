@@ -1,5 +1,6 @@
 import Capacitor
 import Foundation
+import UserNotifications
 
 /// The page's word to the shell about the shell itself (src/native.ts).
 ///
@@ -12,6 +13,11 @@ import Foundation
 /// seconds leaves the page in sight. Going to the background is covered all
 /// the same, every time.
 ///
+/// `setBadge`: the Home Screen badge, set to the number the page counts — what
+/// is overdue or due today, the morning digest's number — and nothing else.
+/// Notification Centre is left as it is: a household message not yet read
+/// stays there when the app is opened.
+///
 /// Registered by DrafterBridgeViewController in SceneDelegate.swift, as the
 /// other plugins compiled into this target are.
 @objc(ShellPlugin)
@@ -19,7 +25,8 @@ public class ShellPlugin: CAPPlugin, CAPBridgedPlugin {
     public let identifier = "ShellPlugin"
     public let jsName = "Shell"
     public let pluginMethods: [CAPPluginMethod] = [
-        CAPPluginMethod(name: "expectSystemPrompt", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "expectSystemPrompt", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setBadge", returnType: CAPPluginReturnPromise)
     ]
 
     /// Answered once the word is in place, so the page asks iOS only after it.
@@ -27,6 +34,17 @@ public class ShellPlugin: CAPPlugin, CAPBridgedPlugin {
         DispatchQueue.main.async {
             SystemPrompt.expect()
             call.resolve()
+        }
+    }
+
+    @objc func setBadge(_ call: CAPPluginCall) {
+        let count = max(0, call.getInt("count") ?? 0)
+        UNUserNotificationCenter.current().setBadgeCount(count) { error in
+            if let error {
+                call.reject("The badge could not be set", "BADGE_FAILED", error)
+            } else {
+                call.resolve()
+            }
         }
     }
 }

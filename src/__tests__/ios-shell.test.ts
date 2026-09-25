@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
@@ -89,5 +89,28 @@ describe('the privacy cover leaves a system alert the page asked for in context'
     expect(background).not.toContain('SystemPrompt')
     // and nothing else lets the word through
     expect([...scene.matchAll(/SystemPrompt\.\w+/g)].map(m => m[0])).toEqual(['SystemPrompt.consume'])
+  })
+})
+
+describe('the badge, set by the page and nothing else', () => {
+  const plugin = read('ios/App/App/ShellPlugin.swift')
+  const native = read('src/native.ts')
+
+  it('is one method on the shell’s plugin, called as the page names it', () => {
+    const methods = [...plugin.matchAll(/CAPPluginMethod\(name: "(\w+)", returnType: CAPPluginReturnPromise\)/g)].map(m => m[1])
+    expect(methods).toEqual(['expectSystemPrompt', 'setBadge'])
+    const members = /interface ShellPlugin \{([\s\S]*?)\n\}/.exec(native)?.[1] ?? ''
+    expect([...members.matchAll(/^ {2}(\w+)\(/gm)].map(m => m[1])).toEqual(methods)
+    expect(native).toMatch(/plugin\.setBadge\(\{ count: Math\.max\(0, Math\.floor\(count\)\) \}\)/)
+    expect(swiftFunc(plugin, 'setBadge')).toMatch(/let count = max\(0, call\.getInt\("count"\) \?\? 0\)\s*UNUserNotificationCenter\.current\(\)\.setBadgeCount\(count\)/)
+  })
+
+  it('leaves Notification Centre alone: nothing in the app empties it', () => {
+    const sources = (dir: string): string[] =>
+      readdirSync(`${ROOT}${dir}`, { withFileTypes: true }).flatMap(e =>
+        e.isDirectory() ? (e.name === '__tests__' ? [] : sources(`${dir}/${e.name}`)) : /\.tsx?$/.test(e.name) ? [read(`${dir}/${e.name}`)] : [],
+      )
+    const code = [...sources('src'), plugin, scene].join('\n')
+    expect(code).not.toMatch(/removeAllDeliveredNotifications/)
   })
 })

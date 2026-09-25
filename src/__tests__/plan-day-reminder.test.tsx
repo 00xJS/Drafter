@@ -194,7 +194,8 @@ describe('Plan your day: scheduled with the phone’s own local notifications', 
     expect(planDayOf(plugin.scheduled)).toBeTruthy()
     const once = plugin.scheduled.filter(n => n.extra.url !== PLAN_DAY_URL)
     expect(once).toHaveLength(59)
-    expect(once.map(n => n.badge)).toEqual(Array.from({ length: 59 }, (_, i) => i + 1))
+    // the badge as each rings: all 70 are due that day (badgeCount), not a count of banners
+    expect(once.map(n => n.badge)).toEqual(Array.from({ length: 59 }, () => 70))
     expect(once[once.length - 1].extra.url).toBe('/?task=t58')
   })
 

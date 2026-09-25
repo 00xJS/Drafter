@@ -61,6 +61,7 @@ export async function syncNativeAppearance(pref: ThemePref, theme: Theme): Promi
 /** The shell's word about itself (ios/App/App/ShellPlugin.swift). */
 interface ShellPlugin {
   expectSystemPrompt(): Promise<void>
+  setBadge(options: { count: number }): Promise<void>
 }
 
 let shellPlugin: ShellPlugin | null | undefined
@@ -430,6 +431,12 @@ export interface PendingReminder {
   /** TASK_ACTION_TYPE / OCCASION_ACTION_TYPE, or nothing for a title-less banner. */
   actionTypeId?: string
   /**
+   * The Home Screen badge as it rings: what will be overdue or due today then,
+   * the morning digest's number (badgeCount in src/reminders.ts). Absent, the
+   * badge is left as it is.
+   */
+  badge?: number
+  /**
    * Fires every day at this hour and minute, this phone's own time, not once at
    * `at`: the morning's Plan your day. Its own numbers, not `at`'s: on the
    * morning the clocks go forward, a time in the skipped hour lands an hour on.
@@ -526,17 +533,17 @@ async function writeReminders(items: PendingReminder[]): Promise<number> {
     .sort((a, b) => a.at.getTime() - b.at.getTime())
     .slice(0, Math.max(0, 60 - daily.length))
   const notifications = [
-    ...upcoming.map((i, idx) => ({
+    ...upcoming.map(i => ({
       id: i.id,
       title: i.title,
       body: i.body,
       schedule: { at: i.at, allowWhileIdle: true },
       extra: { url: i.url },
       sound: 'default',
-      // the badge counts reminders that have fired since Drafter was last
-      // opened — these are in time order, so the nth to fire leaves n behind.
-      // clearAppBadge() zeroes it again on the next launch or resume.
-      badge: idx + 1,
+      // one meaning for the badge wherever it is set — what is overdue or due
+      // today, as the morning digest and the open app set it — worked out for
+      // the moment this one rings
+      ...(typeof i.badge === 'number' ? { badge: i.badge } : {}),
       ...(i.actionTypeId ? { actionTypeId: i.actionTypeId } : {}),
     })),
     ...daily.map(i => ({
@@ -568,18 +575,19 @@ async function writeReminders(items: PendingReminder[]): Promise<number> {
   return notifications.length
 }
 
-/** Clear the home-screen badge when the app comes forward. */
-export async function clearAppBadge(): Promise<void> {
-  if (!isNative()) return
+/**
+ * Set the Home Screen badge to `count`: what is overdue or due today, the one
+ * thing the badge means (badgeCount in src/reminders.ts). Notification Centre
+ * is left alone — the app used to empty it on every launch and return, and a
+ * household message not yet read went with it. No-op on the web.
+ */
+export async function setAppBadge(count: number): Promise<void> {
+  const plugin = shell()
+  if (!plugin) return
   try {
-    const { LocalNotifications } = await import('@capacitor/local-notifications')
-    // This one both empties Notification Centre and sets the icon badge to zero,
-    // with no registration guard. The push plugin's identically named method
-    // rejects until APNs registration has run, which never happens on a free
-    // Apple team — so the badge used to stick to the icon for good.
-    await LocalNotifications.removeAllDeliveredNotifications()
+    await plugin.setBadge({ count: Math.max(0, Math.floor(count)) })
   } catch {
-    /* the plugin is optional at runtime */
+    /* no badge allowed: iOS shows none */
   }
 }
 
