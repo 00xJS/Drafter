@@ -40,8 +40,10 @@
   .posts-view > .toolbar > .spacer {
     display: none;
   }
+  /* after the sort, on the line the two filters leave it: the search has one
+     line and the filters the next (04-table-modal.css), so three lines, not four */
   .posts-view > .toolbar > .btn:last-child {
-    flex: 1 0 100%;
+    flex: 1 0 auto;
   }
 }
 .posts-table {

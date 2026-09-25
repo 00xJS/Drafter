@@ -47,3 +47,15 @@ describe('a sheet’s title stays in its header', () => {
     expect(phone('.modal-head,\n  .modal-foot')).toMatch(/flex-shrink:\s*0/)
   })
 })
+
+describe('Tasks → List’s toolbar on a phone', () => {
+  it('gives the search a line, and the two filters the next, half and half', () => {
+    // the priority filter's 0% basis let it into what the search's line left:
+    // its chevrons alone at 402pt, "Ar" at 440pt
+    expect(phone('.posts-view > .toolbar > .search')).toMatch(/flex:\s*1 1 100%/)
+    const filters = phone('.posts-view > .toolbar > select')
+    expect(filters).toMatch(/flex:\s*1 1 40%/)
+    expect(filters).toMatch(/min-width:\s*0/)
+    expect(css).not.toMatch(/select\[aria-label='Filter by priority'\]\s*\{/)
+  })
+})
