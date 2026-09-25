@@ -334,6 +334,14 @@ export async function clearLocalData(): Promise<void> {
   } catch {
     /* native bridge may be unavailable */
   }
+  // the reload that follows opens on Home, and so does the next account: not
+  // on the tab this one was on (src/reloadstate.ts)
+  try {
+    const { forgetView } = await import('./reloadstate')
+    forgetView()
+  } catch {
+    /* nothing kept */
+  }
   try {
     const keys: string[] = []
     for (let i = 0; i < localStorage.length; i++) {
