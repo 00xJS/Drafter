@@ -7,7 +7,7 @@ import { startAppUpdates } from './appupdate'
 import { installErrorReporting } from './errorreport'
 import { prefetchRecordCache } from './idb'
 import { isSupabaseConfigured, storedUserId } from './supabase'
-import { applyPlatformClasses, syncNativeAppearance } from './native'
+import { applyPlatformClasses, syncNativeAppearance, watchKeyboard } from './native'
 import { captureAuthorizeRequest } from './oauthRequest'
 import { startTheme } from './theme'
 import './styles/index.css'
@@ -26,6 +26,10 @@ captureAuthorizeRequest()
 
 // stamp html.native / html.ios before first paint so the native look never flashes web-first
 applyPlatformClasses()
+// the iOS keyboard: its Done bar, `keyboard-open`, and the field being typed
+// kept in sight — from the start, so the sign-in form has them too, not only
+// the planner. For the life of the page; nothing on the web.
+void watchKeyboard()
 // Settings → Appearance. index.html's inline script already painted the stored
 // theme; this re-applies it (should that script not have run) and keeps it true
 // for the session: Match system following the device, a change made in another

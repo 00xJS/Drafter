@@ -229,12 +229,6 @@ export async function initNative(hooks: NativeHooks): Promise<() => void> {
     /* the plugin is optional at runtime */
   }
   try {
-    const stopKeyboard = await watchKeyboard()
-    handles.push({ remove: async () => stopKeyboard() })
-  } catch {
-    /* optional */
-  }
-  try {
     const stopTextSize = await watchTextSize()
     handles.push({ remove: async () => stopTextSize() })
   } catch {
@@ -558,14 +552,41 @@ export async function onAppResume(cb: () => void): Promise<() => void> {
 
 // ---- keyboard: signal the keyboard, and give multi-line fields a Done key ----
 
+/** Inputs that take no typing: nothing of theirs sits under a caret. */
+const UNTYPED_INPUTS = new Set(['button', 'checkbox', 'color', 'file', 'hidden', 'image', 'radio', 'range', 'reset', 'submit'])
+
 /**
- * Publish the keyboard state to CSS.
+ * The field being typed into, when it is on the surface the reader sees: the
+ * topmost open sheet while one is up, else the page. Null for anything else —
+ * a button, a read-only field, one the lock card has made inert, or a field
+ * left focused on the page behind a sheet.
+ */
+export function typingField(el: Element | null): HTMLElement | null {
+  if (!(el instanceof HTMLElement) || !el.isConnected) return null
+  const typed =
+    el.isContentEditable ||
+    (el instanceof HTMLTextAreaElement && !el.readOnly && !el.disabled) ||
+    (el instanceof HTMLInputElement && !el.readOnly && !el.disabled && !UNTYPED_INPUTS.has(el.type))
+  if (!typed || el.closest('[inert], [hidden], [aria-hidden="true"]')) return null
+  const sheets = el.ownerDocument.querySelectorAll('[aria-modal="true"]')
+  const top = sheets[sheets.length - 1]
+  return !top || top.contains(el) ? el : null
+}
+
+/**
+ * Publish the keyboard state to CSS, and keep the field being typed in sight.
+ * Called once, as the app starts (main.tsx), so the sign-in form has it too.
  *
  * `capacitor.config.ts` uses `resize: 'native'`, so iOS already shrinks the
  * WebView by the keyboard height: `--keyboard-h` is a SIGNAL, never an inset to
  * spend on padding — doing that subtracts the keyboard twice. The `keyboard-open`
  * class is what layout rules should key off (see `.keyboard-open .tabs-compact` in
  * src/styles/08-responsive.css, which slides the fixed tab bar out of the caret's way).
+ *
+ * WebKit scrolls a focused field into view before the web view has shrunk, so a
+ * field low in a sheet or page could end up under the keyboard once it had.
+ * Each resize while the keyboard is up brings the field back into view, the
+ * least distance there is (block: 'nearest': a field already in sight stays put).
  */
 export async function watchKeyboard(): Promise<() => void> {
   if (!isNative()) return () => {}
@@ -594,10 +615,16 @@ export async function watchKeyboard(): Promise<() => void> {
       if (document.visibilityState === 'visible') set(0)
     }
     document.addEventListener('visibilitychange', onVisible)
+    const onResize = () => {
+      if (!document.documentElement.classList.contains('keyboard-open')) return
+      typingField(document.activeElement)?.scrollIntoView({ block: 'nearest' })
+    }
+    window.addEventListener('resize', onResize)
     return () => {
       void show.remove()
       void hide.remove()
       document.removeEventListener('visibilitychange', onVisible)
+      window.removeEventListener('resize', onResize)
       set(0)
     }
   } catch {

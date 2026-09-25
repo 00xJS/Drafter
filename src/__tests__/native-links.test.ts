@@ -50,7 +50,6 @@ vi.mock('@capacitor/push-notifications', () => ({
   },
 }))
 vi.mock('@capacitor/haptics', () => ({ Haptics: {}, ImpactStyle: {}, NotificationType: {} }))
-vi.mock('@capacitor/keyboard', () => ({ Keyboard: { addListener: async () => ({ remove: async () => {} }), setAccessoryBarVisible: async () => {} } }))
 
 import { paramsOf, parseLink } from '../links'
 import { initNative } from '../native'
