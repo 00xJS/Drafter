@@ -19,7 +19,7 @@ import { enableNotifications, notificationPermission } from '../../notify'
 import { PushInfo, currentEndpoint, disablePush, enablePush, fetchPushInfo, pushSupported, savePushPrefs, testPush } from '../../push'
 import { deviceReminders } from '../../reminders'
 import { isSupabaseConfigured } from '../../supabase'
-import { TURN_ON } from '../PushNudge'
+import { OpenSettings, TURN_ON } from '../PushNudge'
 import type { SettingsCtx } from './context'
 import { useAsyncAction } from './useAsyncAction'
 
@@ -199,7 +199,16 @@ const NOT_ALLOWED = 'Notifications were not allowed. Turn them on in the iPhone 
  * turn them on; before iOS has asked at all, it offers to ask.
  */
 export function NotificationsOff({ allowed, onAllow }: { allowed: LocalPermission | null; onAllow(): void }) {
-  if (allowed === 'denied') return <p className="warn">None of these can reach you: iOS isn’t letting Drafter send notifications. Turn them on in the iPhone Settings app, under Drafter.</p>
+  if (allowed === 'denied') {
+    return (
+      <>
+        <p className="warn">None of these can reach you: iOS isn’t letting Drafter send notifications. Turn them on in the iPhone Settings app, under Drafter.</p>
+        <p className="sync-line">
+          <OpenSettings />
+        </p>
+      </>
+    )
+  }
   if (allowed !== 'prompt') return null
   return (
     <p className="sync-line">
@@ -449,7 +458,14 @@ export function Reminders({ store, household, supabaseOn }: SettingsCtx) {
             }}
           />
           {localErr ? (
-            <p className="warn">{localErr}</p>
+            <>
+              <p className="warn">{localErr}</p>
+              {localErr === NOT_ALLOWED && (
+                <p className="sync-line">
+                  <OpenSettings />
+                </p>
+              )}
+            </>
           ) : (
             (localOn || planDay.on) && (
               <NotificationsOff

@@ -240,6 +240,8 @@ describe('Plan your day: when iOS won’t let it through', () => {
     const denied = renderToStaticMarkup(<NotificationsOff allowed="denied" onAllow={() => {}} />)
     expect(denied).toMatch(/^<p class="warn">None of these can reach you/)
     expect(denied).toContain('Turn them on in the iPhone Settings app, under Drafter.')
+    // with the way there: Drafter's page in the Settings app
+    expect(denied).toContain('<a class="btn" href="app-settings:">Open Settings</a>')
     const prompt = renderToStaticMarkup(<NotificationsOff allowed="prompt" onAllow={() => {}} />)
     expect(prompt).toContain('<button class="btn">Allow notifications</button>')
     for (const allowed of ['granted', null] as const) expect(renderToStaticMarkup(<NotificationsOff allowed={allowed} onAllow={() => {}} />)).toBe('')
@@ -247,6 +249,8 @@ describe('Plan your day: when iOS won’t let it through', () => {
 
   it('Settings reads it on open and on coming back to the app, shows it while a reminder is on, and a new time asks too', () => {
     const settings = source('components/settings/Reminders.tsx')
+    // a switch turned on just now and refused points to the Settings app as well
+    expect(settings).toMatch(/\{localErr === NOT_ALLOWED && \(\s*<p className="sync-line">\s*<OpenSettings \/>/)
     expect(settings).toMatch(/localNotificationPermission\(\)\.then\(/)
     expect(settings).toMatch(/document\.addEventListener\('visibilitychange', onShow\)/)
     expect(settings).toMatch(/\(localOn \|\| planDay\.on\) && \(\s*<NotificationsOff\s+allowed=\{allowed\}/)

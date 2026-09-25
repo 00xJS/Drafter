@@ -100,6 +100,14 @@ export async function expectSystemPrompt(): Promise<void> {
   }
 }
 
+/**
+ * This app's own page in the iPhone Settings app, where notifications taken
+ * away are given back. A link to it leaves the web view like any other address
+ * that is not the app's (Capacitor hands it to UIApplication.open), so a plain
+ * link is the whole of it — offered in the shell only.
+ */
+export const APP_SETTINGS_URL = 'app-settings:'
+
 /** Open a URL outside the web view: Safari's sheet on iOS, a new tab on the web. */
 export async function openExternal(url: string): Promise<void> {
   if (isNative()) {

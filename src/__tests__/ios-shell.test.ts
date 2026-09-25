@@ -161,3 +161,13 @@ describe('Siri’s captures reach the page from the main thread', () => {
     expect(read('ios/App/App/DrafterIntents.swift')).toMatch(/func perform\(\) async throws[\s\S]*?try CaptureQueue\.append/)
   })
 })
+
+describe('Open Settings, where iOS has said no to notifications', () => {
+  it('is a plain link to the app’s page in the Settings app, which Capacitor hands to iOS', () => {
+    expect(read('src/native.ts')).toMatch(/export const APP_SETTINGS_URL = 'app-settings:'/)
+    // a top-level navigation to an address that is not the app's is opened by
+    // UIApplication.open and never loaded in the web view
+    const delegation = read('node_modules/@capacitor/ios/Capacitor/Capacitor/WebViewDelegationHandler.swift')
+    expect(delegation).toMatch(/if !isApplicationNavigation, toplevelNavigation \{[\s\S]*?UIApplication\.shared\.open\(navURL, options: \[:\], completionHandler: nil\)[\s\S]*?decisionHandler\(\.cancel\)/)
+  })
+})
