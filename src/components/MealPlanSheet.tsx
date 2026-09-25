@@ -21,8 +21,7 @@ import type { MealPick, SlotChoice } from './kitchen/mealpicks'
 
 // What a pick is, and the meals the accepted picks become, live on their own
 // (kitchen/mealpicks.ts): the Kitchen applies them, and this sheet loads only
-// when it is opened. Re-exported here, where they were.
-export { mealsForPicks, type MealPick, type SlotChoice } from './kitchen/mealpicks'
+// when it is opened.
 
 export interface MealPlanRow {
   /** `${date}|${slot}` */
