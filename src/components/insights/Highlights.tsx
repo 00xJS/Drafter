@@ -147,7 +147,7 @@ function Visual({ visual: v, label }: { visual: HighlightVisual; label: string }
 export function SplitBar({ parts }: { parts: Extract<HighlightVisual, { kind: 'split' }>['parts'] }) {
   const shown = parts.filter(p => p.value > 0)
   return (
-    <span className="split">
+    <span className="split-figure">
       <span className="split-bar">
         {shown.map(p => (
           <span key={p.key} className={`split-${p.key}`} style={{ flexGrow: p.value }} title={`${p.label}: ${p.value}`} />

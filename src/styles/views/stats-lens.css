@@ -393,7 +393,7 @@
   background: var(--cal-meal-bought);
 }
 /* the bar's figures under it, each after a dot in its part's colour */
-.split {
+.split-figure {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
