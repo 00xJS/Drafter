@@ -22,7 +22,7 @@ import { readJobs } from './lib/jobhealth.mjs'
 import { shapeDataStats } from './lib/datastats.mjs'
 import { keyHeaders } from './lib/supabasekeys.mjs'
 import { pushConfigured, sendToAll, webPushConfigured } from './push.mjs'
-import { buildPeerMap, sendEmail } from './digest.mjs'
+import { DIGEST_KINDS, buildPeerMap, sendEmail } from './digest.mjs'
 import { buildDigest, visibleItemsFor } from '../../shared/digest.mts'
 
 /** How long a snapshot download link stays valid. */
@@ -190,15 +190,16 @@ function integrationStatus(origin) {
 
 /**
  * The owner's own digest, computed exactly as the scheduled run would see it:
- * the same read, a page at a time (restAll), so an account past a thousand
- * records is not cut short, and a page that can't be read is an error rather
- * than a digest of part of the records.
+ * the same read, of the kinds a digest reads (DIGEST_KINDS) and a page at a
+ * time (restAll), so an account past a thousand records is not cut short, and
+ * a page that can't be read is an error rather than a digest of part of the
+ * records.
  */
 async function ownerDigest(userId) {
   const settings = (await settingsGet(userId)) ?? {}
   const timezone = settings.timezone || 'UTC'
   const [rows, peers, ownerId] = await Promise.all([
-    restAll('posts?select=id,data,user_id&deleted=is.false'),
+    restAll(`posts?select=id,data,user_id&deleted=is.false&kind=in.(${DIGEST_KINDS.join(',')})`),
     buildPeerMap().catch(() => new Map()),
     rest('rpc/owner_user_id', { method: 'POST', body: '{}' }).catch(() => null),
   ])

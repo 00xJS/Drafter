@@ -7,7 +7,7 @@
 
 import { withCors } from './lib/cors.mjs'
 import { buildICS } from '../../shared/ics.mts'
-import { baseUrl, feedFor, readableItems, serviceHeaders } from './lib/feedrows.mjs'
+import { FEED_KINDS, baseUrl, feedFor, readableItems, serviceHeaders } from './lib/feedrows.mjs'
 import { restAll } from './lib/backup.mjs'
 import { getUser, settingsFind, settingsGet, settingsSet, settingsStoreConfigured } from './lib/session.mjs'
 import { randomToken } from './lib/google.mjs'
@@ -36,7 +36,8 @@ async function visibleOwnerIds(userId) {
  * minus a household member's personal kinds, which the policy keeps to their
  * owner and readableItems does here. The rows come a page at a time (restAll,
  * as the backup reads them): one request stops at max_rows, and a calendar cut
- * short there would quietly drop what is due.
+ * short there would quietly drop what is due. Only the kinds the feed
+ * publishes are read (FEED_KINDS).
  */
 async function loadItems(ownerIds, readerId) {
   if (!ownerIds.length) return []
@@ -46,7 +47,7 @@ async function loadItems(ownerIds, readerId) {
   // so a row read straight from the table carries no owner at all — and every
   // "only mine" filter in feedFor silently passed a household peer's events,
   // project targets and unassigned tasks into this user's calendar.
-  return readableItems(await restAll(`posts?select=id,data,user_id&deleted=is.false&user_id=in.(${encodeURIComponent(list)})`), readerId)
+  return readableItems(await restAll(`posts?select=id,data,user_id&deleted=is.false&user_id=in.(${encodeURIComponent(list)})&kind=in.(${FEED_KINDS.join(',')})`), readerId)
 }
 
 const feedUrl = (origin, token) => `${origin}/api/feed.ics?token=${encodeURIComponent(token)}`

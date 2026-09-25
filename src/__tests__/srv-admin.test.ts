@@ -388,6 +388,19 @@ describe('Admin → the digest it runs reads every record, past a thousand', () 
     expect(pages).toEqual([null, 't-0999'])
   })
 
+  // the preview read every row of every kind to build a digest from eight
+  it('reads the kinds the scheduled digest reads, and no other', async () => {
+    const reads: string[] = []
+    const passOn = vi.mocked(fetch).getMockImplementation()!
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      if (String(input).includes('/rest/v1/posts?')) reads.push(decodeURIComponent(String(input)))
+      return passOn(input, init)
+    })
+    expect((await act('runDigest')).status).toBe(200)
+    expect(reads.length).toBeGreaterThan(0)
+    for (const r of reads) expect(r).toContain('&kind=in.(task,project,person,place,meal,recipe,event,review)')
+  })
+
   it('answers an error, never a digest of the first thousand, when a later page cannot be read', async () => {
     laterPagesFail = true
     const res = await act('runDigest')

@@ -12,6 +12,14 @@ import { keyHeaders } from './supabasekeys.mjs'
 const DAY = 86_400_000
 const OPEN = ['todo', 'doing', 'blocked']
 
+/**
+ * The kinds feedFor publishes: tasks, the projects they belong to (a
+ * project's target and milestones, and the name a task carries), and the
+ * entries you wrote. The feed reads only these; it used to read every row of
+ * every kind — notes, the wardrobe, the chat — to publish these three.
+ */
+export const FEED_KINDS = Object.freeze(['task', 'project', 'event'])
+
 /** The row's owner, as the app would see it. Exported for the tests. */
 export function withOwner(item, userId) {
   return item && typeof item === 'object' && userId ? { ...item, ownerId: userId } : item
