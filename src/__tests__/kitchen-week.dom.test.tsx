@@ -181,6 +181,35 @@ describe('the open day’s cards', () => {
   })
 })
 
+describe('the open day under a thumb', () => {
+  /** A touch on the day's cards at (x, y), as React reads it: changedTouches. */
+  const touch = (type: 'touchstart' | 'touchmove' | 'touchend', x: number, y: number) => {
+    const e = new Event(type, { bubbles: true, cancelable: true })
+    Object.defineProperty(e, 'changedTouches', { value: [{ clientX: x, clientY: y }] })
+    act(() => void document.querySelector('.meal-day')!.dispatchEvent(e))
+  }
+  const open = () => document.querySelector('.meal-day-head strong')?.textContent
+
+  it('turns to the next day on a swipe to the left', () => {
+    openKitchen()
+    expect(open()).toBe('Thursday')
+    touch('touchstart', 300, 400)
+    touch('touchmove', 280, 402)
+    touch('touchend', 200, 405)
+    expect(open()).toBe('Friday')
+  })
+
+  it('stays on the day for a scroll down the cards that drifts sideways', () => {
+    openKitchen()
+    touch('touchstart', 300, 400)
+    // committed downward in the first few pixels, then carried well over to the side
+    touch('touchmove', 297, 385)
+    touch('touchmove', 240, 250)
+    touch('touchend', 220, 200)
+    expect(open()).toBe('Thursday')
+  })
+})
+
 describe('Plan this week’s meals, from the week’s header', () => {
   it('plans the dinners it proposes for both of them, as the picker starts a dinner, in Joe’s own rows', () => {
     const k = openKitchen()

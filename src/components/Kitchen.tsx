@@ -62,6 +62,7 @@ import { fillRunDone, fillRunWithDraft, newFillRun, recipeWithDraft, splitDraft 
 import type { DraftIngredient, DraftSplit, FillRun, RecipeDraft } from '../recipefill'
 import { useDayKey } from '../useDayKey'
 import { haptic, openExternal } from '../native'
+import { lockAxis } from '../pull'
 import { ConfirmButton } from './ConfirmButton'
 import { RecipeCapture, draftNote, linkHost } from './kitchen/RecipeCapture'
 import type { CaptureMode } from './kitchen/RecipeCapture'
@@ -875,7 +876,8 @@ function WeekPlan({
   // while you meant to look at Friday.
   const land = (want: string | null | undefined) => (want && keys.includes(want) ? want : keys.includes(today) ? today : keys[0])
   const [picked, setPicked] = useState(() => land(focusDay))
-  const swipeFrom = useRef<number | null>(null)
+  /** A touch on the day's cards: where it began, and which way it has committed (lockAxis), once it has. */
+  const swipe = useRef<{ x: number; y: number; axis: 'x' | 'y' | null } | null>(null)
   // week.start is the week on screen (the page's memo, so it is a new one only
   // when the week is moved); a new week or a Stats day replaces the open letter
   const [pickedFor, setPickedFor] = useState({ start: week.start, focusDay })
@@ -957,14 +959,28 @@ function WeekPlan({
           id={`meal-day-${picked}`}
           className={'meal-day' + (picked === today ? ' today' : '') + ' picked'}
           onTouchStart={e => {
-            swipeFrom.current = e.changedTouches[0].clientX
+            const t = e.changedTouches[0]
+            swipe.current = { x: t.clientX, y: t.clientY, axis: null }
+          }}
+          // the same dead zone and tie-break as Home's swipe rows and the
+          // pull-down: a scroll down the cards that drifts sideways is still a
+          // scroll, and never turns the day
+          onTouchMove={e => {
+            const s = swipe.current
+            if (!s || s.axis) return
+            const t = e.changedTouches[0]
+            s.axis = lockAxis(t.clientX - s.x, t.clientY - s.y)
+          }}
+          onTouchCancel={() => {
+            swipe.current = null
           }}
           onTouchEnd={e => {
-            const from = swipeFrom.current
-            swipeFrom.current = null
-            if (from == null) return
-            const dx = e.changedTouches[0].clientX - from
-            if (Math.abs(dx) < 48) return
+            const s = swipe.current
+            swipe.current = null
+            if (!s) return
+            const t = e.changedTouches[0]
+            const dx = t.clientX - s.x
+            if ((s.axis ?? lockAxis(dx, t.clientY - s.y)) !== 'x' || Math.abs(dx) < 48) return
             stepDay(dx < 0 ? 1 : -1)
           }}
         >
