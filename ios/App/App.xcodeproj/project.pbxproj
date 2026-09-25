@@ -24,6 +24,7 @@
 		A72C3866B9392D96C4FAA62E /* CaptureQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71D40D4697582E8CF508ED9 /* CaptureQueue.swift */; };
 		A7ADDACE1D5A123C6A3B010A /* WidgetBridgePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A75914307C2896F47AA22771 /* WidgetBridgePlugin.swift */; };
 		A7A29FE470A6C374DB3E6579 /* DrafterIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7387F10D4C2A9F13E9E16C6 /* DrafterIntents.swift */; };
+		4EA9072E7A03AADEB2066F1D /* ShellPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC42D7649C02F7EEB488F5C8 /* ShellPlugin.swift */; };
 		A7107A8882F58BA46D394062 /* DrafterWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7D5EFD3C0B076CCE8EE46A4 /* DrafterWidgets.swift */; };
 		A7723FA72C81B8CA191F20F7 /* WidgetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7A8A796ADF99482CCAF5676 /* WidgetSnapshot.swift */; };
 		A71903679911D917DD11738A /* TodayWidgetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7D80653261A9EA2C48C8A0C /* TodayWidgetView.swift */; };
@@ -75,6 +76,7 @@
 		A71D40D4697582E8CF508ED9 /* CaptureQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureQueue.swift; sourceTree = "<group>"; };
 		A75914307C2896F47AA22771 /* WidgetBridgePlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetBridgePlugin.swift; sourceTree = "<group>"; };
 		A7387F10D4C2A9F13E9E16C6 /* DrafterIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DrafterIntents.swift; sourceTree = "<group>"; };
+		AC42D7649C02F7EEB488F5C8 /* ShellPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShellPlugin.swift; sourceTree = "<group>"; };
 		A7D5EFD3C0B076CCE8EE46A4 /* DrafterWidgets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DrafterWidgets.swift; sourceTree = "<group>"; };
 		A7A8A796ADF99482CCAF5676 /* WidgetSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetSnapshot.swift; sourceTree = "<group>"; };
 		A7D80653261A9EA2C48C8A0C /* TodayWidgetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodayWidgetView.swift; sourceTree = "<group>"; };
@@ -136,6 +138,7 @@
 				A75914307C2896F47AA22771 /* WidgetBridgePlugin.swift */,
 				A71D40D4697582E8CF508ED9 /* CaptureQueue.swift */,
 				A7387F10D4C2A9F13E9E16C6 /* DrafterIntents.swift */,
+				AC42D7649C02F7EEB488F5C8 /* ShellPlugin.swift */,
 				50379B222058CBB4000EE86E /* capacitor.config.json */,
 				504EC3071FED79650016851F /* AppDelegate.swift */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
@@ -289,6 +292,7 @@
 				A7ADDACE1D5A123C6A3B010A /* WidgetBridgePlugin.swift in Sources */,
 				A72C3866B9392D96C4FAA62E /* CaptureQueue.swift in Sources */,
 				A7A29FE470A6C374DB3E6579 /* DrafterIntents.swift in Sources */,
+				4EA9072E7A03AADEB2066F1D /* ShellPlugin.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

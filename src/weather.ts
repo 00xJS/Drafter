@@ -6,6 +6,8 @@
 // here throws: a phone in a tunnel gets the last forecast or nothing, never
 // a broken Today.
 
+import { expectSystemPrompt } from './native'
+
 export interface Forecast {
   /**
    * Current, high and low, already rounded to whole degrees. Named for the
@@ -317,24 +319,27 @@ export function requestLocation(): Promise<{ lat: number; lon: number } | null> 
       resolve(null)
       return
     }
-    try {
-      navigator.geolocation.getCurrentPosition(
-        pos => {
-          const lat = pos.coords.latitude
-          const lon = pos.coords.longitude
-          writeCache({ enabled: true, lat, lon })
-          resolve({ lat, lon })
-        },
-        () => {
-          refuse()
-          resolve(null)
-        },
-        { timeout: 10_000, maximumAge: 600_000 },
-      )
-    } catch {
-      refuse()
-      resolve(null)
-    }
+    // the first ask puts iOS's own alert up: the shell leaves the page in sight behind it
+    void expectSystemPrompt().then(() => {
+      try {
+        navigator.geolocation.getCurrentPosition(
+          pos => {
+            const lat = pos.coords.latitude
+            const lon = pos.coords.longitude
+            writeCache({ enabled: true, lat, lon })
+            resolve({ lat, lon })
+          },
+          () => {
+            refuse()
+            resolve(null)
+          },
+          { timeout: 10_000, maximumAge: 600_000 },
+        )
+      } catch {
+        refuse()
+        resolve(null)
+      }
+    })
   })
 }
 

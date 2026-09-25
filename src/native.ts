@@ -58,6 +58,47 @@ export async function syncNativeAppearance(pref: ThemePref, theme: Theme): Promi
   }
 }
 
+/** The shell's word about itself (ios/App/App/ShellPlugin.swift). */
+interface ShellPlugin {
+  expectSystemPrompt(): Promise<void>
+}
+
+let shellPlugin: ShellPlugin | null | undefined
+
+/** The plugin, or null on the web and in a shell built before it. Looked up on first use, never at module load. */
+function shell(): ShellPlugin | null {
+  if (shellPlugin === undefined) {
+    try {
+      shellPlugin = isNative() && Capacitor.isPluginAvailable('Shell') ? registerPlugin<ShellPlugin>('Shell') : null
+    } catch {
+      shellPlugin = null
+    }
+  }
+  return shellPlugin
+}
+
+/** How long the page waits for the shell to hear it before asking iOS anyway. */
+const SHELL_WORD_MS = 500
+
+/**
+ * Say that iOS is about to put up an alert of its own — may Drafter notify
+ * you, know where you are, Face ID — just before asking for it. The alert
+ * makes the app inactive, and the shell covers an inactive app with the
+ * launch screen (SceneDelegate's privacy cover), so the alert stood on a
+ * blank screen with nothing to say what it was for. Told first, the shell
+ * leaves the page in sight behind it; going to the background is covered all
+ * the same. Never throws, and never holds the ask up for long.
+ */
+export async function expectSystemPrompt(): Promise<void> {
+  const plugin = shell()
+  if (!plugin) return
+  try {
+    await withTimeout(plugin.expectSystemPrompt(), SHELL_WORD_MS)
+  } catch {
+    /* the alert comes all the same, over the cover */
+  }
+}
+
 /** Open a URL outside the web view: Safari's sheet on iOS, a new tab on the web. */
 export async function openExternal(url: string): Promise<void> {
   if (isNative()) {
@@ -343,7 +384,11 @@ export async function requestLocalNotificationPermission(): Promise<boolean> {
   if (!isNative()) return false
   const { LocalNotifications } = await import('@capacitor/local-notifications')
   let p = await LocalNotifications.checkPermissions()
-  if (p.display !== 'granted') p = await LocalNotifications.requestPermissions()
+  if (p.display !== 'granted') {
+    // only an unanswered question puts an alert up; after that iOS answers alone
+    if (p.display !== 'denied') await expectSystemPrompt()
+    p = await LocalNotifications.requestPermissions()
+  }
   return p.display === 'granted'
 }
 
@@ -786,6 +831,8 @@ export async function checkAppLock(): Promise<BiometryStatus> {
 export async function authenticateAppLock(reason = 'Unlock Drafter'): Promise<boolean> {
   try {
     const { BiometricAuth } = await import('@aparajita/capacitor-biometric-auth')
+    // Face ID stands over the lock card, or over Settings, not the launch screen
+    await expectSystemPrompt()
     await BiometricAuth.authenticate({ reason, allowDeviceCredential: true, cancelTitle: 'Cancel' })
     return true
   } catch {
