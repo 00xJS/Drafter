@@ -5,6 +5,7 @@ import { useDayKey } from '../useDayKey'
 import { useNow } from '../useNow'
 import { Icon, type IconName } from './Icon'
 import { Modal, ModalHead } from './Modal'
+import { PushNudge } from './PushNudge'
 
 /** A row's glyph: what kind of news it is. */
 const ICONS: Record<NoticeType | 'reminder', IconName> = {
@@ -68,6 +69,7 @@ export function NoticesSheet({ notices, onRead, onReadAll, onOpen, onClose, ...s
         )}
       </ModalHead>
       <div className="modal-body">
+        <PushNudge />
         {groups.length === 0 ? (
           <div className="notices-empty">
             <Icon name="bell" size={28} />
