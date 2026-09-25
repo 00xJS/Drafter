@@ -485,3 +485,11 @@ html.native .ask-answer {
     padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
   }
 }
+
+/* The field being typed in is scrolled into view above the keyboard
+   (typingField in src/native.ts, block 'nearest'). Without a margin it landed
+   flush against the sheet's edge, and its focus ring, drawn outside it, was
+   cut off there. */
+.native :is(input, textarea, select, [contenteditable='true']) {
+  scroll-margin-block: 12px;
+}
