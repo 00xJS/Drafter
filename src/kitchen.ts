@@ -439,6 +439,24 @@ export function cookTaskWithCook(task: Task, was: string | undefined, cook: stri
   return next
 }
 
+/**
+ * A cook task handed to someone else in the task editor, as its meal: the
+ * meal with them as its cook, or null when there is nothing to write. The
+ * meal is what says who cooks (mealCook), and syncCookTask keeps an open cook
+ * task with it, so a hand-over made on the task alone snapped straight back
+ * on the next render. Written to the meal as well, the two agree. Taken off
+ * everyone, the meal has nobody cooking. Only a meal that has a cook for the
+ * household takes one: a shared dish, not eaten out and not Leftovers.
+ */
+export function mealForCookHandOver(before: Task | undefined, after: Task, meals: readonly Meal[]): Meal | null {
+  if (!before || !after.id.startsWith(COOK_TASK_PREFIX)) return null
+  const to = after.assigneeId ?? ''
+  if ((before.assigneeId ?? '') === to) return null
+  const meal = meals.find(m => m.id === after.id.slice(COOK_TASK_PREFIX.length) && !m.deletedAt)
+  if (!meal || !mealIsShared(meal) || meal.out || meal.quick || (mealCook(meal) ?? '') === to) return null
+  return mealAdjusted(meal, { cookId: to })
+}
+
 /** A household member as the meal cards name one: an id, and the name to say. */
 export interface KitchenMember {
   id: string

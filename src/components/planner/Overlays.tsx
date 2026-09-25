@@ -2,7 +2,7 @@ import { Suspense, useMemo, useState, type ReactNode } from 'react'
 import { mediaIdsOf } from '../../../shared/media.mts'
 import { proposeWeek, targetWeek } from '../../../shared/weekplan.mts'
 import { newerStamp } from '../../itemops'
-import { COOK_TASK_PREFIX, saveCookToRecipe } from '../../kitchen'
+import { COOK_TASK_PREFIX, mealForCookHandOver, saveCookToRecipe } from '../../kitchen'
 import { OPEN_STATUSES, type Task } from '../../types'
 import { deleteMedia } from '../../media'
 import { localDayKey, shiftDayKey } from '../../journal'
@@ -120,6 +120,16 @@ export function Overlays({ p }: { p: PlannerCtx }) {
   const openAskDoc = askDocOpener(p, closeSheet)
 
   /**
+   * A cook task handed to someone else in the editor: its meal's cook goes with
+   * it (mealForCookHandOver), or the sync that keeps a cook task with its
+   * meal's cook would hand it straight back.
+   */
+  const handOverCook = (t: Task) => {
+    const meal = mealForCookHandOver(store.tasks.find(x => x.id === t.id), t, store.meals)
+    if (meal) upsert(meal)
+  }
+
+  /**
    * A shared meal's cook task can keep what was written on it: the steps and
    * notes go into the meal's recipe (or a new one, for a meal that is not a
    * recipe yet), so they are there the next time it is planned. One Undo puts
@@ -133,8 +143,12 @@ export function Overlays({ p }: { p: PlannerCtx }) {
     return {
       name: recipe?.name ?? null,
       onSave(current: Task) {
-        const saved = saveCookToRecipe(current, meal, store.recipes, { now: new Date().toISOString(), newId: () => crypto.randomUUID() })
+        // a hand-over in the same save goes to the meal first, so a recipe linked to it is linked on top of it
+        const handed = mealForCookHandOver(store.tasks.find(x => x.id === current.id), current, [meal])
+        const base = handed ?? meal
+        const saved = saveCookToRecipe(current, base, store.recipes, { now: new Date().toISOString(), newId: () => crypto.randomUUID() })
         if (!saved) {
+          if (handed) upsert(handed)
           upsert(current)
           setEditor(null)
           showToast(`Nothing new to add to “${recipe?.name ?? meal.title}” — it already has these steps and notes.`)
@@ -142,12 +156,13 @@ export function Overlays({ p }: { p: PlannerCtx }) {
         }
         upsert(saved.recipe)
         if (saved.meal) upsert(saved.meal)
+        else if (handed) upsert(handed)
         upsert(saved.task)
         setEditor(null)
         showToast(saved.created ? `Saved “${saved.recipe.name}” as a recipe` : `Saved to “${saved.recipe.name}”`, () => {
           if (saved.created) remove(saved.recipe.id)
           else if (recipe) upsert({ ...recipe, updatedAt: newerStamp(saved.recipe.updatedAt) })
-          if (saved.meal) upsert({ ...meal, updatedAt: newerStamp(saved.meal.updatedAt) })
+          if (saved.meal) upsert({ ...base, updatedAt: newerStamp(saved.meal.updatedAt) })
           upsert({ ...current, updatedAt: newerStamp(saved.task.updatedAt) })
         })
       },
@@ -174,6 +189,7 @@ export function Overlays({ p }: { p: PlannerCtx }) {
             onSave={t => {
               const before = store.tasks.find(x => x.id === t.id)
               const isNew = !before
+              handOverCook(t)
               upsert(t)
               setEditor(null)
               if (isNew) showToast(`Added “${t.title || 'Untitled'}”`, () => remove(t.id))
@@ -181,7 +197,10 @@ export function Overlays({ p }: { p: PlannerCtx }) {
               if (!before || before.status !== t.status || before.dueAt !== t.dueAt) pushToProjectBoard(t)
             }}
             onDiscard={() => showToast('Nothing to save — that task was empty.')}
-            onCommit={t => upsert(t)}
+            onCommit={t => {
+              handOverCook(t)
+              upsert(t)
+            }}
             onDelete={id => {
               const t = store.tasks.find(x => x.id === id)
               if (t) deleteTask(t)
