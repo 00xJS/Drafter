@@ -11,12 +11,13 @@
  * A file of its own, not TrendBadge's: that one reaches the first load
  * through bits.tsx, and only the Stats views draw this.
  */
-export function DeltaBadge({ by, text = by > 0 ? `↑${by}` : `↓${-by}`, than }: { by: number; text?: string; than: string }) {
+export function DeltaBadge({ by, text, than }: { by: number; text?: string; than: string }) {
   if (by === 0) return <small className="muted delta-line">same as {than.replace(/^on /, '')}</small>
+  const said = text ?? (by > 0 ? `↑${by}` : `↓${-by}`)
   return (
     <span className="delta-line">
       <span className="badge delta-badge" style={by > 0 ? { background: 'var(--tone-sky-bg)', color: 'var(--tone-sky)' } : { background: 'var(--tone-grey-bg)', color: 'var(--tone-grey)' }}>
-        {text}
+        {said}
       </span>{' '}
       <small className="muted">{than}</small>
     </span>

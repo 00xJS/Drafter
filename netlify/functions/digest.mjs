@@ -35,11 +35,17 @@
 // A digest or an alarm that went out is also kept for its reader as a notice
 // (v3.32, lib/notices.mjs): the hub on Home lists it, so one swiped away
 // unread on the lock screen can still be read.
+//
+// On the 1st of each month, from its digest hour, an account is also sent
+// last month's highlights (lib/recap.mjs): Insights' own lines, from its own
+// log, once — the notice for that month is its watermark, written first. The
+// rows are the digest's, plus that member's journal, habits and clothes, read
+// only on a run where a recap is still to go.
 
 import { buildDigest, localParts, visibleItemsFor } from '../../shared/digest.mts'
 import { isMineTask } from '../../shared/domain.mts'
 import { hasDueTime } from '../../shared/due.mts'
-import { SYNC_KINDS } from '../../shared/kinds.mts'
+import { SYNC_KINDS, kindOf } from '../../shared/kinds.mts'
 import { proposeWeek, weekPlanSummary } from '../../shared/weekplan.mts'
 import { resolveProvider } from './lib/ai.mjs'
 import { startJob } from './lib/aijobs.mjs'
@@ -55,6 +61,7 @@ import { signInLine } from './lib/signins.mjs'
 import { wantsDraft, weekReviewOf } from './lib/sundaydraft.mjs'
 import { keyHeaders } from './lib/supabasekeys.mjs'
 import { pushConfigured, sendToAll } from './push.mjs'
+import { RECAP_KINDS, buildRecap, keepWritten, recapDue, recapNotice, recapNoticeId, recapPath } from './lib/recap.mjs'
 
 export const config = { schedule: '@hourly' }
 
@@ -168,6 +175,70 @@ async function keepNotice(userId, { id, type, title, lines, target }, now) {
 }
 
 /**
+ * The monthly recaps this hour still has to send: each account whose 1st it
+ * is, from its digest hour (recapDue), whose notice for the month is not
+ * written yet — asked in one read — and those accounts' own journal, habits
+ * and clothes, the only rows a recap reads that the digest does not. A run
+ * with no recap to send reads nothing more at all.
+ * @param {{ user_id: string, timezone?: string | null, digest_hour?: number | null }[]} active the accounts with the digest on
+ * @param {Date} now
+ * @param {string | null} ownerId
+ */
+async function recapsToSend(active, now, ownerId) {
+  /** @type {Map<string, string>} */
+  const due = new Map()
+  for (const u of active) {
+    const month = u.user_id ? recapDue(u, now) : null
+    if (month) due.set(u.user_id, month)
+  }
+  if (!due.size) return { due, rows: [] }
+  const ids = [...due].map(([userId, month]) => recapNoticeId(userId, month))
+  const written = /** @type {{ id: string }[] | null} */ (await rest(`posts?select=id&id=in.(${ids.map(encodeURIComponent).join(',')})`))
+  const gone = new Set((written ?? []).map(r => r.id))
+  for (const [userId, month] of [...due]) if (gone.has(recapNoticeId(userId, month))) due.delete(userId)
+  if (!due.size) return { due, rows: [] }
+  const who = [...due.keys()].map(encodeURIComponent).join(',')
+  // legacy rows with no owner are the site owner's (visibleItemsFor)
+  const whose = ownerId && due.has(ownerId) ? `or=(user_id.in.(${who}),user_id.is.null)` : `user_id=in.(${who})`
+  const rows = /** @type {{ user_id: string | null, data: unknown }[]} */ (await restAll(`posts?select=id,data,user_id&deleted=is.false&kind=in.(${RECAP_KINDS.join(',')})&${whose}`))
+  return { due, rows }
+}
+
+/**
+ * One account's recap: worked out from its own log, and its notice written
+ * for its month. Resolves what to push — or null when the month held nothing
+ * worth saying, when the notice was there already (another run sent it), or
+ * when notices cannot be kept yet, since a push with no watermark behind it
+ * could go again an hour later.
+ * @param {{ user_id: string, timezone?: string | null }} u
+ * @param {{ user_id: string | null, data: unknown }[]} rows the digest's
+ * @param {{ user_id: string | null, data: unknown }[]} personal the recap's own read
+ * @param {Iterable<string> | undefined} peerIds
+ * @param {string | null} ownerId
+ * @param {Date} now
+ * @param {string} month
+ */
+async function claimRecap(u, rows, personal, peerIds, ownerId, now, month) {
+  const recap = buildRecap(
+    // the digest's kinds from its own read, and the recap's personal kinds from
+    // this member's alone, whatever either read brought back
+    [
+      ...rows.filter(r => DIGEST_KINDS.includes(String(kindOf(r.data)))),
+      ...personal.filter(r => RECAP_KINDS.includes(String(kindOf(r.data))) && (r.user_id === u.user_id || (r.user_id === null && u.user_id === ownerId))),
+    ],
+    u.user_id,
+    peerIds,
+    ownerId,
+    u.timezone,
+    now,
+    month,
+  )
+  if (!recap.lines.length) return null
+  const put = await putNotice(recapNotice(u.user_id, recap, now), u.user_id, keepWritten)
+  return put.ok && !put.unchanged ? recap : null
+}
+
+/**
  * The hourly run, and the record it leaves in job_runs (lib/jobhealth.mjs):
  * when it ran, what it sent, and the first few failures. That record is how a
  * run that failed, or runs that stopped coming, reach the owner's Today. The
@@ -216,6 +287,11 @@ async function digestRun(now, run) {
   // of the records. Only the kinds a digest reads (DIGEST_KINDS).
   const rows = /** @type {{ user_id: string | null, data: unknown }[]} */ (await restAll(`posts?select=id,data,user_id&deleted=is.false&kind=in.(${DIGEST_KINDS.join(',')})`))
   const peers = await buildPeerMap()
+  // the monthly recaps still to go this hour, and the rows only they read
+  const recaps = await recapsToSend(active, now, ownerId).catch(e => {
+    run.failures.push(`recap: ${e?.message ?? e}`)
+    return { due: new Map(), rows: [] }
+  })
   let sent = 0
   // the job's record reads this list as it grows, so a run that throws part-way keeps what failed before
   const failures = run.failures
@@ -327,6 +403,18 @@ async function digestRun(now, run) {
         }
       }
 
+      // 3. last month's recap, on the 1st: its notice is its watermark, written
+      //    before the push, and a notice already there means it has gone
+      let recap = null
+      const month = recaps.due.get(u.user_id)
+      if (month) {
+        try {
+          recap = await claimRecap(u, rows, recaps.rows, peers.get(u.user_id), ownerId, now, month)
+        } catch (e) {
+          failures.push(`recap ${u.user_id}: ${e?.message ?? e}`)
+        }
+      }
+
       if (morning && morning.digest.lines.length > 0) {
         const { digest, sunday, weekPlan, path } = morning
         const title = 'Good morning — today in Drafter'
@@ -354,6 +442,14 @@ async function digestRun(now, run) {
             failures.push(`digest notice ${u.user_id}: ${e?.message ?? e}`),
           )
         }
+      }
+
+      // the recap's push, once its notice is kept: every device, a phone's too,
+      // and a tap opens Insights on that month (useDeepLinks)
+      if (recap && liveSubs.length && pushConfigured()) {
+        const { failed } = await applySend({ title: recap.title, body: recap.lines.join('\n'), tag: `recap-${recap.month}`, url: `${site || ''}${recapPath(recap.month)}` })
+        if (failed.length) failures.push(`recap ${u.user_id}: ${failed.map(f => f.statusCode).join(',')}`)
+        sent += Math.max(0, liveSubs.length - failed.length)
       }
 
       for (const t of nudges) {

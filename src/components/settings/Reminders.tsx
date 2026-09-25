@@ -140,6 +140,8 @@ export function PlanDayReminder({ pref, onChange }: { pref: PlanDayPref; onChang
  * only from a site that can send it: without that the switch is not offered,
  * since a digest that never came looked exactly like one that had, and the
  * line says so instead. The hour is push's as well, so it stays either way.
+ * On the 1st the digest brings the month's recap at the same hour, with no
+ * switch of its own (netlify/functions/lib/recap.mjs): one line says so.
  */
 export function DigestEmail({
   email,
@@ -179,6 +181,7 @@ export function DigestEmail({
           <small>{Intl.DateTimeFormat().resolvedOptions().timeZone}</small>
         </label>
       </p>
+      <p className="field-hint">On the 1st it also brings last month’s highlights, from your own log.</p>
       {!configured && <p className="field-hint">The digest comes by push only: email isn’t set up on this site.</p>}
     </>
   )
