@@ -424,9 +424,14 @@
   padding: 10px 14px calc(10px + env(safe-area-inset-bottom));
   border-top: 1px solid var(--border);
 }
+/* Your work day's button and the others' badges: a line each when they do not
+   fit on one, rather than the last badge cut off mid-hour ("Maria · Office 8am–") */
 .cal-day-work {
   display: flex;
+  flex-wrap: wrap;
   justify-content: center;
+  align-items: center;
+  gap: 4px 8px;
   padding: 10px 14px 0;
 }
 @media (min-width: 900px) {
@@ -496,6 +501,15 @@
   color: var(--text-2);
   font-size: calc(0.68rem * var(--type-scale));
   line-height: 1.4;
+}
+/* The badge's own ellipsis never drew: its words are a flex item of it, and an
+   ellipsis is drawn by the box that holds the line. They carry their own, for
+   the line that is still too narrow once the badges have wrapped. */
+.cal-work-words {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .cal-work-badge.holiday {
   border-color: var(--tone-amber);

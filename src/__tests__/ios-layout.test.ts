@@ -74,3 +74,13 @@ describe('a meal slot beside another member’s plan', () => {
     expect(rule(css, '.meal-household')).toMatch(/flex:\s*1 1 100%/)
   })
 })
+
+describe('another member’s work badge', () => {
+  it('wraps onto a line of its own, and ellipsises its words where it still does not fit', () => {
+    expect(rule(css, '.cal-day-work')).toMatch(/flex-wrap:\s*wrap/)
+    const words = rule(css, '.cal-work-words')
+    expect(words).toMatch(/text-overflow:\s*ellipsis/)
+    expect(words).toMatch(/min-width:\s*0/)
+    expect(words).toMatch(/overflow:\s*hidden/)
+  })
+})
