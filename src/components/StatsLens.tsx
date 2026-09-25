@@ -349,7 +349,7 @@ function AreaPlaces({ places, people, tasks, meals, areas: a, scoped }: Lens) {
 // ---- This year: what the Overview held ---------------------------------------------
 
 function YearLens(p: Lens) {
-  const { people, places, events, recipes, garments, areas: a, scoped, span, spanWords, now } = p
+  const { people, places, events, recipes, areas: a, scoped, span, spanWords, now } = p
   const tasks = scoped.work
   const year = now.getFullYear()
   const report = useMemo(() => taskReport(tasks, span, now), [tasks, span, now])
@@ -367,7 +367,7 @@ function YearLens(p: Lens) {
   const money = useMemo(() => moneyReport(tasks, year, now), [tasks, year, now])
   // the Wardrobe's own rule, over the index the screen built: a piece's price
   // over the DAYS it was worn, so the lens and Home → Wardrobe agree exactly
-  const clothes = useMemo(() => wardrobeCosts(garments, a.wearIx), [garments, a.wearIx])
+  const clothes = useMemo(() => wardrobeCosts(scoped.garments, a.wearIx), [scoped.garments, a.wearIx])
   const doneSeries = useMemo(() => monthBuckets(together, year, countDays), [together, year])
   // every tile under "the last …" counts that window and nothing else, so the
   // four of them are answering one question rather than four; each is set
@@ -389,7 +389,7 @@ function YearLens(p: Lens) {
   // doneMonths, not a recount: the Tasks page's own "Each month" bars are
   // these twelve numbers, and this sparkline is the way into that page
   const done = useMemo(() => doneMonths(tasks, year, now).months, [tasks, year, now])
-  const pieces = garments.filter(g => !g.deletedAt && !g.archivedAt).length
+  const pieces = scoped.garments.filter(g => !g.deletedAt && !g.archivedAt).length
   const tile = (label: string, days: readonly string[], sub: string) =>
     days.length > 0 && <StatTile label={label} value={String(days.length)} sub={sub} trend={<WindowChange now={days.length} before={before(days)} window={span} />} />
   return (
@@ -627,13 +627,13 @@ function TasksLens(p: Lens) {
 // ---- Money -----------------------------------------------------------------------
 
 function MoneyLens(p: Lens) {
-  const { scoped, garments, areas: a, year, setYear, now, whose } = p
+  const { scoped, areas: a, year, setYear, now, whose } = p
   const tasks = scoped.work
   const money = useMemo(() => moneyReport(tasks, year, now), [tasks, year, now])
   // set against the year before at the same point in it, while this one is still going
   const thisYear = year === now.getFullYear()
   const before = useMemo(() => paidToDate(tasks, year - 1, thisYear ? dateKey(now).slice(5) : undefined), [tasks, year, thisYear, now])
-  const clothes = useMemo(() => wardrobeCosts(garments, a.wearIx), [garments, a.wearIx])
+  const clothes = useMemo(() => wardrobeCosts(scoped.garments, a.wearIx), [scoped.garments, a.wearIx])
   const busiestPayee = Math.max(1, ...money.byPayee.map(r => r.count))
   const busiestKind = Math.max(1, ...money.byKind.map(r => r.count))
   const perMonth = money.spent > 0 ? Math.round(money.spent / Math.max(1, money.months.filter(m => m > 0).length)) : 0

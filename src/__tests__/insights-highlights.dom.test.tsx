@@ -161,9 +161,10 @@ describe('Mine · Both of us', () => {
     render(<Shell inHousehold />)
     fireEvent.click(within(screen.getByRole('group', { name: 'Whose log' })).getByRole('button', { name: 'Both of us' }))
     expect(localStorage.getItem(INSIGHTS_WHOSE_KEY)).toBe('both')
-    const people = cardNamed(/^3 people seen between you this week/)!
+    // each card's name says whose it is, as its badge does
+    const people = cardNamed(/^Both of us: 3 people seen between you this week/)!
     expect(within(people).getByText('Both of us')).toBeTruthy()
-    const tasks = cardNamed(/^4 tasks done this week/)!
+    const tasks = cardNamed(/^Both of us: 4 tasks done this week/)!
     expect(within(tasks).getByText('Both of us')).toBeTruthy()
     // the journal is still yours alone, and says so
     const journal = cardNamed(/^Just you: Wrote in the journal on 1 day this week/)!

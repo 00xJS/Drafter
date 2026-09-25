@@ -79,7 +79,7 @@ export const INSIGHT_PERIODS: readonly { key: InsightPeriod; label: string }[] =
 /** A calendar week, month or year, as day keys on the reader's calendar. */
 export interface PeriodSpan {
   period: InsightPeriod
-  /** Its own name: `2026-W39`, `2026-09` or `2026`. */
+  /** Its own name: `2026-W38`, `2026-09` or `2026`. */
   key: string
   /** Its first day and its last, both included. */
   start: string
@@ -754,10 +754,15 @@ export function pickHighlights(figs: InsightFigures): Highlight[] {
     .map(c => ({ ...c, id: c.kind, line: highlightLine(c) }))
 }
 
-/** A card as one plain line: "19 tasks done this week, ↑7 on last week · Tuesdays are your best". */
+/**
+ * A card as one plain line: "19 tasks done this week, ↑7 on last week ·
+ * Tuesdays are your best" — headed with whose it is under Both of us, as the
+ * card's badge says it, so a screen reader hears it too.
+ */
 export function highlightLine(c: Pick<Highlight, 'who' | 'title' | 'delta' | 'detail'>): string {
   const change = c.delta ? `, ${c.delta.by === 0 ? `the same as ${c.delta.than}` : `${c.delta.text} ${c.delta.than}`}` : ''
-  return `${c.who === 'just-you' ? 'Just you: ' : ''}${c.title}${change}${c.detail ? ` · ${c.detail}` : ''}`
+  const whose = c.who === 'both' ? 'Both of us: ' : c.who === 'just-you' ? 'Just you: ' : ''
+  return `${whose}${c.title}${change}${c.detail ? ` · ${c.detail}` : ''}`
 }
 
 /** The recap's body: the first few cards' lines, most interesting first. */

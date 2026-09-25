@@ -370,7 +370,10 @@ describe('whose log: Mine and Both of us', () => {
     expect(card(both, 'people')?.title).toBe('3 people seen between you this week')
     expect(card(both, 'tasks-done')?.title).toBe('3 tasks done this week')
     expect(card(both, 'places')?.title).toBe('Went to Luna’s this week')
-    for (const c of both.filter(c => ['tasks', 'money', 'people', 'places', 'kitchen'].includes(c.area))) expect(c.who, c.id).toBe('both')
+    for (const c of both.filter(c => ['tasks', 'money', 'people', 'places', 'kitchen'].includes(c.area))) {
+      expect(c.who, c.id).toBe('both')
+      expect(c.line, c.id).toMatch(/^Both of us: /)
+    }
   })
 
   it('never counts another member’s journal or habits, under either', () => {
