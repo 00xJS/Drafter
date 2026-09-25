@@ -227,6 +227,17 @@
 .when-row input {
   width: 100%;
   min-width: 0;
+  max-width: 100%;
+  /* iOS draws a date or time field at a width of its own, past its column and
+     off the sheet's edge, unless its native look is off */
+  -webkit-appearance: none;
+  appearance: none;
+}
+/* …with it off, the value sits at the start as in every other field, and an
+   empty one keeps its height */
+.when-row input::-webkit-date-and-time-value {
+  min-height: 1.5em;
+  text-align: start;
 }
 .due-chips {
   display: flex;
