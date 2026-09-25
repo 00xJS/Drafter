@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useEffectEvent, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useEffectEvent, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { imageFiles, mediaURL } from '../media'
 import { savePicture } from '../picture'
 import { openExternal } from '../native'
@@ -91,6 +91,70 @@ export function openNoteLink(href: string): void {
   else void openExternal(href)
 }
 
+// ---- asking for a link's address or a task's title ----------------------
+//
+// Both were the browser's prompt(), which in the iPhone app is a system alert
+// naming the page's address — and one iOS 27 holds behind its Safe Browsing
+// check. They are asked in the pad now, in a row under its bar: the field
+// takes the keyboard the note had, and hands it back with the caret where it
+// was once the link or the task is made, or the row is put away.
+
+/** What the pad is asking for, and where in the note the answer goes. */
+type PadAsk = { kind: 'link'; text: string; range: Range | null } | { kind: 'task'; range: Range | null }
+
+/** A link address the pad keeps: a web page or an email address, as the sanitizer does. */
+export const linkAddressOk = (url: string) => /^(https?:\/\/\S|mailto:\S)/i.test(url.trim())
+
+/** The row under the bar: one field, then Cancel and the answer's button. Escape is Cancel. */
+function PadAskRow({ ask, onAnswer, onCancel }: { ask: PadAsk; onAnswer(value: string): void; onCancel(): void }) {
+  const link = ask.kind === 'link'
+  const [value, setValue] = useState(link ? 'https://' : '')
+  const ok = link ? linkAddressOk(value) : !!value.trim()
+  const id = useId()
+  return (
+    <form
+      className="notes-ask"
+      aria-labelledby={id}
+      onSubmit={e => {
+        e.preventDefault()
+        if (ok) onAnswer(value.trim())
+      }}
+    >
+      <label className="notes-ask-field">
+        <span id={id}>{link ? 'Link address' : 'Task title'}</span>
+        <input
+          // the pad's keyboard, handed to this field: it was asked for with a tap on the bar
+          autoFocus
+          type={link ? 'url' : 'text'}
+          inputMode={link ? 'url' : 'text'}
+          autoCapitalize={link ? 'off' : 'sentences'}
+          autoCorrect={link ? 'off' : 'on'}
+          spellCheck={!link}
+          enterKeyHint="done"
+          placeholder={link ? 'https://…' : 'What needs doing'}
+          value={value}
+          onChange={e => setValue(e.target.value)}
+          onKeyDown={e => {
+            if (e.key !== 'Escape') return
+            // the pad's own Escape, not the sheet's around it
+            e.preventDefault()
+            e.stopPropagation()
+            onCancel()
+          }}
+        />
+      </label>
+      <div className="notes-ask-actions">
+        <button type="button" className="btn" onMouseDown={e => e.preventDefault()} onClick={onCancel}>
+          Cancel
+        </button>
+        <button type="submit" className="btn primary" disabled={!ok}>
+          {link ? 'Add link' : 'Add task'}
+        </button>
+      </div>
+    </form>
+  )
+}
+
 /**
  * How long typing rests before the note is written out. Every key used to
  * copy the whole note, sanitize it (a DOMParser) and hand it up, and the
@@ -113,6 +177,8 @@ export function RichNotes({ value, onChange, status, autoFocus, onCreateTask }: 
   const photoInput = useRef<HTMLInputElement>(null)
   const [emojiOpen, setEmojiOpen] = useState(false)
   const [dragging, setDragging] = useState(false)
+  /** A link's address or a task's title being asked for, in the row under the bar. */
+  const [asking, setAsking] = useState<PadAsk | null>(null)
   /** The link a tap landed on while its Open ↗ is offered, and where that sits in the pad. */
   const [linkTip, setLinkTip] = useState<{ link: Element; href: string; top: number; left: number } | null>(null)
   const lastEmitted = useRef(value)
@@ -274,13 +340,34 @@ export function RichNotes({ value, onChange, status, autoFocus, onCreateTask }: 
     insertHtml(`${before}${esc(text || 'code')}${after}`)
   }
 
-  const addLink = () => {
+  /** Where the caret or the selection is in the note, to put the answer back at: the row's field takes the selection away. */
+  const caret = (): Range | null => {
     const sel = window.getSelection()
-    const text = sel?.toString() ?? ''
-    const url = window.prompt('Link address (https://…)', 'https://')
-    if (!url || !/^(https?:\/\/|mailto:)/i.test(url.trim())) return
-    if (text) exec('createLink', url.trim())
-    else insertHtml(`<a href="${url.trim()}">${url.trim()}</a>`)
+    return sel && sel.rangeCount > 0 && box.current?.contains(sel.anchorNode) ? sel.getRangeAt(0).cloneRange() : null
+  }
+  /** The note again, with the caret or the selection where the question left it. */
+  const backTo = (range: Range | null) => {
+    box.current?.focus()
+    const sel = window.getSelection()
+    if (!range || !sel) return
+    sel.removeAllRanges()
+    sel.addRange(range)
+  }
+
+  const addLink = () => {
+    setAsking({ kind: 'link', text: window.getSelection()?.toString() ?? '', range: caret() })
+  }
+  /** The address, as a link: on the words that were selected, or written out where the caret was. */
+  const linkTo = (url: string, ask: Extract<PadAsk, { kind: 'link' }>) => {
+    setAsking(null)
+    backTo(ask.range)
+    const attr = url.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')
+    if (ask.text) exec('createLink', url)
+    else insertHtml(`<a href="${attr}">${attr}</a>`)
+  }
+  const putAway = (ask: PadAsk) => {
+    setAsking(null)
+    backTo(ask.range)
   }
 
   async function addFiles(files: FileList | File[]) {
@@ -344,10 +431,9 @@ export function RichNotes({ value, onChange, status, autoFocus, onCreateTask }: 
                 const node = sel.anchorNode.nodeType === Node.TEXT_NODE ? sel.anchorNode.parentElement : (sel.anchorNode as HTMLElement)
                 text = node?.closest('li, p, h1, h2, h3')?.textContent?.trim() ?? ''
               }
-              if (!text) {
-                text = window.prompt('Task title') ?? ''
-              }
-              if (text.trim()) onCreateTask(text.trim().slice(0, 140))
+              // nothing picked and no line to take: the title is asked for in the pad
+              if (!text.trim()) return setAsking({ kind: 'task', range: caret() })
+              onCreateTask(text.trim().slice(0, 140))
             }}
           >
             <Icon name="plus" size={13} strokeWidth={2.25} /> Task
@@ -370,6 +456,19 @@ export function RichNotes({ value, onChange, status, autoFocus, onCreateTask }: 
           }}
         />
       </div>
+      {asking && (
+        <PadAskRow
+          // a fresh field for each question
+          key={asking.kind}
+          ask={asking}
+          onCancel={() => putAway(asking)}
+          onAnswer={value => {
+            if (asking.kind === 'link') return linkTo(value, asking)
+            putAway(asking)
+            onCreateTask?.(value.slice(0, 140))
+          }}
+        />
+      )}
       <div
         ref={box}
         className="notes-editable md"

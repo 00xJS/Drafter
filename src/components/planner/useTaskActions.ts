@@ -89,9 +89,10 @@ export function useTaskActions({ store, showToast, setEditor, setProjectEditor, 
     showToast(trashedLine(t.title, 'Untitled task'), () => store.restore([t.id]))
   }
 
+  // Asked once, by the editor's own Delete: its "Tap again to …" says what
+  // happens to the project's tasks. A second question after it was the
+  // browser's confirm(), a system alert in the iPhone app.
   const deleteProject = (p: Project) => {
-    const count = store.tasks.filter(t => t.projectId === p.id).length
-    if (count > 0 && !window.confirm(`Delete “${p.name}”? Its ${count} task${count === 1 ? '' : 's'} stay, unassigned.`)) return
     store.remove(p.id)
     setProjectEditor(null)
     // a deleted project's notepad closes back to the index

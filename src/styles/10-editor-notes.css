@@ -382,6 +382,40 @@
   gap: 2px;
   align-items: center;
 }
+/* The pad's own question — a link's address, a task's title — in a row under
+   its bar, where the browser's prompt() used to put up a system alert. */
+.notes-ask {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+.notes-ask-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1 1 14rem;
+  min-width: 0;
+  color: var(--text-2);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+.notes-ask-field input {
+  width: 100%;
+  min-width: 0;
+  color: var(--text);
+  font-weight: 400;
+}
+.notes-ask-actions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
 .notes-tool {
   font-weight: 700;
   min-width: 30px;
