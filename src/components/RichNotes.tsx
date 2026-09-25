@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useEffectEvent, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useEffectEvent, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { imageFiles, mediaURL } from '../media'
 import { savePicture } from '../picture'
 import { openExternal } from '../native'
-import { sanitizeHtml, wordCountHtml } from '../richtext'
+import { sanitizeHtml, wordCountHtml, wordCountOf } from '../richtext'
 import { Icon } from './Icon'
 import { tipAttrs } from './notes/tips'
 
@@ -92,6 +92,16 @@ export function openNoteLink(href: string): void {
 }
 
 /**
+ * How long typing rests before the note is written out. Every key used to
+ * copy the whole note, sanitize it (a DOMParser) and hand it up, and the
+ * re-render then parsed it again to count its words: twice per key. A burst
+ * of typing is written out and counted once now, a beat after the last key —
+ * and at once on a toolbar action, a blur, the page hiding, the pad closing
+ * and an edit arriving from elsewhere, so no key is lost to the wait.
+ */
+export const EMIT_AFTER_MS = 250
+
+/**
  * One running notepad: type straight into the page, format with the toolbar
  * or shortcuts, paste or drop photos inline. The HTML is sanitized on the way
  * in and out; photos live in the media store (synced) and are referenced by id.
@@ -106,6 +116,16 @@ export function RichNotes({ value, onChange, status, autoFocus, onCreateTask }: 
   /** The link a tap landed on while its Open ↗ is offered, and where that sits in the pad. */
   const [linkTip, setLinkTip] = useState<{ link: Element; href: string; top: number; left: number } | null>(null)
   const lastEmitted = useRef(value)
+  /** The footer's count, taken from the pad's own text whenever the note is written out or taken in. */
+  const [words, setWords] = useState(() => wordCountHtml(value))
+  /** Typing not yet written out, and the timer that will. */
+  const typed = useRef(false)
+  const emitTimer = useRef<number | undefined>(undefined)
+  // the newest handler, for a write the timer makes after the parent has drawn again
+  const changed = useRef(onChange)
+  useLayoutEffect(() => {
+    changed.current = onChange
+  })
 
   /** Keep the Open ↗ under its link as the text scrolls or the page resizes (the keyboard coming up). */
   const followTip = useCallback(
@@ -134,9 +154,10 @@ export function RichNotes({ value, onChange, status, autoFocus, onCreateTask }: 
     }
   }, [tipShowing, followTip])
 
-  /** Serialize the editable (photos keep only their media id, never a blob URL). */
-  const emit = useCallback(() => {
-    const el = box.current
+  /** Serialize the editable (photos keep only their media id, never a blob URL), count its words, and hand it up if it changed. */
+  const write = useCallback((el: HTMLElement | null) => {
+    window.clearTimeout(emitTimer.current)
+    typed.current = false
     if (!el) return
     const clone = el.cloneNode(true) as HTMLElement
     for (const img of Array.from(clone.querySelectorAll('img'))) img.removeAttribute('src')
@@ -146,11 +167,48 @@ export function RichNotes({ value, onChange, status, autoFocus, onCreateTask }: 
       else input.removeAttribute('checked')
     }
     const html = sanitizeHtml(clone.innerHTML)
+    // off the copy, whose tick boxes say whether they are ticked, as the saved note's do
+    setWords(wordCountOf(clone))
     if (html !== lastEmitted.current) {
       lastEmitted.current = html
-      onChange(html)
+      changed.current(html)
     }
-  }, [onChange])
+  }, [])
+  /** Write the note out now: a toolbar action, a blur, and anything that must not wait on typing. */
+  const emit = useCallback(() => write(box.current), [write])
+  /** Typing: written out a beat after the last key. */
+  const emitSoon = () => {
+    typed.current = true
+    window.clearTimeout(emitTimer.current)
+    emitTimer.current = window.setTimeout(emit, EMIT_AFTER_MS)
+  }
+
+  // The pad closing writes out what was typed a moment ago. A layout
+  // cleanup: it runs while the pad is still on the page, and before any
+  // screen's own save as it closes (theirs are effects, which run after).
+  useLayoutEffect(() => {
+    const el = box.current
+    return () => {
+      if (typed.current) write(el)
+    }
+  }, [write])
+  // …and the page going into the background, before the screen's save on the
+  // same event: the pad's listener is added first, as a child's effects run
+  // before its parent's
+  useEffect(() => {
+    const hide = () => {
+      if (document.visibilityState === 'hidden' && typed.current) emit()
+    }
+    const leave = () => {
+      if (typed.current) emit()
+    }
+    document.addEventListener('visibilitychange', hide)
+    window.addEventListener('pagehide', leave)
+    return () => {
+      document.removeEventListener('visibilitychange', hide)
+      window.removeEventListener('pagehide', leave)
+    }
+  }, [emit])
 
   /** Give every photo a displayable src from the media store. */
   const hydrateImages = useCallback(async () => {
@@ -168,10 +226,18 @@ export function RichNotes({ value, onChange, status, autoFocus, onCreateTask }: 
   useEffect(() => {
     const el = box.current
     if (!el || value === lastEmitted.current) return
+    // typing not yet written out is written out instead, and wins, as it did
+    // when every key was written at once: the screen had not taken the other
+    // copy over words it knew were being typed
+    if (typed.current) {
+      write(el)
+      return
+    }
     el.innerHTML = sanitizeHtml(value)
     lastEmitted.current = value
+    setWords(wordCountOf(el))
     hydrateImages()
-  }, [value, hydrateImages])
+  }, [value, hydrateImages, write])
 
   // The page as it opens: the value it opened on, focused if asked. Once, as
   // the pad mounts — a later value arrives through the effect above, and a
@@ -181,6 +247,7 @@ export function RichNotes({ value, onChange, status, autoFocus, onCreateTask }: 
     if (!el) return
     el.innerHTML = sanitizeHtml(value)
     lastEmitted.current = value
+    setWords(wordCountOf(el))
     hydrateImages()
     if (autoFocus) el.focus()
   })
@@ -313,7 +380,7 @@ export function RichNotes({ value, onChange, status, autoFocus, onCreateTask }: 
         onInput={() => {
           // writing moves on from the link that was tapped
           setLinkTip(null)
-          emit()
+          emitSoon()
         }}
         onBlur={emit}
         onScroll={() => tipShowing && followTip()}
@@ -391,7 +458,7 @@ export function RichNotes({ value, onChange, status, autoFocus, onCreateTask }: 
         </button>
       )}
       <div className="notes-foot">
-        <small>{wordCountHtml(value)} words · Tap a link to open it</small>
+        <small>{words} words · Tap a link to open it</small>
         <span className="spacer" />
         {status && <small>{status}</small>}
       </div>

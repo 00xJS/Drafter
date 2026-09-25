@@ -14,7 +14,7 @@ vi.mock('../ai', () => ai)
 
 import { People } from '../components/People'
 import { Places } from '../components/Places'
-import { RichNotes } from '../components/RichNotes'
+import { EMIT_AFTER_MS, RichNotes } from '../components/RichNotes'
 import { NO_PERSON_FILTER } from '../people'
 import { NO_PLACE_FILTER } from '../places'
 import { useDayClock } from '../useDayClock'
@@ -178,9 +178,12 @@ describe('the notes pad', () => {
     const pad = container.querySelector('.notes-editable') as HTMLElement
     expect(pad.innerHTML).toBe('<p>Hello</p>')
     expect(document.activeElement).toBe(pad)
-    // typed into: the parent hears it
+    // typed into: the parent hears it, a beat after the last key (notes-typing.dom.test.tsx)
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     pad.innerHTML = '<p>Hello there</p>'
     fireEvent.input(pad)
+    act(() => void vi.advanceTimersByTime(EMIT_AFTER_MS))
+    vi.useRealTimers()
     expect(onChange).toHaveBeenLastCalledWith('<p>Hello there</p>')
     // a re-render with a new handler leaves what is being written alone
     rerender(<RichNotes value="<p>Hello there</p>" onChange={vi.fn()} autoFocus />)
