@@ -40,7 +40,8 @@ const props = {
   onSaveReview: noop,
   onOpen: noop,
   onStatus: noop,
-  onReschedule: noop,
+  onDeferAll: noop,
+  onStatusAll: noop,
   onNew: noop,
 }
 

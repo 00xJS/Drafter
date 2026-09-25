@@ -254,7 +254,8 @@ describe('Review', () => {
     onSaveReview: noop,
     onOpen: noop,
     onStatus: noop,
-    onReschedule: noop,
+    onDeferAll: noop,
+    onStatusAll: noop,
     onOpenProject: noop,
     onNew: noop,
   }

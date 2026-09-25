@@ -38,8 +38,10 @@ interface Props {
   onSaveReview(r: ReviewRecord): void
   onOpen(t: Task): void
   onStatus(id: string, s: TaskStatus): void
-  /** Move a set of tasks to a new due date (bulk reschedule). */
-  onReschedule(ids: string[], dueAtIso: string): void
+  /** Move a set of tasks to a day, each keeping its time, with one Undo (the planner's deferAll). */
+  onDeferAll(ids: string[], day: Date): void
+  /** Move a set of tasks to one status, with one Undo. */
+  onStatusAll(ids: string[], s: TaskStatus): void
   onNew(preset?: Partial<Task>): void
   /** Open the "Plan next week" sheet. Without it there is no button. */
   onPlanWeek?(): void
@@ -56,9 +58,9 @@ export function planWeekIsPrimary(d: Date): boolean {
   return day === 5 || day === 6 || day === 0
 }
 
-function nextMonday(from = new Date()): string {
-  const d = new Date(from.getFullYear(), from.getMonth(), from.getDate() + ((8 - from.getDay()) % 7 || 7), 9, 0, 0)
-  return d.toISOString()
+/** The Monday after `from` (a Monday's is the next one). Only its day is read: each task keeps its own time. */
+export function nextMonday(from: Date): Date {
+  return new Date(from.getFullYear(), from.getMonth(), from.getDate() + ((8 - from.getDay()) % 7 || 7), 12)
 }
 
 // one ongoing home project: a project chip on every row would say nothing
@@ -191,7 +193,8 @@ export function Review({
   onSaveReview,
   onOpen,
   onStatus,
-  onReschedule,
+  onDeferAll,
+  onStatusAll,
   onNew,
   onPlanWeek,
   garments = NO_GARMENTS,
@@ -426,10 +429,10 @@ export function Review({
                 with no time or a time gone by, is not swept to Monday */}
             {data.overdueNow.length > 0 && (
               <div className="review-bulk">
-                <button className="btn" onClick={() => onReschedule(data.overdueNow.map(t => t.id), nextMonday())}>
+                <button className="btn" onClick={() => onDeferAll(data.overdueNow.map(t => t.id), nextMonday(new Date()))}>
                   Push all to Monday
                 </button>
-                <button className="btn subtle" onClick={() => data.overdueNow.forEach(t => onStatus(t.id, 'wishlist'))}>
+                <button className="btn subtle" onClick={() => onStatusAll(data.overdueNow.map(t => t.id), 'wishlist')}>
                   Back to Wishlist
                 </button>
               </div>

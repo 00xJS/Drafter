@@ -35,7 +35,8 @@ const props = (reviews: ReviewRecord[]) =>
     onSaveReview: noop,
     onOpen: noop,
     onStatus: noop,
-    onReschedule: noop,
+    onDeferAll: noop,
+    onStatusAll: noop,
     onNew: noop,
   }) as unknown as Parameters<typeof Review>[0]
 

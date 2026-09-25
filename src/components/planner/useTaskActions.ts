@@ -178,18 +178,28 @@ export function useTaskActions({ store, showToast, setEditor, setProjectEditor, 
     return change
   }
 
+  /** Puts a status move back, on the board too, with any repeat it spawned taken out again. */
+  const undoStatus = (change: NonNullable<ReturnType<typeof applyStatus>>) => {
+    // the undo goes to the board too: it supersedes the queued push (same
+    // task id, so the timer is replaced), and without it GitHub would keep
+    // proposing the move the user just took back
+    const restored = { ...change.prev, updatedAt: newerStamp(change.prev.updatedAt) }
+    store.upsert(restored)
+    pushToProjectBoard(restored)
+    if (change.spawnedId) store.remove(change.spawnedId)
+  }
+
   const changeStatus = (id: string, status: TaskStatus) => {
     const change = applyStatus(id, status)
     if (!change) return
-    showToast(`Moved to ${STATUS_META[status].label}`, () => {
-      // the undo goes to the board too: it supersedes the queued push (same
-      // task id, so the timer is replaced), and without it GitHub would keep
-      // proposing the move the user just took back
-      const restored = { ...change.prev, updatedAt: newerStamp(change.prev.updatedAt) }
-      store.upsert(restored)
-      pushToProjectBoard(restored)
-      if (change.spawnedId) store.remove(change.spawnedId)
-    })
+    showToast(`Moved to ${STATUS_META[status].label}`, () => undoStatus(change))
+  }
+
+  /** Several tasks to one status at once (the review's Back to Wishlist): one toast, and one Undo that puts every one back. */
+  const changeStatusAll = (ids: string[], status: TaskStatus) => {
+    const changes = ids.map(id => applyStatus(id, status)).filter(c => c !== null)
+    if (!changes.length) return
+    showToast(`Moved ${changes.length} to ${STATUS_META[status].label}`, () => changes.forEach(undoStatus))
   }
 
   /**
@@ -246,5 +256,5 @@ export function useTaskActions({ store, showToast, setEditor, setProjectEditor, 
     })
   }
 
-  return { captureTask, deleteTask, deleteProject, closeLinkedIssue, pushToProjectBoard, applyStatus, changeStatus, reschedule, defer, deferAll }
+  return { captureTask, deleteTask, deleteProject, closeLinkedIssue, pushToProjectBoard, applyStatus, changeStatus, changeStatusAll, reschedule, defer, deferAll }
 }
