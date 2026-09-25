@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useLayoutEffect, useRef } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { Project, Task, TaskStatus } from './types'
+import { foregroundGate } from './calendarstate'
 import { fetchProjectItems, parseGithubUrl } from './github'
 
 // The shell's side of the two-way sync with a GitHub Projects board: whether a
@@ -107,9 +108,12 @@ async function pullBoards(
 }
 
 /**
- * Read every synced board on focus and every 30 minutes and hand the Planner
- * the tasks the board moved. Mirrors the calendar pull: build a change list,
- * apply it there with newerStamp behind an undo toast.
+ * Read every synced board on launch, every 30 minutes and on a return to the
+ * app, and hand the Planner the tasks the board moved. Mirrors the calendar
+ * pull: build a change list, apply it there with newerStamp behind an undo
+ * toast — and, as the calendar's does, a return to the app within a few
+ * minutes of the last pull waits for the half-hourly one (foregroundGate):
+ * every switch to another app and back read every board again.
  *
  * `onNotice` carries the one thing a change list cannot say: that the board is
  * bigger than the read cap, so some rows were never looked at.
@@ -136,12 +140,14 @@ export function useGithubProjectSync(
   // a board over the read cap is over it on every pull, and a toast every 30
   // minutes is noise — say it once per board per session
   const warned = useRef(new Set<string>())
+  const [foreground] = useState(() => foregroundGate())
 
   const pull = useCallback(async () => {
     if (busy.current) return
     const boards = projectsRef.current.filter(projectSyncEnabled)
     if (boards.length === 0) return
     busy.current = true
+    foreground.done()
     // .finally rather than try/finally, which the React Compiler cannot compile
     await pullBoards(boards, {
       tasks: () => tasksRef.current,
@@ -151,13 +157,13 @@ export function useGithubProjectSync(
     }).finally(() => {
       busy.current = false
     })
-  }, [])
+  }, [foreground])
 
   useEffect(() => {
     if (!enabled) return
     const run = () => void pull()
     const onVisible = () => {
-      if (document.visibilityState === 'visible') run()
+      if (document.visibilityState === 'visible' && foreground.due()) run()
     }
     const timer = window.setInterval(run, 30 * 60_000)
     document.addEventListener('visibilitychange', onVisible)
@@ -166,5 +172,5 @@ export function useGithubProjectSync(
       window.clearInterval(timer)
       document.removeEventListener('visibilitychange', onVisible)
     }
-  }, [enabled, pull])
+  }, [enabled, pull, foreground])
 }
