@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { formatMoney, isBill, isPayday, monthlyCost, monthlyIncome, monthlySetAside, monthlySpare } from '../../bills'
+import { formatMoney, isBill, isPayday, isSaving, monthlyCost, monthlyIncome, monthlySetAside, monthlySpare } from '../../bills'
 import { CHECK_IN_DEFAULT, accountEmoji, accountGroups, accountKindLabel, isLiability, latestBalance, moneySeries, moneyTotals, openCheckIn, savingGoals, slotOf, type AccountGroupKey } from '../../finance'
 import type { Account, Bill, Task } from '../../types'
 import { Bills } from '../Bills'
@@ -279,9 +279,10 @@ function AccountItem({ account: a, today, whose, onOpen }: { account: Account; t
   )
 }
 
-/** The goals in full, and + Goal. */
-function GoalsPane({ tasks, at, onOpenGoal, onAddGoal }: Props) {
+/** The goals in full, + Goal, and any whose set-asides were archived, to bring back. */
+function GoalsPane({ tasks, at, onOpen, onOpenGoal, onAddGoal }: Props) {
   const goals = useMemo(() => savingGoals(tasks, at), [tasks, at])
+  const archived = useMemo(() => moneySeries(tasks, isSaving).archived, [tasks])
   return (
     <section className="fin-pane" aria-label="Goals">
       <PaneBar label="Goals" add="+ Goal" onAdd={onAddGoal} />
@@ -295,6 +296,18 @@ function GoalsPane({ tasks, at, onOpenGoal, onAddGoal }: Props) {
             </li>
           ))}
         </ul>
+      )}
+      {archived.length > 0 && (
+        <div className="fin-archived" role="group" aria-labelledby="fin-goals-archived">
+          <h4 id="fin-goals-archived" className="bills-head">
+            Archived
+          </h4>
+          <ul className="bill-list fin-list">
+            {archived.map(t => (
+              <SeriesRow key={t.id} task={t} whose={null} archived onOpen={onOpen} />
+            ))}
+          </ul>
+        </div>
       )}
     </section>
   )

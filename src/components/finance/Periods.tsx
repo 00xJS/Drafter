@@ -282,22 +282,26 @@ function PeriodCard({
   )
 }
 
-/** A payday at the head of its card: whose, when, how much, and Got it on the real open one. */
+/**
+ * A payday at the head of its card: whose it is and how much on one line, when
+ * under it the whole width, so the day keeps the room it needs on a phone, and
+ * Got it beside them on the real open one.
+ */
 function PaydayLine({ row, today, whose, onOpen, onMarkPaid }: { row: MoneyRow; today: string; whose: string | null; onOpen(t: Task): void; onMarkPaid(t: Task): void }) {
   const name = moneyName(row.task, whose)
-  const state = row.done ? 'Received' : row.projected ? (row.due < today ? 'Expected by now' : 'Expected') : soonWord(row.due, today, row.overdue)
+  // pay is expected, never overdue: one whose day has gone is still to be marked received
+  const state = row.done ? 'Received' : row.projected || row.overdue ? (row.due < today ? 'Expected by now' : 'Expected') : soonWord(row.due, today, false)
+  const open = !row.projected && !row.done
   return (
     <div className={['fin-payday', row.projected ? 'projected' : '', row.done ? 'done' : ''].filter(Boolean).join(' ')}>
       <button type="button" className="fin-payday-main" onClick={() => onOpen(row.task)}>
-        <span className="fin-payday-copy">
-          <strong>
-            <span aria-hidden="true">💵</span> {name}
-          </strong>
-          <small>{[dayLabel(row.due), state].filter(Boolean).join(' · ')}</small>
-        </span>
+        <strong>
+          <span aria-hidden="true">💵</span> {name}
+        </strong>{' '}
+        <small>{[dayLabel(row.due), state].filter(Boolean).join(' · ')}</small>{' '}
         <span className={row.amount === undefined ? 'bill-amount none' : 'bill-amount in'}>{row.amount === undefined ? '—' : `+${formatMoney(row.amount)}`}</span>
       </button>
-      {!row.projected && !row.done && (
+      {open && (
         <button type="button" className="btn subtle bill-pay" onClick={() => onMarkPaid(row.task)} aria-label={`Mark ${name} received`}>
           Got it
         </button>

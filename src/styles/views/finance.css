@@ -264,6 +264,8 @@
   gap: 2px;
   padding: 8px 14px 4px;
 }
+/* whose and how much on one line, when on the next the whole width, and
+   Got it beside the two */
 .fin-payday {
   display: flex;
   align-items: center;
@@ -271,13 +273,17 @@
   min-width: 0;
 }
 .fin-payday-main {
-  display: flex;
+  display: grid;
   flex: 1;
-  align-items: center;
-  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    'name amount'
+    'when when';
+  align-items: baseline;
+  column-gap: 10px;
   min-width: 0;
   min-height: 48px;
-  padding: 0;
+  padding: 4px 0;
   border: 0;
   background: transparent;
   color: var(--text);
@@ -285,30 +291,29 @@
   text-align: left;
   cursor: pointer;
 }
-.fin-payday-copy {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
+.fin-payday-main > strong {
+  grid-area: name;
   min-width: 0;
-}
-.fin-payday-copy strong {
   overflow: hidden;
   font-size: 1.0625rem;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.fin-payday-copy small {
+.fin-payday-main > small {
+  grid-area: when;
   color: var(--muted);
   font-size: 0.8125rem;
 }
-.fin-payday .bill-amount {
+.fin-payday-main > .bill-amount {
+  grid-area: amount;
   font-size: 1.0625rem;
 }
-.fin-payday .bill-pay {
-  margin-right: 0;
+.fin-payday > .bill-pay {
+  flex: none;
+  margin: 0 -8px 0 0;
 }
 /* a paycheck its repeat brings, not yet the open one: a step back in ink */
-.fin-payday.projected .fin-payday-copy strong {
+.fin-payday.projected .fin-payday-main strong {
   color: var(--text-2);
   font-weight: 600;
 }
@@ -946,6 +951,14 @@
   flex: none;
   color: var(--accent-text);
 }
+/* in an account's own sheet the kinds are one field of several: shorter */
+.account-sheet .field .fin-kind {
+  min-height: 56px;
+  padding-block: 6px;
+}
+.account-sheet .field .fin-kind-emoji {
+  font-size: 1.2rem;
+}
 /* an account's last few balances, newest first */
 .fin-history-list {
   display: grid;
@@ -1260,6 +1273,11 @@
   .fin-goals-mini {
     grid-area: goals;
   }
+  /* Manage's lists at a reading width: a name at the window's left and its
+     amount at the right, 1,200px apart, read as two lists */
+  .fin-manage {
+    max-width: 860px;
+  }
 }
 
 @media (max-width: 640px) {
@@ -1301,8 +1319,8 @@
     margin-right: 6px;
     padding-inline: 8px;
   }
-  .fin-payday .bill-pay {
-    margin-right: 0;
+  .fin-payday > .bill-pay {
+    margin-right: -8px;
   }
   /* the accounts run on in one line to the screen's edge, and scroll there */
   .fin-chips {
