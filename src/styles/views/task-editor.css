@@ -94,3 +94,9 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* money with no date: Finance counts it on its day, so it asks for one (DueFields) */
+.field-hint.due-money-hint {
+  margin: 0;
+  color: var(--warn-text);
+}

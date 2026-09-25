@@ -2,6 +2,7 @@
 import { act, fireEvent, render, screen, within } from './dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Finance } from '../components/Finance'
+import { DueFields } from '../components/taskeditor/DueFields'
 import { CHECK_IN_PREFIX } from '../../shared/domain.mts'
 import { withBalance } from '../finance'
 import type { Account, Task } from '../types'
@@ -250,6 +251,16 @@ describe('money with no date', () => {
     expect(saved).toMatchObject({ id: 'bonus', title: 'Payday', estimateCost: 500, bill: { kind: 'income', forMemberId: MARIA } })
     expect(saved.dueAt).toBe(new Date(2026, 8, 30).toISOString())
     expect(Date.parse(saved.updatedAt)).toBeGreaterThan(Date.parse(bonus.updatedAt))
+  })
+
+  it('asks for a date in the editor too, on money and nothing else', () => {
+    const form = { dueAt: '', completedAt: '', status: 'todo' as const, bill: { kind: 'income' as const } }
+    const view = render(<DueFields form={form} set={vi.fn()} />)
+    expect(screen.getByText('Add a date so Finance can count it.')).toBeTruthy()
+    view.rerender(<DueFields form={{ ...form, dueAt: '2026-09-30T00:00' }} set={vi.fn()} />)
+    expect(screen.queryByText('Add a date so Finance can count it.')).toBeNull()
+    view.rerender(<DueFields form={{ ...form, bill: undefined }} set={vi.fn()} />)
+    expect(screen.queryByText('Add a date so Finance can count it.')).toBeNull()
   })
 })
 
