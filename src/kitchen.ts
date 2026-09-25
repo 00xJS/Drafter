@@ -1,4 +1,4 @@
-import { ChecklistItem, GroceryLine, GroceryList, GroceryState, MEAL_SLOTS, Meal, MealSide, MealSlot, Place, Recipe, RecipeIngredient, Task } from './types'
+import { ChecklistItem, GroceryLine, GroceryList, GroceryState, MEAL_SLOTS, MEAL_SLOT_META, Meal, MealSide, MealSlot, Place, Recipe, RecipeIngredient, Task } from './types'
 import { outingsAt } from './places'
 import { weekRange } from './review'
 import { daysBetween } from './stats'
@@ -7,6 +7,8 @@ import { newerStamp } from '../shared/domain.mts'
 import { mealHistory } from '../shared/weekplan.mts'
 import {
   MAX_SIDES,
+  QUICK_PICKS,
+  QUICK_PICK_META,
   activeGroceryLines,
   addGroceryItem,
   buildGroceryList,
@@ -14,24 +16,51 @@ import {
   groceryId,
   ingredientKey,
   mealAt,
+  mealCook,
   mealId,
   mealLabel as sharedMealLabel,
+  mealPicked,
   mealRecipeIds,
   mealSides,
+  mealWasHad,
+  mealAdjusted,
   mealWithMain as sharedMealWithMain,
   mergeIngredients,
+  quickMain,
   recipesUsed,
   removeGroceryLine,
   restoreGroceryLine,
 } from '../shared/kitchen.mts'
-import type { MealMain } from '../shared/kitchen.mts'
+import type { MealMain, QuickPick } from '../shared/kitchen.mts'
 
 // Merging, list building, ids and what a meal cooks live in shared/kitchen.mts
 // so an agent adding "milk" through the MCP server and the Kitchen tab produce
 // the same list, and count the same dinners as cooked.
 
-export { activeGroceryLines, addGroceryItem, buildGroceryList, cookedRecipeIds, groceryId, ingredientKey, mealAt, mealId, mealRecipeIds, mealSides, mergeIngredients, recipesUsed, removeGroceryLine, restoreGroceryLine }
-export type { MealMain }
+export {
+  QUICK_PICKS,
+  QUICK_PICK_META,
+  activeGroceryLines,
+  addGroceryItem,
+  buildGroceryList,
+  cookedRecipeIds,
+  groceryId,
+  ingredientKey,
+  mealAt,
+  mealCook,
+  mealId,
+  mealPicked,
+  mealRecipeIds,
+  mealSides,
+  mealWasHad,
+  mealAdjusted,
+  mergeIngredients,
+  quickMain,
+  recipesUsed,
+  removeGroceryLine,
+  restoreGroceryLine,
+}
+export type { MealMain, QuickPick }
 /** "Chicken curry with rice and naan"; a meal with no sides is its title alone. */
 export const mealLabel = (meal: Pick<Meal, 'title'> & Partial<Meal>): string => sharedMealLabel(meal)
 
@@ -142,6 +171,27 @@ export function shortDay(key: string, todayKey: string): string {
   const [y, m, d] = key.split('-').map(Number)
   const weekday = WEEKDAY_SHORT[new Date(Date.UTC(y, m - 1, d)).getUTCDay()]
   return `${weekday} ${d} ${MONTH_SHORT[m - 1]}${key.slice(0, 4) === todayKey.slice(0, 4) ? '' : ` ${y}`}`
+}
+
+/** A recipe starred as a favourite, or not, stamped: the Favourites rotation offers a starred one first while it has not been had lately. */
+export function recipeStarred(r: Recipe, on: boolean): Recipe {
+  const next: Recipe = { ...r, updatedAt: newerStamp(r.updatedAt) }
+  if (on) next.favourite = true
+  else delete next.favourite
+  return next
+}
+
+/** "Thu 24 · Lunch": a slot on a day, as the meal picker is headed. A day key is a day, so no zone can move it. */
+export function dayAndSlot(key: string, slot: MealSlot): string {
+  const [y, m, d] = key.split('-').map(Number)
+  const weekday = WEEKDAY_SHORT[new Date(Date.UTC(y, m - 1, d)).getUTCDay()]
+  return `${weekday} ${d} · ${MEAL_SLOT_META[slot].label}`
+}
+
+/** "Tue": the day of the week a day key falls on. */
+export function weekdayShort(key: string): string {
+  const [y, m, d] = key.split('-').map(Number)
+  return WEEKDAY_SHORT[new Date(Date.UTC(y, m - 1, d)).getUTCDay()]
 }
 
 const times = (n: number) => `${n} time${n === 1 ? '' : 's'}`
@@ -362,6 +412,64 @@ const SLOT_HOUR: Record<MealSlot, number> = { breakfast: 8, lunch: 12, dinner: 1
 export const mealIsShared = (meal: Pick<Meal, 'shared'>): boolean => meal.shared === true
 
 /**
+ * Whether a meal writes a household cook task: a shared one, and never a
+ * quick pick — leftovers, fend for yourself and a takeout have nothing to cook
+ * or to tick off, and a task telling you to "Cook dinner: Fend for yourself"
+ * would ring on a phone for nothing.
+ */
+export const mealHasCookTask = (meal: Pick<Meal, 'shared' | 'quick'>): boolean => mealIsShared(meal) && !meal.quick
+
+/**
+ * A cook task handed to whoever cooks its meal (mealCook): theirs to do, so
+ * its reminder rings on their phone alone — the app's rule, reminders go to
+ * the assignee (isMineTask) — and the household sees who it is. `by` is who
+ * made the hand-over, as the task editor records it (assignedBy).
+ *
+ * A cook taken off the meal (`was`, the meal's cook before) takes the task
+ * back off them, but only while it is still theirs from the meal: a hand-over
+ * made on the task itself stays. With no cook either side the task is left as
+ * it is, the cook task as it always was.
+ */
+export function cookTaskWithCook(task: Task, was: string | undefined, cook: string | undefined, by: string | null): Task {
+  if (cook) {
+    // theirs already, and said by whom
+    if (task.assigneeId === cook && (!by || task.assignedBy)) return task
+    return { ...task, assigneeId: cook, ...(by ? { assignedBy: by } : {}) }
+  }
+  if (!was || task.assigneeId !== was) return task
+  const next = { ...task }
+  delete next.assigneeId
+  return next
+}
+
+/** A household member as the meal cards name one: an id, and the name to say. */
+export interface KitchenMember {
+  id: string
+  displayName: string
+}
+
+/**
+ * Who a planned meal is for and how it comes, in a few words, for its card:
+ * "Both of you · Maria cooks", "Just you", "Eat out · both of you", or
+ * "Maria planned" on a meal someone else shared. `mine` is whether the row is
+ * the reader's own. Outside a household there is nobody else to name, so only
+ * the how is said.
+ */
+export function mealWho(meal: Meal, o: { mine: boolean; myId?: string | null; inHousehold?: boolean; nameOf?(id: string | undefined): string | null }): string {
+  const name = (id: string | undefined) => o.nameOf?.(id) || 'Someone'
+  const cook = mealCook(meal)
+  const cooks = cook ? (o.myId && cook === o.myId ? 'you cook' : `${name(cook)} cooks`) : ''
+  const how = meal.quick ? QUICK_PICK_META[meal.quick].how : meal.out ? 'Eat out' : ''
+  if (!o.inHousehold) return how
+  if (!o.mine) return [`${name(meal.ownerId)} planned`, how, cooks].filter(Boolean).join(' · ')
+  // fend for yourself is nobody's meal to share, whoever it is for
+  if (meal.quick === 'fend') return how
+  const who = mealIsShared(meal) ? 'both of you' : 'just you'
+  if (!how) return [who === 'both of you' ? 'Both of you' : 'Just you', cooks].filter(Boolean).join(' · ')
+  return `${how} · ${who}`
+}
+
+/**
  * The cook task carries the recipe with it: its steps as the checklist, its
  * ingredients and notes in the description, so the person cooking can tick
  * their way through and finish the task like any other, without going looking
@@ -463,8 +571,11 @@ export function syncCookTask(task: Task, meal: Meal, recipes: readonly Recipe[])
   if (task.deletedAt || task.status === 'done' || task.status === 'canceled') return null
   const checklist = cookChecklist(meal, recipes, task.checklist ?? [])
   const description = cookDescription(meal, recipes, task.description ?? '')
-  if (description === (task.description ?? '') && sameChecklist(checklist, task.checklist ?? [])) return null
-  return { ...task, description, ...(checklist.length || task.checklist ? { checklist } : {}), updatedAt: newerStamp(task.updatedAt) }
+  // the meal says who cooks it, when it says anyone: its task is theirs
+  const cook = mealCook(meal)
+  const handed = !!cook && task.assigneeId !== cook
+  if (description === (task.description ?? '') && sameChecklist(checklist, task.checklist ?? []) && !handed) return null
+  return { ...task, description, ...(checklist.length || task.checklist ? { checklist } : {}), ...(handed ? { assigneeId: cook } : {}), updatedAt: newerStamp(task.updatedAt) }
 }
 
 /** What the person wrote on a cook task themselves: the checklist items they added, and their notes below Kitchen's line. */
@@ -561,6 +672,7 @@ export function cookTaskFor(meal: Meal, now = new Date().toISOString(), recipes:
   const verb = meal.out ? 'Eat' : 'Cook'
   const when = meal.slot
   const checklist = cookChecklist(meal, recipes)
+  const cook = mealCook(meal)
   return {
     kind: 'task',
     id: cookTaskId(meal.id),
@@ -574,6 +686,8 @@ export function cookTaskFor(meal: Meal, now = new Date().toISOString(), recipes:
     updatedAt: now,
     tags: ['meal'],
     placeId: meal.out ? meal.placeId : undefined,
+    // whoever cooks it does it: their phone reminds them, and nobody else's
+    ...(cook ? { assigneeId: cook } : {}),
     shared: true,
   }
 }

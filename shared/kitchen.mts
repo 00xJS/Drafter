@@ -52,18 +52,59 @@ export function mealAt(meals: readonly { kind: string }[], date: string, slot: M
 /** Enough sides for any plate; a longer list is somebody's mistake, not a dinner. */
 export const MAX_SIDES = 8
 
+// ---- quick picks ----------------------------------------------------------------
+
+/**
+ * A meal answered in one tap, with no recipe and no place. Each is written as
+ * the meal it stands for, so every count that reads meals already knows it:
+ *
+ * - Takeout is `out` with no place — the "bought" Kitchen Stats has always
+ *   split from eating out at a place — so it is no outing and no grocery line.
+ * - Leftovers is a meal at home with no recipe: counted as eaten in, never as a
+ *   recipe cooked (cookedRecipeIds), so no dish's "last cooked" moves.
+ * - Fend for yourself is no shared meal that night. It answers the slot — the
+ *   week plan leaves the night alone — but it is not a meal anybody had
+ *   (mealWasHad).
+ *
+ * None has sides, a recipe or a cook task, so none adds a grocery line.
+ */
+export type QuickPick = 'leftovers' | 'fend' | 'takeout'
+export const QUICK_PICKS: readonly QuickPick[] = ['leftovers', 'fend', 'takeout']
+/** Each quick pick's title, its emoji, what the picker says of it, and how a planned one's card says it comes. */
+export const QUICK_PICK_META: Readonly<Record<QuickPick, { label: string; emoji: string; hint: string; how: string }>> = {
+  leftovers: { label: 'Leftovers', emoji: '🍲', hint: 'At home, nothing new to cook', how: 'Nothing to cook' },
+  fend: { label: 'Fend for yourself', emoji: '🤷', hint: 'No shared meal: everyone sorts their own', how: 'No shared meal' },
+  takeout: { label: 'Takeout', emoji: '🥡', hint: 'Bought, with no place to name', how: 'Bought' },
+}
+const QUICK_SET: ReadonlySet<string> = new Set(QUICK_PICKS)
+export const isQuickPick = (v: unknown): v is QuickPick => typeof v === 'string' && QUICK_SET.has(v)
+
+/** A quick pick as a slot's new main: its own title, and `out` for a takeout, which is bought. */
+export function quickMain(kind: QuickPick): MealMain {
+  return { quick: kind, title: QUICK_PICK_META[kind].label, ...(kind === 'takeout' ? { out: true } : {}) }
+}
+
+/**
+ * Whether a meal is one the household had, for anything that counts meals had:
+ * cooked at home, eaten out, bought. A Fend for yourself night is an answer on
+ * the week, not a meal — nobody cooked it, bought it or went out for it — so
+ * it is in no such count. Every other meal is.
+ */
+export const mealWasHad = (meal: Pick<Meal, 'quick'> | null | undefined): boolean => !!meal && meal.quick !== 'fend'
+
 /**
  * A meal's sides that can be shown: each with a title, and a saved recipe's id
- * where it is one. A bought meal has none, whatever its row carries.
+ * where it is one. A bought meal has none, whatever its row carries, and nor
+ * does a quick pick.
  */
 export function mealSides(meal: Partial<Meal> | null | undefined): MealSide[] {
-  if (!meal || meal.out || !Array.isArray(meal.sides)) return []
+  if (!meal || meal.out || meal.quick || !Array.isArray(meal.sides)) return []
   return meal.sides.filter(s => s && typeof s.title === 'string' && s.title.trim())
 }
 
-/** The saved recipes a meal cooks — its main, then its sides — each once. A bought meal cooks none. */
+/** The saved recipes a meal cooks — its main, then its sides — each once. A bought meal cooks none, and nor does a quick pick. */
 export function mealRecipeIds(meal: Partial<Meal> | null | undefined): string[] {
-  if (!meal || meal.out) return []
+  if (!meal || meal.out || meal.quick) return []
   const ids = [meal.recipeId, ...mealSides(meal).map(s => s.recipeId)].filter((id): id is string => typeof id === 'string' && !!id)
   return [...new Set(ids)]
 }
@@ -92,11 +133,12 @@ export function mealLabel(meal: Partial<Meal> | null | undefined): string {
   return title ? `${title} with ${list}` : list
 }
 
-/** What a slot's new main is: a recipe or titled dish to cook, or a meal bought out. */
+/** What a slot's new main is: a recipe or titled dish to cook, a meal bought out, or a quick pick (quickMain). */
 export interface MealMain {
   recipeId?: string
   out?: boolean
   placeId?: string
+  quick?: QuickPick
   title: string
 }
 
@@ -119,13 +161,72 @@ export function mealWithMain(prev: Meal | null | undefined, { date, slot }: { da
   delete next.out
   delete next.placeId
   delete next.sides
-  if (main.out) {
+  delete next.quick
+  if (main.quick) {
+    next.quick = main.quick
+    if (main.out) next.out = true
+  } else if (main.out) {
     next.out = true
     if (main.placeId) next.placeId = main.placeId
   } else if (main.recipeId) next.recipeId = main.recipeId
-  const sides = main.out ? [] : mealSides(live).filter(s => !main.recipeId || s.recipeId !== main.recipeId)
+  // nothing is cooked for the household once it is bought or a quick pick, so nobody cooks it
+  if (main.out || main.quick) delete next.cookId
+  const sides = main.out || main.quick ? [] : mealSides(live).filter(s => !main.recipeId || s.recipeId !== main.recipeId)
   if (sides.length) next.sides = sides
   return Object.assign(next, { createdAt: prev?.createdAt ?? now, updatedAt: prev ? newerStamp(prev.updatedAt) : now })
+}
+
+/**
+ * Who cooks a meal for the household, or nobody: `cookId` counts only on a
+ * shared meal that is cooked — not one eaten out or bought, not a quick pick,
+ * and not one kept to yourself, where you cook for yourself.
+ */
+export function mealCook(meal: Pick<Meal, 'shared' | 'out' | 'quick' | 'cookId'> | null | undefined): string | undefined {
+  if (!meal || meal.shared !== true || meal.out || meal.quick) return undefined
+  return typeof meal.cookId === 'string' && meal.cookId ? meal.cookId : undefined
+}
+
+/** Who a meal is for and who cooks it, in place: `shared` left as it is when undefined, `cookId` too ('' for nobody), and a cook only where mealCook would read one. */
+function withAudience<T extends Meal | Omit<Meal, 'createdAt' | 'updatedAt'>>(next: T, shared: boolean | undefined, cookId: string | undefined): T {
+  if (shared !== undefined) next.shared = shared
+  const cook = cookId === undefined ? next.cookId : cookId
+  if (cook && mealCook({ ...next, cookId: cook })) next.cookId = cook
+  else delete next.cookId
+  return next
+}
+
+/**
+ * A planned meal with who it is for (`shared`) or who cooks it (`cookId`, ''
+ * for nobody) changed, stamped: the card's Cooking toggle, the picker's For.
+ * Just me takes the cook with it — you cook for yourself.
+ */
+export function mealAdjusted(meal: Meal, o: { shared?: boolean; cookId?: string }): Meal {
+  return withAudience({ ...meal, updatedAt: newerStamp(meal.updatedAt) }, o.shared, o.cookId)
+}
+
+/**
+ * The meal a pick writes for `userId`: the main chosen (mealWithMain), who it
+ * is for (`shared`, left as the row has it when undefined) and who cooks it
+ * (`cookId`: a member, '' for nobody, undefined to leave it) — on the
+ * member's own row.
+ *
+ * `prev` is built on only when it is theirs, by mealAt's rule — a legacy row
+ * of theirs included, a tombstone too so the pick is stamped past it — and
+ * never when it is another member's, whatever its id. A legacy id has nobody
+ * in it: Maria's lunch planned before members had rows of their own is
+ * `meal~<date>~lunch`, and Joe writing that id for his own lunch that day
+ * would be refused by her private row forever, or would replace it. A slot
+ * with nothing of the member's gets a new row with them in its id (mealId).
+ */
+export function mealPicked(
+  prev: Meal | null | undefined,
+  at: { date: string; slot: MealSlot },
+  main: MealMain,
+  o: { userId?: string | null; now: string; shared?: boolean; cookId?: string },
+): Meal {
+  const userId = o.userId ?? null
+  const own = prev && (!userId || !prev.ownerId || prev.ownerId === userId) ? prev : null
+  return withAudience(mealWithMain(own, at, main, o.now, userId), o.shared, o.cookId)
 }
 
 export function ingredientKey(name: unknown, unit?: unknown): string {

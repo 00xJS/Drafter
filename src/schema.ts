@@ -79,7 +79,7 @@ import {
 } from './types'
 import { CHAT_ACTIONS_MAX, CHAT_ACTION_TYPES, type ChatAction, type ChatNameRef, type ChatOutcome, type ChatOutcomeState, type ChatTaskStatus } from './types'
 import { legacyPostToTask } from '../shared/domain.mts'
-import { MAX_SIDES } from '../shared/kitchen.mts'
+import { MAX_SIDES, isQuickPick } from '../shared/kitchen.mts'
 import { SYNC_KINDS } from '../shared/kinds.mts'
 import { NOTICE_LINE_MAX, NOTICE_LINES_MAX, NOTICE_MESSAGES_MAX } from '../shared/notices.mts'
 import { tidyPlaceAddress, tidyPlaceAliases } from '../shared/places.mts'
@@ -582,6 +582,8 @@ export function sanitizeRecipe(raw: unknown): Recipe | null {
     tags: strList(r.tags),
     notes: str(r.notes)?.trim() || undefined,
     sourceUrl: recipeSourceUrl(r.sourceUrl),
+    // starred for the Favourites rotation; anything but true is not a star
+    favourite: r.favourite === true || undefined,
     ownerId: idOrUndefined(r.ownerId),
     createdAt: isoDate(r.createdAt) ?? now,
     updatedAt: isoDate(r.updatedAt) ?? now,
@@ -633,6 +635,10 @@ export function sanitizeMeal(raw: unknown): Meal | null {
     sides: r.out === true ? undefined : sanitizeSides(r.sides),
     notes: str(r.notes)?.trim() || undefined,
     shared: r.shared === true ? true : r.shared === false ? false : undefined,
+    // one of the three quick picks, or none
+    quick: isQuickPick(r.quick) ? r.quick : undefined,
+    // who cooks it: a member's id, as a task's assignee is kept (mealCook decides when it counts)
+    cookId: idOrUndefined(r.cookId),
     ownerId: idOrUndefined(r.ownerId),
     createdAt: isoDate(r.createdAt) ?? now,
     updatedAt: isoDate(r.updatedAt) ?? now,
@@ -1540,9 +1546,10 @@ function jsonLength(v: unknown, room: number, depth = 0): number {
  * device keeps the same ones — never a field the kind's sanitizer knows, whose
  * answer stands even when it was to drop it, and never a key neverCarried
  * refuses. Each is copied, so the record shares nothing with what it was
- * read from.
+ * read from. Exported so a test can stand in for an older build: its
+ * sanitizer's answer, without the field, carried through this.
  */
-function withUnknownFields<T extends Item>(clean: T, raw: Record<string, unknown>): T {
+export function withUnknownFields<T extends Item>(clean: T, raw: Record<string, unknown>): T {
   const alsoKnown = READ_NOT_RETURNED[clean.kind]
   let room = UNKNOWN_FIELDS_MAX
   let out: Record<string, unknown> | null = null
