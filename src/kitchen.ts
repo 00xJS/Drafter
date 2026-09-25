@@ -749,7 +749,10 @@ export function groceriesForMealDates(
 /**
  * Everything that must be written when a meal is planned or cleared: the meal
  * row itself (or nothing, when clearing) AND the rebuilt grocery list for its
- * week.
+ * week — the list of `owner`, the member saving, as the Kitchen's own rebuild
+ * writes it. Without the member it found whichever member's list for the week
+ * came first, and a week with none got the household-wide `grocery~<week>`:
+ * the meal id's collision, in the grocery row.
  *
  * This exists so the Kitchen tab and the calendar's day sheet cannot disagree.
  * A meal saved without rebuilding the list leaves the shop list stale on every
@@ -762,12 +765,13 @@ export function mealWrites(
   meals: Meal[],
   recipes: Recipe[],
   groceries: GroceryList[],
+  owner: string | null = null,
 ): (Meal | GroceryList)[] {
   const withoutOld = meals.filter(m => m.id !== (next?.id ?? clearedId))
   const nextMeals = next ? [...withoutOld, next] : withoutOld
   const date = next?.date ?? meals.find(m => m.id === clearedId)?.date
   if (!date) return next ? [next] : []
-  return [...(next ? [next] : []), ...groceriesForMealDates(nextMeals, recipes, groceries, [date])]
+  return [...(next ? [next] : []), ...groceriesForMealDates(nextMeals, recipes, groceries, [date], undefined, owner)]
 }
 
 export function newIngredient(): RecipeIngredient {

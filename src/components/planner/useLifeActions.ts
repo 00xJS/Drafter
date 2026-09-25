@@ -73,7 +73,8 @@ export function useLifeActions({ store, showToast, newTask, inHousehold }: Deps)
     let lists = store.groceries
     for (const m of next) {
       const before = meals.find(x => x.id === m.id)
-      const rows = mealWrites(m, null, meals, store.recipes, lists)
+      // the member's own grocery row for the week, as the Kitchen's rebuild writes it
+      const rows = mealWrites(m, null, meals, store.recipes, lists, store.myId)
       for (const row of rows) store.upsert(row)
       meals = [...meals.filter(x => x.id !== m.id), m]
       lists = afterWrites(lists, rows)
@@ -97,7 +98,7 @@ export function useLifeActions({ store, showToast, newTask, inHousehold }: Deps)
     let meals = store.meals
     let lists = store.groceries
     for (const id of ids) {
-      const rows = mealWrites(null, id, meals, store.recipes, lists)
+      const rows = mealWrites(null, id, meals, store.recipes, lists, store.myId)
       for (const row of rows) store.upsert(row)
       store.remove(id)
       const cook = store.tasks.find(t => t.id === cookTaskId(id))

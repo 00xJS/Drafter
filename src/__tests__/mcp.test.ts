@@ -926,6 +926,21 @@ describe('the kitchen over MCP: last cooked and sides', () => {
     expect(meal(sent)).not.toHaveProperty('sides')
   })
 
+  it('plan_meal writes the caller’s own row for a slot, never a housemate’s legacy one', async () => {
+    // the peer's lunch from before members had rows of their own: the
+    // household-wide id, which the owner's own lunch must never be written to
+    const rows = household()
+    rows.push({ user_id: PEER, data: { kind: 'meal', id: `meal~${DAY}~lunch`, date: DAY, slot: 'lunch', title: 'Soup', createdAt: STAMP, updatedAt: STAMP } })
+    const sent = serveHousehold(rows)
+    await tool('plan_meal').run({ date: DAY, slot: 'lunch', recipeName: 'Pasta' }, ctxFor())
+    expect(meal(sent)).toMatchObject({ id: `meal~${DAY}~lunch~${OWNER}`, slot: 'lunch', recipeId: 'pasta' })
+    expect(sent.some(i => i.id === `meal~${DAY}~lunch`)).toBe(false)
+    // the owner's own legacy dinner keeps its id: it is theirs to edit
+    const again = serveHousehold(household())
+    await tool('plan_meal').run({ date: DAY, recipeName: 'Pasta', title: 'Pasta' }, ctxFor())
+    expect(meal(again).id).toBe(`meal~${DAY}~dinner`)
+  })
+
   it('plan_meal refuses sides on a bought meal or a breakfast, a side it cannot find, and sides that are not a list', async () => {
     const sent = serveHousehold(kitchen())
     await expect(tool('plan_meal').run({ date: DAY, out: true, sides: [{ title: 'Chips' }] }, ctxFor())).rejects.toThrow(/bought meal has no sides/)
