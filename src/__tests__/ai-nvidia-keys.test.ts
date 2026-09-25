@@ -397,3 +397,37 @@ describe('as many keys as the host sets', () => {
     expect(resolveProvider()).toBe('anthropic')
   })
 })
+
+describe('the model that answered, for a caller that keeps it', () => {
+  // the nightly recipe drafts keep it on each draft (lib/recipedrafts.mjs)
+  it('is told once, as the model that wrote the answer, which is unchanged', async () => {
+    const told: string[] = []
+    expect(await complete({ prompt: 'x', onModel: m => told.push(m) })).toEqual({ text: 'from the main key', provider: 'nvidia' })
+    expect(told).toEqual([asked.at(-1)!.model])
+  })
+
+  it('is the model that answered, not the first one tried, and the key that stood in for another', async () => {
+    const told: string[] = []
+    serves.main = model => model === 'openai/gpt-oss-20b'
+    await complete({ prompt: 'x', onModel: m => told.push(m) })
+    expect(told).toEqual(['openai/gpt-oss-20b'])
+    // the second key busy: the main one answers background work, on the same model, and says so once
+    serves.main = () => true
+    serves.second = () => true
+    answers.second = [503]
+    told.length = 0
+    expect(await complete({ prompt: 'x', background: true, onModel: m => told.push(m) })).toEqual({ text: 'from the main key', provider: 'nvidia' })
+    expect(told).toEqual([asked.at(-1)!.model])
+    expect(asked.at(-1)!.model).toBe(asked.at(-2)!.model)
+  })
+
+  it('is told nothing when nothing answered', async () => {
+    const told: string[] = []
+    const spy = logs()
+    answers.main = [500]
+    answers.second = [500]
+    expect((await complete({ prompt: 'x', onModel: m => told.push(m) })).error).toBeTruthy()
+    expect(told).toEqual([])
+    spy.mockRestore()
+  })
+})
