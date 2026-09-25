@@ -207,7 +207,9 @@ describe('the widget’s two halves agree', () => {
     expect([...plugin.matchAll(/CAPPluginMethod\(name: "(\w+)", returnType: CAPPluginReturnPromise\)/g)].map(m => m[1])).toEqual(['setSnapshot', 'drainCaptures'])
     for (const m of ['setSnapshot', 'drainCaptures']) expect(plugin).toMatch(new RegExp(`@objc func ${m}\\(_ call: CAPPluginCall\\)`))
     expect(plugin).toContain('call.getString("json")')
-    expect(plugin).toContain('WidgetCenter.shared.reloadAllTimelines()')
+    // this widget's timelines alone, by the kind the widget is declared with
+    expect(plugin).toContain('WidgetCenter.shared.reloadTimelines(ofKind: SharedContainer.widgetKind)')
+    expect(plugin).not.toContain('reloadAllTimelines')
     // the event that drains a capture made while the app is open, sent after each append
     expect(/notifyListeners\("(\w+)"/.exec(plugin)?.[1]).toBe(CAPTURES_QUEUED)
     expect(plugin).toContain('name: CaptureQueue.queued')

@@ -34,6 +34,13 @@ export const WIDGET_SNAPSHOT_VERSION = 1
 export const WIDGET_ITEMS = 3
 /** A snapshot older than this asks for Drafter to be opened rather than show a day that may have moved on. */
 export const WIDGET_STALE_MS = 12 * 60 * 60 * 1000
+/**
+ * A snapshot this close to going stale is written again though nothing in it
+ * has changed, so a day the app was opened on never says "Open Drafter". Any
+ * further from it, the same day is not written again: each write has
+ * WidgetKit draw the widget anew, and it allows an app only so many.
+ */
+export const WIDGET_RENEW_MS = 6 * 60 * 60 * 1000
 /** How long the store has to be still before the snapshot is rewritten. */
 export const WIDGET_DEBOUNCE_MS = 2000
 
@@ -248,7 +255,7 @@ export type WidgetStore = Pick<Store, 'loaded' | 'myId' | 'tasks' | 'events' | '
 export interface WidgetBridge {
   /** Something the widget shows may have changed: write once the store has been still for WIDGET_DEBOUNCE_MS. */
   changed(): void
-  /** The app is going: write now, whatever the debounce was waiting for. */
+  /** The app is going: write now what the debounce was waiting for, if it is new or the last one nears going stale. */
   flush(): Promise<boolean>
   /** Save what Siri queued. Resolves with how many records were written; the captures stay queued until the local copy is in. */
   drain(): Promise<number>
@@ -270,8 +277,9 @@ export function createWidgetBridge(deps: {
   const now = deps.now ?? (() => new Date())
   const newId = deps.newId ?? uid
   let timer: ReturnType<typeof setTimeout> | null = null
-  /** What was last written, stamps aside: the same day again is not written again, except on the way out. */
+  /** What was last written, stamps aside, and when it goes stale: the same day is written again only as that nears. */
   let written: string | null = null
+  let staleAt = 0
   let draining: Promise<number> = Promise.resolve(0)
 
   const cancel = () => {
@@ -279,15 +287,19 @@ export function createWidgetBridge(deps: {
     timer = null
   }
 
-  const write = async (force: boolean): Promise<boolean> => {
+  // Every app switch used to write the snapshot, and so have WidgetKit draw the
+  // widget again, whether or not anything in it had changed.
+  const write = async (): Promise<boolean> => {
     const s = deps.store()
     if (!s.loaded) return false
-    const snapshot = buildWidgetSnapshot({ tasks: s.tasks, entries: s.events, meals: s.meals, recipes: s.recipes, myId: s.myId }, { now: now(), generic: deps.generic() })
+    const at = now()
+    const snapshot = buildWidgetSnapshot({ tasks: s.tasks, entries: s.events, meals: s.meals, recipes: s.recipes, myId: s.myId }, { now: at, generic: deps.generic() })
     const content = JSON.stringify([snapshot.generic, snapshot.days])
-    if (!force && content === written) return false
+    if (content === written && staleAt - at.getTime() > WIDGET_RENEW_MS) return false
     try {
       await deps.plugin.setSnapshot({ json: JSON.stringify(snapshot) })
       written = content
+      staleAt = Date.parse(snapshot.staleAt)
       return true
     } catch {
       return false
@@ -323,12 +335,12 @@ export function createWidgetBridge(deps: {
       cancel()
       timer = setTimeout(() => {
         timer = null
-        void write(false)
+        void write()
       }, WIDGET_DEBOUNCE_MS)
     },
     flush() {
       cancel()
-      return write(true)
+      return write()
     },
     drain,
     async watchCaptures() {
@@ -342,6 +354,7 @@ export function createWidgetBridge(deps: {
     async signedOut() {
       cancel()
       written = null
+      staleAt = 0
       try {
         await deps.plugin.setSnapshot({ json: JSON.stringify(emptyWidgetSnapshot(now())) })
         return true
@@ -355,10 +368,11 @@ export function createWidgetBridge(deps: {
 
 /**
  * The widget and Siri, wired to the planner's store and the shell's
- * lifecycle: the snapshot follows the store (debounced) and is written again
- * as the app goes to the background, Siri's captures are saved at launch, on
- * every resume and whenever Siri adds one while the app is open, and a
- * sign-out blanks the widget. Does nothing on the web.
+ * lifecycle: the snapshot follows the store (debounced), and what is waiting
+ * is written as the app goes to the background — a day already written only
+ * as it nears going stale. Siri's captures are saved at launch, on every
+ * resume and whenever Siri adds one while the app is open, and a sign-out
+ * blanks the widget. Does nothing on the web.
  */
 export function useWidgetBridge(store: Store): void {
   const latest = useRef(store)
