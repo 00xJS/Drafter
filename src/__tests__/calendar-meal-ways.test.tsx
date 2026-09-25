@@ -40,7 +40,7 @@ const MEALS: Meal[] = [
 /** Each way's colour, as the Calendar and Kitchen → Stats draw it. */
 const WAY: Record<MealWay, string> = { cooked: 'var(--accent-ink)', out: 'var(--cal-meal-out)', bought: 'var(--cal-meal-bought)' }
 
-const render = (view: CalendarView, openDay?: string) =>
+const render = (view: CalendarView, openDay?: string, meals: Meal[] = MEALS) =>
   text(
     renderToStaticMarkup(
       <Calendar
@@ -49,7 +49,7 @@ const render = (view: CalendarView, openDay?: string) =>
         projects={[]}
         projectMap={new Map()}
         people={[] as Person[]}
-        meals={MEALS}
+        meals={meals}
         recipes={[]}
         places={PLACES}
         events={[]}
@@ -123,6 +123,19 @@ describe('a meal on the Calendar is the colour of the way Kitchen → Stats coun
     // 🥡 for a meal out at a saved place too, where Kitchen → Stats draws the place's own emoji
     expect(sheetRows(render('week', '2026-09-08'))).toEqual([['🥡', 'Nopi', WAY.out]])
     expect(sheetRows(render('week', '2026-09-07'))).toEqual([['🍽️', 'Chicken curry', WAY.cooked]])
+  })
+
+  it('marks a quick pick as the Kitchen does, and a Fend for yourself night, no meal had, in none of the three colours', () => {
+    const quick = [
+      meal(TODAY, 'breakfast', 'Leftovers', { quick: 'leftovers' }),
+      meal(TODAY, 'lunch', 'Takeout', { quick: 'takeout', out: true }),
+      meal(TODAY, 'dinner', 'Fend for yourself', { quick: 'fend' }),
+    ]
+    expect(sheetRows(render('week', TODAY, quick))).toEqual([
+      ['🍲', 'Leftovers', WAY.cooked],
+      ['🥡', 'Takeout', WAY.bought],
+      ['🤷', 'Fend for yourself', 'var(--muted)'],
+    ])
   })
 
   it('colours a plan, its day still to come, by the way it is planned, in the week, the month and the day alike', () => {

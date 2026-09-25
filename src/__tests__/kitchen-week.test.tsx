@@ -2,6 +2,7 @@ import { renderToString } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 import { isMineTask, newerStamp } from '../../shared/domain.mts'
 import { QUICK_PICKS, buildGroceryList, cookedRecipeIds, mealRecipeIds, mealSides, mealWasHad, mealWithMain } from '../../shared/kitchen.mts'
+import { mealWays, savedPlaces } from '../../shared/mealways.mts'
 import { outingsAt } from '../../shared/places.mts'
 import { FAVOURITE_REST_DAYS, favouritesRotation, proposeWeek, rotationIdeas } from '../../shared/weekplan.mts'
 import { weekDayKeys } from '../../shared/weeks.mts'
@@ -176,12 +177,13 @@ describe('a quick pick is written as the meal it is, so every count already know
     expect(outingsAt('luna', [], week, new Date(2026, 8, 24, 20)).map(o => (o.kind === 'meal' ? o.meal.id : ''))).toEqual([out.id])
   })
 
-  it('Fend for yourself is no meal had: the rule a count asks (mealWasHad) leaves it out of every way', () => {
+  it('Fend for yourself is no meal had: the rule every count reads (mealWays) leaves it out of every way', () => {
     expect(week.map(mealWasHad)).toEqual([true, true, true, false, true])
-    // what Kitchen Stats counts once it asks: the night is in no way at all
-    const ix = kitchenIndex([steak], week.filter(mealWasHad), [luna], new Date(2026, 8, 24, 20))
+    // Kitchen Stats, Insights and the recap all count through mealWays: the night is in no way at all
+    const ix = kitchenIndex([steak], week, [luna], new Date(2026, 8, 24, 20))
     expect(ix.ways.has(fend.id)).toBe(false)
     expect([...ix.ways.values()].sort()).toEqual(['bought', 'cooked', 'cooked', 'out'])
+    expect(mealWays(week, savedPlaces([luna]), new Date(2026, 8, 24, 20), TODAY).has(fend.id)).toBe(false)
   })
 
   it('answers the night: the week plan leaves a night with a quick pick alone', () => {

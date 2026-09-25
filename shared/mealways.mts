@@ -6,6 +6,7 @@
 // paint loads for Today: only the views that count meals need this.
 
 import type { Meal, Place } from '../src/types.ts'
+import { mealWasHad } from './kitchen.mts'
 import { outingsAt } from './places.mts'
 
 /** How a meal was had, once it counts: cooked at home, eaten out at a saved place, or bought with no place named. */
@@ -31,14 +32,15 @@ export function mealWay(meal: Pick<Meal, 'out' | 'placeId'>, places: ReadonlyMap
 /**
  * How each meal that COUNTS was had, by its id — the Kitchen's rule, which
  * Kitchen → Stats, Insights' highlights and the monthly recap all read. Only
- * live meals with a day count. A meal out at a saved place counts once it is
- * one of that place's outings (outingsAt: its day has come here, and midday
- * UTC has too), so the place's card and the Kitchen agree; any other meal once
- * its day (`dayKey`, today on the reader's calendar) has come. A plan is in
- * none of them.
+ * live meals with a day count, and only meals had: a Fend for yourself night
+ * answers the slot but is nobody's meal (mealWasHad). A meal out at a saved
+ * place counts once it is one of that place's outings (outingsAt: its day has
+ * come here, and midday UTC has too), so the place's card and the Kitchen
+ * agree; any other meal once its day (`dayKey`, today on the reader's
+ * calendar) has come. A plan is in none of them.
  */
 export function mealWays(meals: readonly Meal[], places: ReadonlyMap<string, Place>, now: Date, dayKey: string): Map<string, MealWay> {
-  const live = meals.filter(m => m && m.kind === 'meal' && !m.deletedAt && typeof m.date === 'string')
+  const live = meals.filter(m => m && m.kind === 'meal' && !m.deletedAt && typeof m.date === 'string' && mealWasHad(m))
   // each place's own outings, the meals among them, as its card counts them.
   // The meals out are sorted to their places in one pass, so a place is asked
   // about its own meals only, never every meal there is.

@@ -16,7 +16,7 @@ import {
   weekLabel,
   workByDay,
 } from '../calgrid'
-import { cookedIndex, visitIndex, mealLabel, mealsByDay, mealsForSlot, type KitchenMember } from '../kitchen'
+import { QUICK_PICK_META, cookedIndex, visitIndex, mealLabel, mealWasHad, mealsByDay, mealsForSlot, type KitchenMember } from '../kitchen'
 import { mealWay, savedPlaces, type MealWay } from '../kitchenstats'
 import { plannedGift } from '../people'
 import { matchPlace, placeEmoji } from '../places'
@@ -104,7 +104,10 @@ const OCCASION_GLYPH = { birthday: '🎂', anniversary: '💞' }
  * of takeaways stands out in the month grid.
  */
 const MEAL_COLORS: Record<MealWay, string> = { cooked: 'var(--accent-ink)', out: 'var(--cal-meal-out)', bought: 'var(--cal-meal-bought)' }
-const mealGlyph = (m: Meal) => (m.out ? '🥡' : '🍽️')
+/** A Fend for yourself night is no meal had (mealWasHad): none of the three ways, so none of their colours. */
+const NO_MEAL_COLOR = 'var(--muted)'
+/** A quick pick's own mark, as the Kitchen's cards show it; otherwise out or in. */
+const mealGlyph = (m: Meal) => (m.quick ? QUICK_PICK_META[m.quick].emoji : m.out ? '🥡' : '🍽️')
 /** Entries you wrote, distinct from any subscribed feed's colour. */
 const LOCAL_EVENT_COLOR = 'var(--cal-event-local)'
 /** An event whose calendar has gone. */
@@ -370,7 +373,7 @@ export function Calendar({
 
   // a meal's way by the Kitchen's own rule (mealWay): a place in the Trash leaves a meal out there bought
   const saved = useMemo(() => savedPlaces(places), [places])
-  const mealColor = (m: Meal) => MEAL_COLORS[mealWay(m, saved)]
+  const mealColor = (m: Meal) => (mealWasHad(m) ? MEAL_COLORS[mealWay(m, saved)] : NO_MEAL_COLOR)
 
   const itemColor = (item: DayItem): string => {
     if (item.kind === 'occasion') return item.occasion.person.color
