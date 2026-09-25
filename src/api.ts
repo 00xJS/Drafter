@@ -55,16 +55,41 @@ function unreachable(e: unknown): ApiError {
   return new ApiError('The server is unreachable from here — this runs on the hosted site (or via `netlify dev` locally).')
 }
 
+/**
+ * The caller's signal and the timeout as one: aborted by whichever comes
+ * first, with its own reason. AbortSignal.any says this in a line, but it
+ * needs iOS 17.4 and the app runs on 16. As AbortSignal.timeout did, the timer
+ * runs on after the answer's head arrives, so it bounds reading the body too.
+ */
+function withDeadline(signal: AbortSignal | null | undefined, ms: number): AbortSignal {
+  const both = new AbortController()
+  const timer = setTimeout(() => {
+    signal?.removeEventListener('abort', follow)
+    both.abort(new DOMException('The operation timed out.', 'TimeoutError'))
+  }, ms)
+  function follow() {
+    clearTimeout(timer)
+    both.abort(signal?.reason)
+  }
+  if (signal?.aborted) follow()
+  else signal?.addEventListener('abort', follow, { once: true })
+  return both.signal
+}
+
 export async function apiFetch(path: string, init: RequestInit & { timeoutMs?: number } = {}): Promise<Response> {
-  const headers: Record<string, string> = { ...(init.headers as Record<string, string> | undefined) }
+  const { timeoutMs, signal, ...rest } = init
+  const headers: Record<string, string> = { ...(rest.headers as Record<string, string> | undefined) }
   const sb = getSupabase()
   if (sb) {
     const { data } = await sb.auth.getSession()
     if (data.session) headers.authorization = `Bearer ${data.session.access_token}`
   }
   try {
-    return await fetch(`${API_BASE}${path}`, { ...init, headers, signal: AbortSignal.timeout(init.timeoutMs ?? 30_000) })
+    // the caller's signal was spread in with the rest and then replaced by the timeout's, so a Stop never stopped anything
+    return await fetch(`${API_BASE}${path}`, { ...rest, headers, signal: withDeadline(signal, timeoutMs ?? 30_000) })
   } catch (e) {
+    // stopped by the caller: theirs to hear as they asked for it, not a server that could not be reached
+    if (signal?.aborted) throw e
     throw unreachable(e)
   }
 }
