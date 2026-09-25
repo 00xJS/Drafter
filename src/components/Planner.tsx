@@ -127,7 +127,7 @@ export default function Planner() {
   })
   // Plan my day, Shut down, and Today's focus defer and meal ideas: written
   // through the task, calendar and meal paths above, one toast and Undo each
-  const focusActions = useFocusActions({ store, household, showToast, ...taskActions, ...cal, ...lifeActions })
+  const focusActions = useFocusActions({ store, household, inHousehold, showToast, ...taskActions, ...cal, ...lifeActions })
   // a moment after launch, fetch the lazy views and editors, so no tab or
   // editor waits on the network later
   useWarmChunks(owner.isOwner)

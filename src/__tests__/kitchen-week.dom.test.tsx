@@ -194,6 +194,16 @@ describe('Plan this week’s meals, from the week’s header', () => {
   })
 })
 
+describe('the grocery list', () => {
+  it('builds this week’s list into Joe’s own row, never the household-wide id an older build used', () => {
+    localStorage.setItem('drafter:kitchen-tab', 'grocery')
+    const { saved } = openKitchen()
+    fireEvent.click(screen.getByRole('button', { name: 'Build from this week' }))
+    const list = saved.find((i): i is GroceryList => i.kind === 'grocery')
+    expect(list?.id).toBe(`grocery~${list?.weekKey}~${JOE}`)
+  })
+})
+
 describe('the meal picker', () => {
   it('opens on For — Just me for a lunch — asks who is cooking only for both of them and a dish, searches recipes and places, and a tap saves', () => {
     const k = openKitchen()

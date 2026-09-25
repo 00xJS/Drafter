@@ -11,6 +11,33 @@
 /** Whole days from one day key to another: UTC maths on the keys, so no zone or clock change moves it. */
 export const daysBetween = (from: string, to: string): number => Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000)
 
+/** A stretch of days, first and last included, as day keys. */
+export interface DayRange {
+  start: string
+  end: string
+}
+
+/**
+ * The same stretch of the period before: last month from its 1st to today's
+ * date in it (its last day, when it is shorter), or last year from 1 January
+ * to today's month and day (28 February, for a 29th). What a "so far" figure —
+ * this month's days with someone, this year's outings, Insights' year still
+ * going — is set against, so the 24th is never "down" on a whole month, and a
+ * leap day never moves a year's cut a day off the calendar.
+ */
+export function soFarBefore(todayKey: string, period: 'month' | 'year'): DayRange {
+  const [y, m, d] = todayKey.split('-').map(Number)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  if (period === 'year') {
+    const last = new Date(Date.UTC(y - 1, m, 0)).getUTCDate()
+    return { start: `${y - 1}-01-01`, end: `${y - 1}-${pad(m)}-${pad(Math.min(d, last))}` }
+  }
+  const prev = new Date(Date.UTC(y, m - 2, 1))
+  const last = new Date(Date.UTC(y, m - 1, 0)).getUTCDate()
+  const month = `${prev.getUTCFullYear()}-${pad(prev.getUTCMonth() + 1)}`
+  return { start: `${month}-01`, end: `${month}-${pad(Math.min(d, last))}` }
+}
+
 /**
  * Whether a day falls in the `window` days ending on dayKey: 30 is the last
  * 30 days, today included, and 'all' is every day there has been. A day after

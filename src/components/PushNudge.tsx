@@ -1,7 +1,30 @@
 import { useEffect, useState } from 'react'
-import { currentEndpoint, enablePush, fetchPushInfo, pushSupported, testPush } from '../push'
+import { isNative } from '../native'
+import { currentEndpoint, enablePush, fetchPushInfo, pushPermission, pushSupported, testPush } from '../push'
 
-type State = 'hidden' | 'offer' | 'busy' | 'on' | 'tested'
+type State = 'hidden' | 'offer' | 'blocked' | 'busy' | 'on' | 'tested'
+
+/** "Not now" on this device: the nudge is not offered here again. Settings → Notifications keeps the switch. */
+export const PUSH_NUDGE_NOT_NOW_KEY = 'drafter:push-nudge-not-now'
+
+function saidNotNow(): boolean {
+  try {
+    return !!localStorage.getItem(PUSH_NUDGE_NOT_NOW_KEY)
+  } catch {
+    return false
+  }
+}
+
+function rememberNotNow(): void {
+  try {
+    localStorage.setItem(PUSH_NUDGE_NOT_NOW_KEY, new Date().toISOString())
+  } catch {
+    /* storage refused: it is offered again next time, which is all that is lost */
+  }
+}
+
+/** The button's words, and Settings → Notifications' too: one phrase for one switch. */
+export const TURN_ON = 'Turn on for this device'
 
 /**
  * The bell's own switch for this device. A notice always lands in the bell;
@@ -12,6 +35,9 @@ type State = 'hidden' | 'offer' | 'busy' | 'on' | 'tested'
  * Shown only when the server can push and this device is not one of the
  * account's subscriptions — the test Settings → Notifications makes — and
  * silent wherever push cannot work: local mode, a browser without it, offline.
+ * "Not now" puts it away on this device for good. Where iOS or the browser has
+ * already said no, asking again would show nothing, so it says where to turn
+ * notifications on instead, and looks again when the app comes back to the front.
  */
 export function PushNudge() {
   const [state, setState] = useState<State>('hidden')
@@ -19,13 +45,13 @@ export function PushNudge() {
   const [error, setError] = useState('')
 
   useEffect(() => {
-    if (!pushSupported()) return
+    if (!pushSupported() || saidNotNow()) return
     let live = true
-    Promise.all([fetchPushInfo(), currentEndpoint()])
-      .then(([info, mine]) => {
+    Promise.all([fetchPushInfo(), currentEndpoint(), pushPermission()])
+      .then(([info, mine, allowed]) => {
         if (!live || !info.configured) return
         setPublicKey(info.publicKey ?? '')
-        if (!(mine && info.subscriptions.includes(mine))) setState('offer')
+        if (!(mine && info.subscriptions.includes(mine))) setState(allowed === 'denied' ? 'blocked' : 'offer')
       })
       // no server to ask (local mode) or no connection: there is nothing to offer
       .catch(() => {})
@@ -34,6 +60,23 @@ export function PushNudge() {
     }
   }, [])
 
+  // turned on in the Settings app meanwhile: offer it here again on coming back
+  useEffect(() => {
+    if (state !== 'blocked') return
+    let live = true
+    const onShow = () => {
+      if (document.visibilityState !== 'visible') return
+      void pushPermission().then(allowed => {
+        if (live && allowed !== 'denied') setState(s => (s === 'blocked' ? 'offer' : s))
+      })
+    }
+    document.addEventListener('visibilitychange', onShow)
+    return () => {
+      live = false
+      document.removeEventListener('visibilitychange', onShow)
+    }
+  }, [state])
+
   if (state === 'hidden') return null
 
   const turnOn = () => {
@@ -41,7 +84,13 @@ export function PushNudge() {
     setError('')
     enablePush(publicKey)
       .then(() => setState('on'))
-      .catch((e: unknown) => {
+      .catch(async (e: unknown) => {
+        // said no just now: asking again would show nothing, so say where the switch is
+        const allowed = await pushPermission().catch(() => null)
+        if (allowed === 'denied') {
+          setState('blocked')
+          return
+        }
         setError(e instanceof Error ? e.message : String(e))
         setState('offer')
       })
@@ -52,8 +101,29 @@ export function PushNudge() {
       .then(() => setState('tested'))
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
   }
+  const notNow = () => {
+    rememberNotNow()
+    setState('hidden')
+  }
 
   const on = state === 'on' || state === 'tested'
+  const later = (
+    <button type="button" className="btn subtle" onClick={notNow}>
+      Not now
+    </button>
+  )
+  if (state === 'blocked') {
+    return (
+      <div className="push-nudge" role="status">
+        <p>
+          {isNative()
+            ? 'iOS isn’t letting Drafter send notifications, so these stay in here. Turn them on in iPhone Settings → Notifications → Drafter.'
+            : 'This browser is blocking Drafter’s notifications, so these stay in here. Allow them in the browser’s settings for this site.'}
+        </p>
+        {later}
+      </div>
+    )
+  }
   return (
     <div className={on ? 'push-nudge on' : 'push-nudge'} role="status">
       <p>{on ? 'Notifications are on for this device.' : 'These stay in here until you turn on notifications for this device.'}</p>
@@ -64,9 +134,12 @@ export function PushNudge() {
           Send a test
         </button>
       ) : (
-        <button type="button" className="btn primary" disabled={state === 'busy'} onClick={turnOn}>
-          {state === 'busy' ? 'Turning on…' : 'Turn on'}
-        </button>
+        <div className="push-nudge-actions">
+          <button type="button" className="btn primary" disabled={state === 'busy'} onClick={turnOn}>
+            {state === 'busy' ? 'Turning on…' : TURN_ON}
+          </button>
+          {later}
+        </div>
       )}
       {error && <p className="field-hint push-nudge-error">{error}</p>}
     </div>

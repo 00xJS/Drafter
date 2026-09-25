@@ -47,11 +47,12 @@ export function dismissMealIdeas(day: string): void {
  * slot planned meanwhile on another device keeps its notes, and its sides
  * while it is still cooked. With none, the row is a new one with `owner` in its
  * id: never the household-wide id of a legacy row, which may be the other
- * member's private meal.
+ * member's private meal. A new one is for whom every new meal is
+ * (newMealShared): in a household, a dinner for both of you and a lunch yours.
  */
-export function mealFromIdea(dayKey: string, slot: MealSlot, idea: MealIdea, existing?: Meal, now = new Date(), owner: string | null = null): Meal {
+export function mealFromIdea(dayKey: string, slot: MealSlot, idea: MealIdea, existing?: Meal, now = new Date(), owner: string | null = null, inHousehold = false): Meal {
   const main = idea.kind === 'place' ? { out: true, placeId: idea.id, title: idea.title || 'Eating out' } : { recipeId: idea.id, title: idea.title || MEAL_SLOT_META[slot].label }
-  return mealPicked(existing, { date: dayKey, slot }, main, { userId: owner, now: now.toISOString() })
+  return mealPicked(existing, { date: dayKey, slot }, main, { userId: owner, now: now.toISOString(), inHousehold })
 }
 
 /** Today's empty slots that have something to suggest, at the hour `now` falls in. */

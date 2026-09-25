@@ -135,7 +135,7 @@ export function Periods({ tasks, accounts, members, today, at, days, onDays, onM
         <ul className="fin-chips">
           {live.map(a => (
             <li key={a.id}>
-              <AccountChip account={a} today={today} whose={nameOf(a.memberId)} onOpen={() => onAccount(a.id)} />
+              <AccountChip account={a} today={today} behind={safe.stale.some(s => s.account.id === a.id)} whose={nameOf(a.memberId)} onOpen={() => onAccount(a.id)} />
             </li>
           ))}
           <li>
@@ -209,8 +209,14 @@ function Summary({ safe, today, whose, onCheckIn, onLine }: { safe: SafeToSpend;
         <span>
           {safe.asOf === today || !safe.asOf ? 'Balances from today' : `Balances as of ${shortDay(safe.asOf)}`}
           {notes.length > 0 && ` · ${notes.join(' · ')}`}
+          {/* checking or cash left out of the check-ins since: in the figure as it stands, and said, quietly */}
+          {safe.stale.map(s => (
+            <span key={s.account.id} className="fin-hero-behind">
+              {s.account.name} · last checked in {shortDay(s.on)}
+            </span>
+          ))}
         </span>
-        <button type="button" className="btn subtle fin-hero-checkin" onClick={() => onCheckIn()}>
+        <button type="button" className="btn subtle fin-hero-checkin" onClick={() => onCheckIn(safe.stale[0]?.account.id)}>
           Check in
         </button>
       </p>
@@ -310,12 +316,16 @@ function PaydayLine({ row, today, whose, onOpen, onMarkPaid }: { row: MoneyRow; 
   )
 }
 
-/** An account in the strip: its name, what it holds (for a card, what is owed) and how old that is. A tap opens its sheet. */
-function AccountChip({ account, today, whose, onOpen }: { account: Account; today: string; whose: string | null; onOpen(): void }) {
+/**
+ * An account in the strip: its name, what it holds (for a card, what is owed)
+ * and how old that is. One `behind` the newest check-in on checking and cash
+ * (staleSpendable) says when it was last checked in. A tap opens its sheet.
+ */
+function AccountChip({ account, today, behind, whose, onOpen }: { account: Account; today: string; behind: boolean; whose: string | null; onOpen(): void }) {
   const latest = latestBalance(account)
   const owed = isLiability(account)
-  const age = latest ? ageOf(latest.on, today) : 'no balance yet'
-  const stale = !latest || daysBetween(latest.on, today) >= STALE_DAYS
+  const age = !latest ? 'no balance yet' : behind ? `last checked in ${shortDay(latest.on)}` : ageOf(latest.on, today)
+  const stale = !latest || behind || daysBetween(latest.on, today) >= STALE_DAYS
   return (
     <button
       type="button"

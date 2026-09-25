@@ -32,7 +32,7 @@ import { payments } from './payments.mts'
 import { seenTasks, visitDays, visitsFor } from './people.mts'
 import { outingsAt } from './places.mts'
 import { habitsKept, inRange, workDone } from './review.mts'
-import { dayStreaks, daysBetween, type Streaks } from './stats.mts'
+import { dayStreaks, daysBetween, soFarBefore, type Streaks } from './stats.mts'
 import { neverWorn, wearIndex } from './wardrobe.mts'
 import { isDayKey, weekKeyOf, weekKeyStart, weekStartKey } from './weeks.mts'
 
@@ -117,15 +117,19 @@ export const previousSpan = (span: PeriodSpan, today: string): PeriodSpan => per
 export const nextSpan = (span: PeriodSpan, today: string): PeriodSpan | null => (span.current ? null : periodSpan(span.period, shiftDayKey(span.end, 1), today))
 
 /**
- * What a period is compared with: the one before it, cut to as many days as
- * this one has counted while it is still going. On the 24th, this month is
- * the 1st to the 24th and so is last month; a finished month is set against
- * the whole month before it.
+ * What a period is compared with: the one before it, cut where this one has
+ * got to while it is still going. On the 24th, this month is the 1st to the
+ * 24th and so is last month; a finished month is set against the whole month
+ * before it. A week is cut by its days (Sunday to Thursday against Sunday to
+ * Thursday); a month or a year by the calendar date, the rule soFarBefore
+ * keeps (shared/stats.mts), so a year still going is set against last year to
+ * the same month and day — not to the same number of days, which a leap day
+ * moved a day off.
  */
 export function comparedSpan(span: PeriodSpan, today: string): PeriodSpan {
   const prev = previousSpan(span, today)
   if (!span.current) return prev
-  const cut = shiftDayKey(prev.start, daysBetween(span.start, span.last))
+  const cut = span.period === 'week' ? shiftDayKey(prev.start, daysBetween(span.start, span.last)) : soFarBefore(span.last, span.period).end
   return { ...prev, last: cut < prev.end ? cut : prev.end }
 }
 
@@ -562,9 +566,15 @@ function leaders(list: readonly Tally[], mostOften = 'most often'): string | und
  * The cards worth drawing for a period, most interesting first, at most
  * MAX_HIGHLIGHTS: each made by a rule over the figures, never for a figure of
  * nothing. The same answer on the device and in the recap for the same records.
+ *
+ * `household`: more than one member shares the planner. The tasks count the
+ * household's work, so a line about them says the household's, not yours;
+ * alone, it is yours. What only you log — the journal, whom you saw — is
+ * always yours.
  */
-export function pickHighlights(figs: InsightFigures): Highlight[] {
+export function pickHighlights(figs: InsightFigures, o: { household?: boolean } = {}): Highlight[] {
   const { current: cur, previous: prev, today } = figs
+  const whose = o.household ? 'the household’s' : 'your'
   const span = cur.span
   const phrase = periodPhrase(span, today)
   const than = previousPhrase(span, today)
@@ -594,7 +604,7 @@ export function pickHighlights(figs: InsightFigures): Highlight[] {
       kind: 'tasks-streak',
       area: 'tasks',
       title: `Something done ${runs.current} days in a row`,
-      detail: record ? 'your longest yet' : `your best is ${runs.best}`,
+      detail: record ? `${whose} longest yet` : `${whose} best is ${runs.best}`,
       score: 48 + Math.min(20, runs.current) + (record ? 15 : 0),
     })
   }
@@ -746,5 +756,24 @@ export function highlightLine(c: Pick<Highlight, 'title' | 'delta' | 'detail'>):
   return `${c.title}${change}${c.detail ? ` · ${c.detail}` : ''}`
 }
 
-/** The recap's body: the first few cards' lines, most interesting first. */
+/** The recap's notice in the bell: the first few cards' lines, most interesting first. */
 export const recapLines = (cards: readonly Highlight[], n = 4): string[] => cards.slice(0, n).map(c => c.line)
+
+/**
+ * The recap's push, as a lock screen shows it: counts alone, from the
+ * household's areas — tasks done, meals had, money paid. A lock screen is read
+ * by whoever picks the phone up, so nothing on it names anybody or anything:
+ * no person or place, no habit or piece of clothing, nobody who was paid, and
+ * no mood. The lines themselves stay in the bell (recapLines), which only
+ * their reader opens.
+ */
+export function recapPushBody(cur: SpanFigures): string {
+  const k = cur.kitchen
+  const meals = k.cooked + k.out + k.bought
+  const counts = [
+    cur.tasks.done > 0 ? `${count(cur.tasks.done, 'task')} done` : '',
+    meals > 0 ? count(meals, 'meal') : '',
+    cur.money.paid > 0 ? `${formatMoney(cur.money.paid)} paid` : '',
+  ].filter(Boolean)
+  return counts.length ? counts.join(' · ') : 'Open Drafter for the highlights.'
+}

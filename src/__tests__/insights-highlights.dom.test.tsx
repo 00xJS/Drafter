@@ -168,6 +168,9 @@ describe('one view, with no switch', () => {
     expect(screen.getAllByRole('group').map(g => g.getAttribute('aria-label'))).toEqual(['Period'])
     // Joe's three chores and Maria's insurance: the household's work, against one last week
     expect(cardNamed(/^4 tasks done this week, ↑3 on last week · Tuesday was the busiest day\. Open Tasks$/)).toBeTruthy()
+    // …something done three days running between them: the household's run, not Joe's
+    expect(cardNamed(/^Something done 3 days in a row · the household’s longest yet/)).toBeTruthy()
+    expect(labels().some(l => /your longest yet|your best is/.test(l))).toBe(false)
     // whom Joe saw: Tio Marco, never Maria's Ana and Rosa
     expect(cardNamed(/^You saw Tio Marco this week/)).toBeTruthy()
     expect(labels().some(l => /Ana|Rosa|people/.test(l))).toBe(false)

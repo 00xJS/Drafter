@@ -199,6 +199,12 @@
   color: var(--warn-text);
   font-weight: 600;
 }
+/* checking or cash left out of the check-ins since, a line each: counted as it stands */
+.fin-hero-behind {
+  display: block;
+  margin-top: 2px;
+  color: var(--warn-text);
+}
 .btn.subtle.fin-hero-checkin {
   flex: none;
   color: var(--accent-text);

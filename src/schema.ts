@@ -624,12 +624,13 @@ export function sanitizeMeal(raw: unknown): Meal | null {
   if (!id || ((!date || !title) && !deletedAt)) return null
   const now = new Date().toISOString()
   const slot: MealSlot = typeof r.slot === 'string' && MEAL_SLOT_SET.has(r.slot) ? (r.slot as MealSlot) : 'dinner'
+  const recipeId = idOrUndefined(r.recipeId)
   return {
     kind: 'meal',
     id,
     date: date ?? '',
     slot,
-    recipeId: idOrUndefined(r.recipeId),
+    recipeId,
     // a bought meal never carries a recipe, so the grocery list ignores it
     out: r.out === true || undefined,
     placeId: r.out === true ? idOrUndefined(r.placeId) : undefined,
@@ -638,8 +639,11 @@ export function sanitizeMeal(raw: unknown): Meal | null {
     sides: r.out === true ? undefined : sanitizeSides(r.sides),
     notes: str(r.notes)?.trim() || undefined,
     shared: r.shared === true ? true : r.shared === false ? false : undefined,
-    // Leftovers, the one quick pick, or none
-    quick: isQuickPick(r.quick) ? r.quick : undefined,
+    // Leftovers, the one quick pick, or none. Only on a meal with no recipe
+    // and no place that is not eaten out: build 16 knows no quick pick and
+    // carries the flag through a change of main, so a Leftovers changed there
+    // to a recipe came back here as Leftovers, with no groceries or cook task
+    quick: isQuickPick(r.quick) && !recipeId && r.out !== true && !idOrUndefined(r.placeId) ? r.quick : undefined,
     // who cooks it: a member's id, as a task's assignee is kept (mealCook decides when it counts)
     cookId: idOrUndefined(r.cookId),
     ownerId: idOrUndefined(r.ownerId),
@@ -1333,15 +1337,21 @@ export function sanitizeSnooze(raw: unknown): Snooze | null {
 }
 
 const NOTICE_TYPE_SET = new Set<string>(NOTICE_TYPES)
-// a message's target opens the household's thread, and the monthly recap's
-// Insights on its month (src/components/planner/hubRouting.ts)
-const NOTICE_TARGET_KINDS = new Set<string>(['task', 'event', 'review', 'message', 'insights'])
 
+/**
+ * What a notice opens: a message's target the household's thread, and the
+ * monthly recap's Insights on its month (src/components/planner/hubRouting.ts).
+ * A kind this build does not know is kept as it came, not dropped: a notice
+ * marked read here is written back whole, and build 16, which kept only the
+ * kinds it knew, stripped the recap's link from the row for every device. The
+ * hub opens only the kinds it knows (noticeOpens, src/hub.ts).
+ */
 function noticeTarget(v: unknown): Notice['target'] {
   if (!v || typeof v !== 'object') return undefined
   const r = v as Record<string, unknown>
+  const kind = str(r.kind)?.trim()
   const id = str(r.id)?.trim()
-  return typeof r.kind === 'string' && NOTICE_TARGET_KINDS.has(r.kind) && id ? { kind: r.kind as NonNullable<Notice['target']>['kind'], id } : undefined
+  return kind && kind.length <= 40 && id && id.length <= 200 ? { kind, id } : undefined
 }
 
 /**

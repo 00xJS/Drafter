@@ -131,10 +131,12 @@ export function MealDayCard({
   const shown = mine ?? theirs.find(mealIsShared)
   const extras = theirs.filter(m => m.id !== shown?.id)
   const cooks = inHousehold && members.length > 1 ? members : []
-  /** A main for the slot, in this member's own row (mealPicked), and who it is for and who cooks it. */
-  const plan = (main: MealMain, o: Omit<MealChoice, 'main'> = {}) => onPlan(mealPicked(mine, { date, slot }, main, { userId: myId, now: new Date().toISOString(), ...o }), mine)
-  // a new meal from a chip is for whom the picker would start it for: dinner both of you, the rest you
-  const fresh: Omit<MealChoice, 'main'> = inHousehold ? { shared: slot === 'dinner' } : {}
+  /**
+   * A main for the slot, in this member's own row (mealPicked), and who it is
+   * for and who cooks it: a chip says neither, so a new meal from one is for
+   * whom every new meal is (newMealShared), as the picker starts one.
+   */
+  const plan = (main: MealMain, o: Omit<MealChoice, 'main'> = {}) => onPlan(mealPicked(mine, { date, slot }, main, { userId: myId, now: new Date().toISOString(), inHousehold, ...o }), mine)
 
   const picker = picking && (
     <MealPicker
@@ -189,7 +191,7 @@ export function MealDayCard({
         {/* the rotation's ideas, and Leftovers last: one row, with or without ideas */}
         <div className="meal-card-chips" role="group" aria-label={`Ideas for ${slotName}`}>
           {ideas.map(i => (
-            <button key={i.recipe.id} type="button" className={i.favourite ? 'meal-chip idea fav' : 'meal-chip idea'} title={why(i)} onClick={() => plan({ recipeId: i.recipe.id, title: i.recipe.name }, fresh)}>
+            <button key={i.recipe.id} type="button" className={i.favourite ? 'meal-chip idea fav' : 'meal-chip idea'} title={why(i)} onClick={() => plan({ recipeId: i.recipe.id, title: i.recipe.name })}>
               {i.favourite && (
                 <span className="meal-chip-star" aria-hidden="true">
                   ★
@@ -198,7 +200,7 @@ export function MealDayCard({
               {i.recipe.name}
             </button>
           ))}
-          <button type="button" className="meal-chip leftovers" title={LEFTOVERS.hint} onClick={() => plan(quickMain('leftovers'), fresh)}>
+          <button type="button" className="meal-chip leftovers" title={LEFTOVERS.hint} onClick={() => plan(quickMain('leftovers'))}>
             <span aria-hidden="true">{LEFTOVERS.emoji}</span> {LEFTOVERS.label}
           </button>
         </div>

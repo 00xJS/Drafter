@@ -174,6 +174,25 @@ function urlBase64ToUint8Array(base64: string): Uint8Array<ArrayBuffer> {
   return out
 }
 
+/**
+ * Whether this device lets Drafter notify, read without asking: iOS's answer
+ * in the app, the browser's on the web. 'denied' stays so until it is changed
+ * in the iPhone Settings app (or the browser's settings for the site), and
+ * asking again shows nothing. Null where it cannot be told.
+ */
+export async function pushPermission(): Promise<'granted' | 'denied' | 'prompt' | null> {
+  try {
+    if (isNative()) {
+      const { receive } = await (await loadPlugin()).checkPermissions()
+      return receive === 'granted' || receive === 'denied' ? receive : 'prompt'
+    }
+    if (typeof Notification === 'undefined') return null
+    return Notification.permission === 'default' ? 'prompt' : Notification.permission
+  } catch {
+    return null
+  }
+}
+
 /** The current device's subscription endpoint, if any. */
 export async function currentEndpoint(): Promise<string | null> {
   if (isNative()) {

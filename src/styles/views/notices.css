@@ -123,6 +123,12 @@
   border-color: transparent;
   background: var(--tone-green-bg);
 }
+/* Turn on, and Not now beside it */
+.push-nudge-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
 .push-nudge-error {
   flex-basis: 100%;
   margin: 0;

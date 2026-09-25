@@ -260,6 +260,13 @@ type Lens = StatsLensProps & {
   onOpen(page: Exclude<StatsTab, 'highlights'>): void
 }
 
+/**
+ * Who finished the work a Tasks figure counts: the household's in a household
+ * (scopeRecords' work is every task the device can read), so the words say
+ * the household rather than you; alone, you.
+ */
+const finisher = (p: Pick<StatsLensProps, 'household'>) => (p.household ? 'the household' : 'you')
+
 /** ‹ year › over a card, stopping at this year: no year still to come is offered. */
 function YearStep({ year, setYear, now }: { year: number; setYear(y: number): void; now: Date }) {
   return <Stepper label={String(year)} unit="year" canNext={year < now.getFullYear()} onStep={d => setYear(year + d)} />
@@ -365,7 +372,7 @@ function YearLens(p: Lens) {
     <>
       <section className="stats-section">
         <h2>A year of days</h2>
-        <p className="stats-note">Every day you finished something. A column is a week; the newest is on the right.</p>
+        <p className="stats-note">Every day {finisher(p)} finished something. A column is a week; the newest is on the right.</p>
         <ChartCard title="Days with something done" sub={report.streaks.best > 0 ? `${countOf(report.streaks.best, 'day')} is the longest run there has been` : 'Finish something and the day lights up'}>
           <HeatGrid counts={new Map(countsByDay(tasks))} end={now} label="Days with something done" noun="task" />
         </ChartCard>
@@ -511,7 +518,7 @@ function TasksLens(p: Lens) {
 
       <section className="stats-section">
         <h2>When the work happens</h2>
-        <ChartCard title="Each month" sub={`What you finished in ${year}`} aside={<YearStep year={year} setYear={setYear} now={now} />}>
+        <ChartCard title="Each month" sub={`What ${finisher(p)} finished in ${year}`} aside={<YearStep year={year} setYear={setYear} now={now} />}>
           <MonthBars months={months.months} current={year === now.getFullYear() ? now.getMonth() : -1} label={`Finished each month of ${year}`} noun="task" total={countOf(months.total, 'task')} trend={months.trend} />
         </ChartCard>
         <ChartCard title="Which day of the week" sub={`Finished in the last ${spanWords}`}>
@@ -533,7 +540,7 @@ function TasksLens(p: Lens) {
             </div>
           )}
         </ChartCard>
-        <ChartCard title="A year of days" sub={streak.best > 0 ? `Every day you finished something · ${countOf(streak.best, 'day')} is the best run` : 'Every day you finished something'}>
+        <ChartCard title="A year of days" sub={`Every day ${finisher(p)} finished something${streak.best > 0 ? ` · ${countOf(streak.best, 'day')} is the best run` : ''}`}>
           <HeatGrid counts={new Map(countsByDay(tasks))} end={now} label="Days with something done" noun="task" />
         </ChartCard>
       </section>
@@ -541,7 +548,13 @@ function TasksLens(p: Lens) {
       <section className="stats-section">
         <h2>What the work is</h2>
         <RankedBars title="By tag" sub="Finished work, counted once per tag it carried" empty="No finished task carried a tag in this window." rank={w => doneByTag(tasks, w, now)} window={span} />
-        <RankedBars title="By the priority it carried" sub="Finished work, as it was marked when you ticked it" empty="Nothing was finished in this window." rank={w => doneByPriority(tasks, w, now)} window={span} />
+        <RankedBars
+          title="By the priority it carried"
+          sub={`Finished work, as it was marked when ${p.household ? 'it was ticked' : 'you ticked it'}`}
+          empty="Nothing was finished in this window."
+          rank={w => doneByPriority(tasks, w, now)}
+          window={span}
+        />
       </section>
 
       {(report.open > 0 || streak.best > 0) && (

@@ -4,7 +4,7 @@ import { NoticesSheet } from '../components/NoticesSheet'
 import { Today } from '../components/Today'
 import { hubOpener } from '../components/planner/hubRouting'
 import type { PlannerCtx } from '../components/planner/ctx'
-import { bellLabel, byDay, howLongAgo, hubRows, hubUnread, markHubSeen, messageNoticesShown, readHubSeen, ringingDevice } from '../hub'
+import { bellLabel, byDay, howLongAgo, hubRows, hubUnread, markHubSeen, messageNoticesShown, noticeOpens, readHubSeen, ringingDevice } from '../hub'
 import { firedReminders, type FiredReminder } from '../reminders'
 import type { CalendarEntry, Notice, Person, Place, Task } from '../types'
 import { button, elements, rendered, textOf } from './rendered'
@@ -255,6 +255,26 @@ describe('the bell on Home', () => {
   })
 })
 
+describe('what a notice opens', () => {
+  it('its own target, of a kind this build opens', () => {
+    expect(noticeOpens(notice())).toEqual({ kind: 'task', id: 'bins' })
+    expect(noticeOpens(notice({ id: `notice~${ME}~recap~2026-09`, target: { kind: 'insights', id: '2026-09' } }))).toEqual({ kind: 'insights', id: '2026-09' })
+  })
+
+  it('a recap that lost its target on an older phone: Insights on the month its id names', () => {
+    expect(noticeOpens({ id: `notice~${ME}~recap~2026-09`, target: undefined })).toEqual({ kind: 'insights', id: '2026-09' })
+    expect(noticeOpens({ id: `notice~${ME}~recap~2026-12`, target: undefined })).toEqual({ kind: 'insights', id: '2026-12' })
+    // no month to read, or not a recap: nothing
+    expect(noticeOpens({ id: `notice~${ME}~recap~2026-13`, target: undefined })).toBeUndefined()
+    expect(noticeOpens({ id: `notice~${ME}~digest~2026-09-23`, target: undefined })).toBeUndefined()
+  })
+
+  it('nothing for a kind from a newer build, which the row keeps all the same', () => {
+    expect(noticeOpens({ id: `notice~${ME}~recap~2026-09`, target: { kind: 'journal', id: '2026-09-24' } })).toBeUndefined()
+    expect(hubRows([notice({ target: { kind: 'journal', id: '2026-09-24' } })], [], null)[0].target).toBeUndefined()
+  })
+})
+
 describe('the sheet', () => {
   const props = (over: Record<string, unknown> = {}) => ({
     notices: [notice(), notice({ id: 'n-read', title: 'Maria commented on “Groceries”', type: 'comment' as const, lines: ['“Oat milk please”'], readAt: iso(at(23, 15, 45)), at: iso(at(23, 15, 40)) })],
@@ -289,6 +309,20 @@ describe('the sheet', () => {
     for (const row of rows) (row.props.onClick as () => void)()
     expect(read).toEqual([notice().id])
     expect(opened).toEqual([{ kind: 'task', id: 'bins' }, { kind: 'task', id: 'bins' }])
+  })
+
+  it('opens a recap a build-16 phone marked read, which lost its target, on the month its id names', () => {
+    // the recap as the digest wrote it, and as build 16 wrote it back once read there
+    const recap = notice({ id: `notice~${ME}~recap~2026-09`, type: 'digest', actorId: undefined, target: { kind: 'insights', id: '2026-09' }, title: 'Your September in Drafter', lines: ['6 tasks done in September'] })
+    const stripped: Notice = { ...recap, target: undefined, readAt: iso(at(23, 15, 50)) }
+    const opened: unknown[] = []
+    const tree = rendered(NoticesSheet, props({ notices: [stripped], onOpen: (t: unknown) => void opened.push(t) }))[0]
+    const row = elements(tree).find(e => e.type === 'button' && String(e.props.className).startsWith('notice-row'))!
+    ;(row.props.onClick as () => void)()
+    expect(opened).toEqual([{ kind: 'insights', id: '2026-09' }])
+    // and it is drawn as the recap it was, the Insights glyph and all
+    const drawn = (n: Notice) => renderToStaticMarkup(<NoticesSheet {...props({ notices: [n] })} />)
+    expect(drawn(stripped)).toBe(drawn({ ...recap, readAt: stripped.readAt }))
   })
 
   it('marks all read in one go', () => {

@@ -671,10 +671,11 @@ describe('a record made from a card is the one the app would make', () => {
     expect(list.items.map(i => i.name)).toEqual([...buildGroceryList(week, [meal], RECIPES, null, STAMP, ME).items.map(i => i.name), 'bread'])
   })
 
-  it('plans a meal as the Kitchen’s slot picker does: the member’s own row, Just me in a household', () => {
+  it('plans a meal as the Kitchen’s slot picker does: the member’s own row, and in a household a new dinner for both, a lunch just yours', () => {
     const plan = mealPlan({ type: 'plan_meal', date: '2026-09-29', slot: 'dinner', dish: { name: 'Beef tacos', id: 'r-tacos' } }, dataOf(), { now: NOW, recipe: RECIPES[0] })!
     expect(plan.before).toBeNull()
-    expect(plan.meal).toMatchObject({ kind: 'meal', id: `meal~2026-09-29~dinner~${ME}`, date: '2026-09-29', slot: 'dinner', recipeId: 'r-tacos', title: 'Beef tacos', shared: false })
+    expect(plan.meal).toMatchObject({ kind: 'meal', id: `meal~2026-09-29~dinner~${ME}`, date: '2026-09-29', slot: 'dinner', recipeId: 'r-tacos', title: 'Beef tacos', shared: true })
+    expect(mealPlan({ type: 'plan_meal', date: '2026-09-29', slot: 'lunch', dish: { name: 'Beef tacos', id: 'r-tacos' } }, dataOf(), { now: NOW, recipe: RECIPES[0] })!.meal).toMatchObject({ slot: 'lunch', shared: false })
     // alone there is nobody to share with, and nothing is said
     expect(mealPlan({ type: 'plan_meal', date: '2026-09-29', slot: 'dinner', dish: { name: 'Beef tacos', id: 'r-tacos' } }, dataOf({ inHousehold: false, myId: null }), { now: NOW, recipe: RECIPES[0] })!.meal).not.toHaveProperty(
       'shared',
@@ -690,7 +691,8 @@ describe('a record made from a card is the one the app would make', () => {
     expect(plan.before).toBe(there)
     const gone = { ...there, deletedAt: '2026-09-20T00:00:00.000Z', updatedAt: '2026-09-20T00:00:00.000Z' }
     const again = mealPlan({ type: 'plan_meal', date: '2026-09-29', slot: 'dinner', out: true, place: { name: 'Nopi', id: 'l-nopi' } }, dataOf({ mealRows: [gone] }), { now: NOW })!
-    expect(again.meal).toMatchObject({ id: there.id, out: true, placeId: 'l-nopi', title: 'Nopi', shared: false })
+    // a cleared slot is planned afresh: a new dinner, for both of you
+    expect(again.meal).toMatchObject({ id: there.id, out: true, placeId: 'l-nopi', title: 'Nopi', shared: true })
     expect(again.meal.updatedAt > gone.updatedAt).toBe(true)
     expect(again.meal).not.toHaveProperty('sides')
   })
@@ -859,7 +861,7 @@ describe('applying a card through the planner’s own paths', () => {
     const done = applyChatAction(host, { type: 'plan_meal', date: '2026-09-29', slot: 'dinner', dish: { name: 'Fish pie' }, newDish: true }, { ...at, index: 3 })!
     expect(calls).toEqual(['createRecipe Fish pie', `saveMeal meal~2026-09-29~dinner~${ME}`])
     expect(done.said).toBe('Planned dinner on Tue Sep 29: Fish pie')
-    expect(host.meals[0]).toMatchObject({ recipeId: 'r-new-Fish pie', title: 'Fish pie', shared: false })
+    expect(host.meals[0]).toMatchObject({ recipeId: 'r-new-Fish pie', title: 'Fish pie', shared: true })
     expect(done.undo(host)).toBe(true)
     expect(host.meals).toEqual([])
     expect(host.recipes.some(r => r.name === 'Fish pie')).toBe(false)
@@ -972,7 +974,8 @@ describe('a card’s words', () => {
 
   it('says in its details who can see what it makes', () => {
     expect(words({ type: 'create_task', title: 'x' }).details).toContain('Private until you share it')
-    expect(words({ type: 'plan_meal', date: '2026-09-22', slot: 'dinner', dish: { name: 'Lasagne', id: 'r-lasagne' } }).details).toContain('Just you until you share it with the household')
+    expect(words({ type: 'plan_meal', date: '2026-09-22', slot: 'dinner', dish: { name: 'Lasagne', id: 'r-lasagne' } }).details).toContain('For both of you')
+    expect(words({ type: 'plan_meal', date: '2026-09-22', slot: 'lunch', dish: { name: 'Lasagne', id: 'r-lasagne' } }).details).toContain('Just you until you share it with the household')
     expect(describeAction({ type: 'create_task', title: 'x' }, dataOf({ inHousehold: false }), '2026-09-22').details).not.toContain('Private until you share it')
   })
 

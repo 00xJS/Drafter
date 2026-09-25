@@ -425,6 +425,21 @@ describe('the lens drawn', () => {
     }
   })
 
+  it('says the household finished the household’s work, in a household, and you alone', () => {
+    const tasks = html(<StatsLens {...LENS_PROPS} tab="tasks" myId="me" household />)
+    expect(tasks).toContain('What the household finished in 2026')
+    expect(tasks).toContain('Every day the household finished something')
+    expect(tasks).toContain('Finished work, as it was marked when it was ticked')
+    expect(tasks).not.toMatch(/you finished|you ticked/)
+    expect(html(<StatsLens {...LENS_PROPS} tab="year" myId="me" household />)).toContain('Every day the household finished something. A column is a week')
+    // alone, it is yours
+    const alone = html(<StatsLens {...LENS_PROPS} tab="tasks" myId="me" household={false} />)
+    expect(alone).toContain('What you finished in 2026')
+    expect(alone).toContain('Every day you finished something')
+    expect(alone).toContain('Finished work, as it was marked when you ticked it')
+    expect(html(<StatsLens {...LENS_PROPS} tab="year" myId="me" />)).toContain('Every day you finished something. A column is a week')
+  })
+
   it('never leaves the tab: every card on the year opens a page of this one', () => {
     const went: string[] = []
     const tree = into(settled(StatsLens, { ...LENS_PROPS, tab: 'year' as const, onOpen: (t: string) => went.push(t) }), 'YearLens')
