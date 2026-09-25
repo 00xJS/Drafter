@@ -68,6 +68,18 @@ export function weekGoalsRecord(reviews: readonly Review[], noon: Date): Review 
 /** The week a goal set on Home is written to: last week, whose "Top 3 for next week" this week's are. */
 export const goalsWeekKey = (noon: Date): string => shiftRange(weekRange(noon), -1).key
 
+/**
+ * When "→ task" makes one of this week's 3 due: the week's last day (the
+ * weeks run Sunday to Saturday), as a date with no time — local midnight, as
+ * the task editor writes a day alone — so it is due by the end of the week the
+ * goal is for, and not overdue before that day is out.
+ */
+export function goalTaskDue(noon: Date): string {
+  const last = new Date(weekRange(noon).end)
+  last.setDate(last.getDate() - 1)
+  return last.toISOString()
+}
+
 /** What an edit of the goals keeps: the words, trimmed, the empty lines dropped, three at most. */
 export const cleanGoals = (lines: readonly string[]): string[] =>
   lines

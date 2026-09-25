@@ -7,6 +7,7 @@ import {
   allDoneLine,
   cleanGoals,
   finishesGoals,
+  goalTaskDue,
   goalsOf,
   goalsWeekKey,
   intoFirstEmpty,
@@ -175,5 +176,21 @@ describe('carrying the unfinished ones over', () => {
     expect(intoFirstEmpty(['Paint', '', ''], 'Garage shelves')).toEqual(['Paint', 'Garage shelves', ''])
     expect(intoFirstEmpty(['', 'Paint', ''], 'Garage shelves')).toEqual(['Garage shelves', 'Paint', ''])
     expect(intoFirstEmpty(['a', 'b', 'c'], 'd')).toEqual(['a', 'b', 'c'])
+  })
+})
+
+describe('a goal made into a task', () => {
+  // the weeks run Sunday to Saturday: a goal for this week is due by its Saturday
+  const saturday = new Date(2026, 8, 26).toISOString()
+  it('is due on the week’s last day, as a date with no time', () => {
+    expect(goalTaskDue(NOON)).toBe(saturday)
+    // from the Sunday that starts the week, and on the Saturday itself
+    expect(goalTaskDue(new Date(2026, 8, 20, 12))).toBe(saturday)
+    expect(goalTaskDue(new Date(2026, 8, 26, 12))).toBe(saturday)
+    expect(new Date(goalTaskDue(NOON)).getHours()).toBe(0)
+  })
+
+  it('is due in the next week from its Sunday on', () => {
+    expect(goalTaskDue(new Date(2026, 8, 27, 12))).toBe(new Date(2026, 9, 3).toISOString())
   })
 })

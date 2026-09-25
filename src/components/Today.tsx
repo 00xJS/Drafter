@@ -57,7 +57,7 @@ import { WeekGoals } from './home/WeekGoals'
 import { HomeTiles, HomeWeekStrip } from './home/HomeWeek'
 import { useTodaysSky } from './home/useTodaysSky'
 import { tonight as tonightTile, upNext, weekStrip } from '../homeweek'
-import { weekGoalsRecord } from '../weekgoals'
+import { goalTaskDue, weekGoalsRecord } from '../weekgoals'
 // from focus.ts and dayclose.ts, not the sheets: a static import of either
 // sheet would pull its chunk into the first load
 import { blocksOn } from '../focus'
@@ -395,13 +395,6 @@ export function briefingCtaLabel({ hour, hasFocus, closed }: { hour: number; has
 function addDays(from: Date, n: number): Date {
   const d = startOfDay(from)
   d.setDate(d.getDate() + n)
-  return d
-}
-
-function nextWeekday(from: Date, weekday: number): Date {
-  const d = startOfDay(from)
-  const delta = (weekday - d.getDay() + 7) % 7 || 7
-  d.setDate(d.getDate() + delta)
   return d
 }
 
@@ -1044,12 +1037,6 @@ export function Today({
     </CardBoundary>
   )
 
-  const endOfNextWeek = (() => {
-    const d = nextWeekday(noon, 0)
-    d.setDate(d.getDate() + 7)
-    d.setHours(17, 0, 0, 0)
-    return d.toISOString()
-  })()
 
   return (
     <HomeFolds value={{ folded, onFold }}>
@@ -1103,7 +1090,7 @@ export function Today({
           noon={noon}
           focusTitles={focusTitles}
           onSave={onSaveReview}
-          onMakeTask={line => onNew({ title: line, dueAt: endOfNextWeek, status: 'todo' })}
+          onMakeTask={line => onNew({ title: line, dueAt: goalTaskDue(noon), status: 'todo' })}
           // Sundays, while no week-ready card below offers it
           onPlanWeek={isSunday && !sundayDraft?.summary ? onPlanWeek : undefined}
         />
