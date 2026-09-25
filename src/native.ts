@@ -379,17 +379,42 @@ export async function localNotificationPermission(): Promise<LocalPermission | n
   }
 }
 
-/** Ask iOS once; false if the user said no (the fix is then the Settings app). */
+const allowedWatchers = new Set<() => void>()
+
+/**
+ * Run `cb` each time this phone has just been allowed to notify, whichever
+ * button asked (the bell's Turn on, Settings → Notifications, the offer after
+ * a due time is set): the reminders waiting on it can be set now, not at the
+ * next change. Returns a disposer.
+ */
+export function onNotificationsAllowed(cb: () => void): () => void {
+  allowedWatchers.add(cb)
+  return () => {
+    allowedWatchers.delete(cb)
+  }
+}
+
+/** iOS has just said yes to a question the app asked. */
+export function notificationsAllowed(): void {
+  for (const cb of [...allowedWatchers]) cb()
+}
+
+/**
+ * Ask iOS once; false if the user said no (the fix is then the Settings app).
+ * Only ever from a button someone pressed: the question comes with what it is
+ * for on screen, never by itself as the planner opens.
+ */
 export async function requestLocalNotificationPermission(): Promise<boolean> {
   if (!isNative()) return false
   const { LocalNotifications } = await import('@capacitor/local-notifications')
   let p = await LocalNotifications.checkPermissions()
-  if (p.display !== 'granted') {
-    // only an unanswered question puts an alert up; after that iOS answers alone
-    if (p.display !== 'denied') await expectSystemPrompt()
-    p = await LocalNotifications.requestPermissions()
-  }
-  return p.display === 'granted'
+  if (p.display === 'granted') return true
+  // only an unanswered question puts an alert up; after that iOS answers alone
+  if (p.display !== 'denied') await expectSystemPrompt()
+  p = await LocalNotifications.requestPermissions()
+  if (p.display !== 'granted') return false
+  notificationsAllowed()
+  return true
 }
 
 /** The action buttons a reminder can carry. Omitted from a generic reminder. */

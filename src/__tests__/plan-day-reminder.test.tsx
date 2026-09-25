@@ -218,9 +218,10 @@ describe('Plan your day: scheduled with the phone’s own local notifications', 
   })
 })
 
-// It is on by default, so a No at the launch prompt, or notifications turned
-// off later in the Settings app, left it ticked at 08:00 in Settings while
-// scheduleLocalReminders quietly set nothing. Settings now says so.
+// It is on by default, so a No when iOS asked, notifications turned off later
+// in the Settings app, or iOS never asked at all, left it ticked at 08:00 in
+// Settings while scheduleLocalReminders quietly set nothing. Settings now says
+// so, and offers to ask while iOS has yet to.
 describe('Plan your day: when iOS won’t let it through', () => {
   it('reads what iOS allows without asking', async () => {
     for (const [display, read] of [
@@ -255,7 +256,7 @@ describe('Plan your day: when iOS won’t let it through', () => {
 })
 
 describe('Plan your day: in the shell and in Settings → Reminders', () => {
-  it('the shell sets it with the rest, even with the local reminders off, and asks iOS once, never over the lock', () => {
+  it('the shell sets it with the rest, even with the local reminders off, and never asks iOS itself', () => {
     const shell = source('components/planner/useNativeShell.ts')
     // with the calendar's own events, which ring through the same set, and
     // the tasks' own due rows whether or not server push is on for this phone:
@@ -265,9 +266,10 @@ describe('Plan your day: in the shell and in Settings → Reminders', () => {
       /deviceReminders\(now, new Date\(\), \{ local: localRemindersEnabled\(\), generic: genericRemindersEnabled\(\), planDay: planDayPref\(\), events: now\.events, myId: me \}\)/,
     )
     expect(shell).not.toMatch(/skipTaskDue|fetchPushInfo/)
-    expect(shell).toMatch(/if \(!local && !planDay\.on\) return/)
+    expect(shell).toMatch(/if \(!localRemindersEnabled\(\) && !planDayPref\(\)\.on\) return/)
     expect(shell).not.toMatch(/!localRemindersEnabled\(\)\) return/)
-    expect(shell).toMatch(/if \(planDay\.on && !isAppLockShowing\(\)\) await requestLocalNotificationPermission\(\)/)
+    // the question comes from a button someone pressed (reminder-offer.test.ts)
+    expect(shell).not.toMatch(/requestLocalNotificationPermission/)
   })
 
   it('no switch in Settings takes it off the phone by scheduling an empty set', () => {

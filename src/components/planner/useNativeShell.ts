@@ -1,17 +1,7 @@
 import { useEffect, useEffectEvent, useLayoutEffect, useRef } from 'react'
 import type { Store } from '../../store'
 import { notifyDue } from '../../notify'
-import {
-  clearAppBadge,
-  genericRemindersEnabled,
-  initNative,
-  isAppLockShowing,
-  isNative,
-  localRemindersEnabled,
-  planDayPref,
-  requestLocalNotificationPermission,
-  scheduleLocalReminders,
-} from '../../native'
+import { clearAppBadge, genericRemindersEnabled, initNative, isNative, localRemindersEnabled, onNotificationsAllowed, planDayPref, scheduleLocalReminders } from '../../native'
 import { refreshNativePush } from '../../push'
 import { deviceReminders } from '../../reminders'
 import { useWidgetBridge } from '../../widgetbridge'
@@ -49,21 +39,18 @@ export function useNativeShell({ store, applyLinkRef, myId }: Deps) {
     }
     remindersRef.current = () => {
       if (!isNative()) return
-      const local = localRemindersEnabled()
-      const planDay = planDayPref()
-      if (!local && !planDay.on) return
-      void (async () => {
-        // Plan your day is on by default, so the first run that would set it asks
-        // iOS for notifications; after that iOS answers from the choice made,
-        // without asking again. Never over the lock screen: a later run asks
-        if (planDay.on && !isAppLockShowing()) await requestLocalNotificationPermission().catch(() => false)
-        // one rewrite at a time (scheduleLocalReminders), each worked out when its
-        // turn comes, from the data and the switches as they are by then
-        await scheduleLocalReminders(() => {
-          const { store: now, myId: me } = latest.current
-          return deviceReminders(now, new Date(), { local: localRemindersEnabled(), generic: genericRemindersEnabled(), planDay: planDayPref(), events: now.events, myId: me })
-        }).catch(() => {})
-      })()
+      if (!localRemindersEnabled() && !planDayPref().on) return
+      // Never asks iOS whether it may notify: that question comes only from a
+      // button someone pressed — the bell's Turn on, Settings → Notifications,
+      // the offer after a task is given a time (src/reminderoffer.ts) — and a
+      // yes to any of them runs this again (onNotificationsAllowed, below).
+      // Until then scheduleLocalReminders sets nothing. One rewrite at a time,
+      // each worked out when its turn comes, from the data and the switches as
+      // they are by then.
+      void scheduleLocalReminders(() => {
+        const { store: now, myId: me } = latest.current
+        return deviceReminders(now, new Date(), { local: localRemindersEnabled(), generic: genericRemindersEnabled(), planDay: planDayPref(), events: now.events, myId: me })
+      }).catch(() => {})
     }
   })
 
@@ -105,6 +92,10 @@ export function useNativeShell({ store, applyLinkRef, myId }: Deps) {
       dispose?.()
     }
   }, [])
+
+  // iOS has just said this phone may notify, from whichever button asked: the
+  // reminders that were waiting on it are set now, not at the next change
+  useEffect(() => onNotificationsAllowed(() => remindersRef.current()), [])
 
   // due tasks and my events as they start, while the app is open (device-local,
   // never a store write): the copies in Google and Outlook no longer ring

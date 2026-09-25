@@ -8,6 +8,7 @@ import { deleteMedia } from '../../media'
 import { localDayKey, shiftDayKey } from '../../journal'
 import { useDayKey } from '../../useDayKey'
 import { readWeekPlanDismissed } from '../../weekplanstore'
+import { REMINDER_OFFER_BUTTON, REMINDER_OFFER_LINE, allowDueReminders, takeReminderOffer } from '../../reminderoffer'
 import { ErrorBoundary } from '../ErrorBoundary'
 import type { PlannerCtx } from './ctx'
 import { askDocOpener } from './askRouting'
@@ -140,6 +141,21 @@ export function Overlays({ p }: { p: PlannerCtx }) {
   }
 
   /**
+   * The first time on this iPhone a task of mine is given a time to be due:
+   * one line saying what notifications would be for, and a button that puts
+   * iOS's question (src/reminderoffer.ts). Nothing is asked unless it is
+   * pressed. A new task's toast keeps its Undo.
+   */
+  const offerReminders = (before: Task | undefined, t: Task, added: string | null) =>
+    void takeReminderOffer(before, t, household.myId).then(offer => {
+      if (!offer) return
+      showToast(added ? `${added}. ${REMINDER_OFFER_LINE}` : REMINDER_OFFER_LINE, added ? () => remove(t.id) : undefined, {
+        label: REMINDER_OFFER_BUTTON,
+        run: () => void allowDueReminders().then(ok => ok && showToast('Reminders are on for this iPhone.')),
+      })
+    })
+
+  /**
    * A shared meal's cook task can keep what was written on it: the steps and
    * notes go into the meal's recipe (or a new one, for a meal that is not a
    * recipe yet), so they are there the next time it is planned. One Undo puts
@@ -206,6 +222,7 @@ export function Overlays({ p }: { p: PlannerCtx }) {
                 const said = addedLine(t)
                 showToast(said.msg, () => remove(t.id), said.logged ? { label: 'Show', run: () => showTaskInList(t.id) } : undefined)
               }
+              offerReminders(before, t, isNew ? addedLine(t).msg : null)
               if (t.status === 'done' && before?.status !== 'done') closeLinkedIssue(t)
               if (!before || before.status !== t.status || before.dueAt !== t.dueAt) pushToProjectBoard(t)
             }}
