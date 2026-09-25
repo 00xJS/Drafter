@@ -1,11 +1,11 @@
 // @vitest-environment happy-dom
 import { fireEvent, render, screen, waitFor, within } from './dom'
 import { useState } from 'react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../api', async importOriginal => ({ ...(await importOriginal<typeof import('../api')>()), apiFetch: vi.fn() }))
 import { apiFetch } from '../api'
-import { Kitchen } from '../components/Kitchen'
+import { Kitchen, preloadKitchenSheets } from '../components/Kitchen'
 import { recipeDraftId } from '../../shared/recipefill.mts'
 import type { Item, Recipe, RecipeDraftRecord } from '../types'
 
@@ -40,6 +40,12 @@ const waiting = (recipeId: string, ingredient: string, over: Partial<RecipeDraft
   createdAt: T0,
   updatedAt: T0,
   ...over,
+})
+
+// The fill sheet loads from a chunk of its own on its first tap; here it is
+// loaded before anything is drawn, so a tap draws it at once.
+beforeAll(async () => {
+  await preloadKitchenSheets()
 })
 
 beforeEach(() => {
