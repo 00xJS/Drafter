@@ -536,10 +536,12 @@ async function digestRun(now, run) {
   // the drafts look at on their own; any other hour's read already holds them.
   if (recipeNight) {
     const recipeRows = quiet
-      ? await restAll(RECIPE_ROWS).catch(e => {
-          failures.push(`recipe drafts: ${e?.message ?? e}`)
-          return null
-        })
+      ? /** @type {{ user_id: string | null, data: unknown }[] | null} */ (
+          await restAll(RECIPE_ROWS).catch(e => {
+            failures.push(`recipe drafts: ${e?.message ?? e}`)
+            return null
+          })
+        )
       : rows
     if (recipeRows) {
       const unstarted = await startRecipeNight(recipeNightAccounts(accounts, recipeRows, peers, now), now, site)
