@@ -240,6 +240,8 @@ describe('Kitchen', () => {
     const empty = renderToStaticMarkup(<Kitchen {...props} />)
     // slimmer than the banner it was: the count, and the sheet's way in
     expect(empty).not.toContain('meal-plan-cta')
+    // …and the banner's rules went with it
+    expect(sheetSource()).not.toContain('meal-plan-cta')
     expect(empty).toMatch(/<p class="kitchen-week-todo"><span>(Nothing planned yet|\d dinners? still to plan)<\/span><button type="button" class="kitchen-plan-week" aria-haspopup="dialog">/)
     expect(empty).toContain('Plan this week’s meals</button>')
     expect(empty).toContain('aria-label="Dinners this week"')
