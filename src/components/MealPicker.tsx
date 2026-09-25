@@ -132,6 +132,10 @@ const TABS: readonly { key: Tab; label: string }[] = [
   { key: 'quick', label: 'Quick' },
 ]
 
+/** No meals, and nobody to cook with: the defaults, one array each so a memo on them holds. */
+const NO_MEALS: readonly Meal[] = []
+const NO_MEMBERS: readonly KitchenMember[] = []
+
 /** Which tab a meal is on: a quick pick's, eating out's, or cooking's. */
 const tabOf = (meal: Meal | undefined): Tab => (meal?.quick ? 'quick' : meal?.out ? 'out' : 'cook')
 
@@ -184,11 +188,11 @@ export function MealPicker({
   meal,
   recipes,
   places,
-  meals = [],
+  meals = NO_MEALS,
   cooked,
   visited,
   inHousehold = false,
-  members = [],
+  members = NO_MEMBERS,
   startShared,
   mainOnly = false,
   onPick,

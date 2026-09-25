@@ -62,6 +62,8 @@ interface Props {
   onCreatePlace(name: string, category: PlaceCategory): Place
   /** Save a new recipe (name only) from the meal picker and hand it back. */
   onCreateRecipe(name: string): Recipe
+  /** ★ a recipe, or not, from the meal picker's Cook list. */
+  onStarRecipe?(recipe: Recipe): void
   /** Open the event editor for a new entry starting at this instant; `work` opens it as a work day. */
   onNewEvent(startIso: string, work?: WorkMode): void
   /** Open the event editor on one of our own entries. */
@@ -142,6 +144,7 @@ export function Calendar({
   onClearMeal,
   onCreatePlace,
   onCreateRecipe,
+  onStarRecipe,
   onNewEvent,
   onEditEvent,
   onReschedule,
@@ -632,6 +635,7 @@ export function Calendar({
                 onSave={onSaveMeal}
                 onClear={onClearMeal}
                 onCreatePlace={onCreatePlace}
+                onStar={onStarRecipe}
               />
             )
           })}
