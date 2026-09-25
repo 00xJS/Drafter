@@ -6,19 +6,19 @@
 // message to the household, and the hourly digest, for the morning digest and
 // an alarm — and both write here.
 //
-// How it is written matters as much as what. sync_posts under the service key
-// stores a NEW row as the site owner's (auth.uid() is null there), and the
-// digest's Sunday review is handed over afterwards with a PATCH of user_id.
-// That will not do for a notice. For that moment it would be the site
-// owner's, and the site owner is one of the two members: their device could
-// pull the other's notice then, and keep it. And the hand-over leaves
-// synced_at where it was, so a recipient whose device synced in between would
-// never be sent it at all. So a new notice is INSERTED straight into posts
-// under its recipient, synced_at left to its default — the database's own
-// clock, which is what sync_posts stamps too — and Realtime nudges that
-// recipient alone, since the SELECT policy decides who hears an insert. News
-// for a notice that exists already goes through sync_posts, whose update
-// keeps the owner and moves synced_at, so the recipient's next round brings it.
+// How it is written matters as much as what. Plain sync_posts under the
+// service key stores a NEW row as the site owner's (auth.uid() is null
+// there), and the site owner is one of the two members: their device could
+// pull the other's notice, and keep it. So a new notice is INSERTED straight
+// into posts under its recipient, synced_at left to its default — the
+// database's own clock, which is what sync_posts stamps too — and Realtime
+// nudges that recipient alone, since the SELECT policy decides who hears an
+// insert. Two calls writing the same new notice at once meet as a 409 here,
+// and the second folds its news into the first's. News for a notice that
+// exists already is written as its recipient (lib/writeas.mjs), whose update
+// keeps the owner and moves synced_at, so the recipient's next round brings
+// it — and a merge that loses to a read mark is kept in the recipient's
+// history, never the site owner's.
 //
 // The direct insert skips sync_posts' check that the database stores the kind,
 // so record_kinds is asked first: until the v3.32 migration is applied no
@@ -27,6 +27,7 @@
 import { newerStamp } from '../../../shared/domain.mts'
 import { NOTICE_KEEP_DAYS, mergeNotice } from '../../../shared/notices.mts'
 import { keyHeaders } from './supabasekeys.mjs'
+import { writeAs } from './writeas.mjs'
 
 const DAY = 86_400_000
 /** Tombstones a nightly expiry writes per sync_posts call. */
@@ -70,12 +71,17 @@ async function readRow(id) {
   return Array.isArray(rows) && rows[0] ? rows[0] : null
 }
 
-/** What sync_posts said about one id it was sent: null when it stored it. */
-async function syncOne(item) {
-  // a cursor in the future: the answer carries no rows, only the verdicts
-  const res = await request('rpc/sync_posts', { method: 'POST', body: JSON.stringify({ incoming: [item], since: new Date(Date.now() + DAY).toISOString() }) })
-  const answer = await json(res, 'sync_posts')
-  for (const k of ['rejected', 'stale', 'gone']) if (Array.isArray(answer?.[k]) && answer[k].includes(item.id)) return k
+/** Write items as `ownerId`, as `json` answers a request: throws when the write did not go through. */
+async function writeAsOwner(ownerId, items) {
+  const out = await writeAs(ownerId, items)
+  if (!out.ok) throw new Error(out.why)
+  return out
+}
+
+/** What the database said about one notice written as its recipient: null when it stored it. */
+async function syncOne(item, recipientId) {
+  const answer = await writeAsOwner(recipientId, [item])
+  for (const k of /** @type {const} */ (['rejected', 'stale', 'gone'])) if (answer[k].includes(item.id)) return k
   return null
 }
 
@@ -104,7 +110,7 @@ export async function putNotice(notice, recipientId, merge = mergeNotice) {
       const next = merge(row.data, notice)
       if (next === row.data) return { ok: true, notice: asData(row.data), unchanged: true }
       const merged = asData({ ...next, updatedAt: newerStamp(row.data?.updatedAt) })
-      const refused = await syncOne(merged)
+      const refused = await syncOne(merged, recipientId)
       if (!refused) return { ok: true, notice: merged }
       // stale: a read mark landed in between; read it again and fold the news into that
       continue
@@ -125,7 +131,7 @@ export async function putNotice(notice, recipientId, merge = mergeNotice) {
 /**
  * The nightly let-go: every notice older than NOTICE_KEEP_DAYS becomes the
  * content-free tombstone "Delete forever" writes (src/sync.ts purgeTombstone),
- * through sync_posts, so it keeps its recipient and every device of theirs
+ * written as its recipient, so it keeps them and every device of theirs
  * drops it on its next round. The tombstone itself goes with the rest, when
  * purged tombstones age out (lib/backup.mjs, digest.mjs). Answers how many
  * were let go; throws when the notices could not be read.
@@ -134,7 +140,7 @@ export async function expireNotices(now = new Date(), keepDays = NOTICE_KEEP_DAY
   if (!(await noticesStored().catch(() => false))) return 0
   const cutoff = new Date(now.getTime() - keepDays * DAY).toISOString()
   const rows = await json(
-    await request(`posts?select=id,data&kind=eq.notice&deleted=is.false&data->>at=lt.${encodeURIComponent(cutoff)}&order=id.asc&limit=${EXPIRE_MAX}`),
+    await request(`posts?select=id,data,user_id&kind=eq.notice&deleted=is.false&data->>at=lt.${encodeURIComponent(cutoff)}&order=id.asc&limit=${EXPIRE_MAX}`),
     'posts',
   )
   const stamp = now.toISOString()
@@ -143,23 +149,23 @@ export async function expireNotices(now = new Date(), keepDays = NOTICE_KEEP_DAY
     const prev = Date.parse(iso ?? '')
     return new Date(Math.max(now.getTime(), Number.isFinite(prev) ? prev + 1 : 0)).toISOString()
   }
-  const tombs = (Array.isArray(rows) ? rows : []).map(r => ({
-    kind: 'notice',
-    id: r.id,
-    deletedAt: stamp,
-    purged: true,
-    createdAt: r.data?.createdAt ?? stamp,
-    updatedAt: after(r.data?.updatedAt),
-  }))
+  // each recipient's notices written as them, a batch at a time
+  /** @type {Map<string, Record<string, unknown>[]>} */
+  const byRecipient = new Map()
+  for (const r of Array.isArray(rows) ? rows : []) {
+    if (typeof r?.user_id !== 'string') continue
+    const theirs = byRecipient.get(r.user_id) ?? []
+    theirs.push({ kind: 'notice', id: r.id, deletedAt: stamp, purged: true, createdAt: r.data?.createdAt ?? stamp, updatedAt: after(r.data?.updatedAt) })
+    byRecipient.set(r.user_id, theirs)
+  }
   let done = 0
-  for (let i = 0; i < tombs.length; i += EXPIRE_BATCH) {
-    const batch = tombs.slice(i, i + EXPIRE_BATCH)
-    const answer = await json(
-      await request('rpc/sync_posts', { method: 'POST', body: JSON.stringify({ incoming: batch, since: new Date(now.getTime() + DAY).toISOString() }) }),
-      'sync_posts',
-    )
-    const refused = new Set(['rejected', 'stale', 'gone'].flatMap(k => (Array.isArray(answer?.[k]) ? answer[k] : [])))
-    done += batch.filter(t => !refused.has(t.id)).length
+  for (const [recipientId, tombs] of byRecipient) {
+    for (let i = 0; i < tombs.length; i += EXPIRE_BATCH) {
+      const batch = tombs.slice(i, i + EXPIRE_BATCH)
+      const answer = await writeAsOwner(recipientId, batch)
+      const refused = new Set([...answer.rejected, ...answer.stale, ...answer.gone])
+      done += batch.filter(t => !refused.has(String(t.id))).length
+    }
   }
   return done
 }

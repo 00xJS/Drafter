@@ -66,7 +66,7 @@ describe('Sunday’s draft files the review under the reader’s week', () => {
   const SUNDAY = new Date('2026-09-12T23:00:00.000Z')
   let prompt = ''
   let written: Record<string, unknown>[] = []
-  /** The review rows as the table holds them: what sync_posts wrote, the site owner's until handed over. */
+  /** The review rows as the table holds them: what sync_posts_as wrote, as the account it named (v3.34). */
   let rows: { user_id: string; data: Record<string, unknown> }[] = []
 
   beforeEach(() => {
@@ -87,14 +87,14 @@ describe('Sunday’s draft files the review under the reader’s week', () => {
           prompt = body.messages.at(-1).content
           return Response.json({ choices: [{ message: { content: 'A steady week.' } }] })
         }
-        if (url === `${SUPABASE}/rest/v1/rpc/sync_posts`) {
+        if (url === `${SUPABASE}/rest/v1/rpc/sync_posts_as`) {
           for (const item of body.incoming) {
             written.push(item)
             const row = rows.find(r => r.data.id === item.id)
             if (row) row.data = item
-            else rows.push({ user_id: 'site-owner', data: item })
+            else rows.push({ user_id: body.p_owner, data: item })
           }
-          return Response.json({ items: [], rejected: [] })
+          return Response.json({ items: [], rejected: [], stale: [], gone: [] })
         }
         // the week's reviews, read straight from the table before and after the model
         if (url.startsWith(`${SUPABASE}/rest/v1/posts?select=data,user_id&kind=eq.review&data->>key=eq.`)) return Response.json(structuredClone(rows))
@@ -123,7 +123,7 @@ describe('Sunday’s draft files the review under the reader’s week', () => {
     ]
     const review = await draftSundayReview('user-one', items, SUNDAY, { timezone: 'Asia/Tokyo' })
     expect(review).toEqual({ state: 'drafted', id: 'review-2026-W36-user-one', summary: 'A steady week.' })
-    // an empty review is made the reader's before the model is asked; the week is claimed only with the summary
+    // an empty review, the reader's, is made before the model is asked; the week is claimed only with the summary
     expect(written).toHaveLength(2)
     expect(written[0]).toMatchObject({ kind: 'review', period: 'week', key: '2026-W36' })
     expect(written[0]).not.toHaveProperty('draftedAt')

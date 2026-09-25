@@ -6,8 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 // able to read the task, each recipient must be in their household and able
 // to read it too, and a recipient who switched the updates off hears nothing.
 //
-// The database is a fake that keeps rows and answers sync_posts by
-// last-write-wins; push is stubbed at its module.
+// The database is a fake that keeps rows and answers sync_posts_as (v3.34)
+// by last-write-wins, as the account it names; push is stubbed at its module.
 
 const { pushes, pushState } = vi.hoisted(() => ({
   pushes: [] as { to: string[]; title: string; body: string; tag: string; url: string }[],
@@ -107,17 +107,19 @@ beforeEach(() => {
         rows.set(body.id, { user_id: body.user_id, data: body.data })
         return new Response(null, { status: 201 })
       }
-      if (path === 'rpc/sync_posts' && method === 'POST') {
+      if (path === 'rpc/sync_posts_as' && method === 'POST') {
+        const rejected: string[] = []
         const stale: string[] = []
         for (const item of body.incoming) {
           const row = rows.get(item.id)
-          writes.push(`sync ${item.id}`)
-          // the service key's writes are the site owner's when new; an update keeps the owner
-          if (!row) rows.set(item.id, { user_id: JOE, data: item })
+          writes.push(`sync as ${body.p_owner === JOE ? 'Joe' : body.p_owner === MARIA ? 'Maria' : body.p_owner} ${item.id}`)
+          // written as the account named: a new row is theirs, a row of anyone else's is refused
+          if (row && row.user_id !== body.p_owner) rejected.push(item.id)
+          else if (!row) rows.set(item.id, { user_id: body.p_owner, data: item })
           else if (item.updatedAt > row.data.updatedAt) row.data = item
           else stale.push(item.id)
         }
-        return Response.json({ items: [], rejected: [], stale, gone: [] })
+        return Response.json({ items: [], rejected, stale, gone: [] })
       }
       throw new Error(`unexpected ${method} ${path}`)
     }),
@@ -182,8 +184,8 @@ describe('the assignee’s progress reaches whoever handed it over', () => {
       createdAt: NOW,
     })
     expect(noticesOf(JOE)[0].data.readAt).toBeUndefined()
-    // the merge went through sync_posts, which keeps the row Joe's
-    expect(writes).toEqual([`insert ${id}`, `sync ${id}`])
+    // the merge was written as Joe, whose row it stays
+    expect(writes).toEqual([`insert ${id}`, `sync as Joe ${id}`])
     expect(pushes.map(p => [p.tag, p.body])).toEqual([
       ['task-bins', 'Ticked “Green bin”'],
       ['task-bins', 'Ticked “Green bin”\n“Blue one was full”\nMarked it done'],
@@ -398,7 +400,7 @@ describe('a household message reaches everyone else in the household', () => {
       createdAt: NOW,
     })
     expect(noticesOf(JOE)[0].data.readAt).toBeUndefined()
-    expect(writes).toEqual([`insert ${id}`, `sync ${id}`, `sync ${id}`])
+    expect(writes).toEqual([`insert ${id}`, `sync as Joe ${id}`, `sync as Joe ${id}`])
     expect(pushes.map(p => [p.tag, p.title, p.body])).toEqual([
       [`messages-${MARIA}`, 'Maria', 'Home by six'],
       [`messages-${MARIA}`, 'Maria', 'Home by six\nBring milk'],
