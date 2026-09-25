@@ -114,3 +114,41 @@ describe('the badge, set by the page and nothing else', () => {
     expect(code).not.toMatch(/removeAllDeliveredNotifications/)
   })
 })
+
+// A tap on a reminder's Done while the app was shut starts it, and iOS hands
+// the tap to the notification centre's delegate — which Apple asks to be set
+// before launch finishes. Capacitor sets its own only when the scene connects
+// and the bridge is built, so the app delegate puts a stand-in first.
+describe('a notification tap that starts the app reaches the page', () => {
+  const app = read('ios/App/App/AppDelegate.swift')
+  const relay = /final class LaunchNotificationRelay[\s\S]*$/.exec(app)?.[0] ?? ''
+
+  it('has a delegate before launch finishes, kept alive by the app delegate', () => {
+    expect(app).toMatch(/private let notificationRelay = LaunchNotificationRelay\(\)/)
+    expect(app).toMatch(/didFinishLaunchingWithOptions[^{]*\{\s*(?:\/\/[^\n]*\n\s*)*notificationRelay\.install\(\)\s*return true/)
+    expect(swiftFunc(relay, 'install')).toMatch(/UNUserNotificationCenter\.current\(\)\.delegate = self/)
+  })
+
+  it('holds a tap until the bridge’s view is up, then hands it to the delegate the bridge set', () => {
+    expect(swiftFunc(relay, 'install')).toMatch(/forName: \.capacitorViewDidAppear/)
+    const handOver = swiftFunc(relay, 'handOver')
+    expect(handOver).toMatch(/if let next = center\.delegate, next !== self \{/)
+    expect(handOver).toMatch(/next\.userNotificationCenter\?\(center, didReceive: response, withCompletionHandler: done\) == nil \{\s*done\(\)/)
+    // and every tap it takes is finished: one nobody can take is let go
+    expect(handOver).toMatch(/\} else if observer == nil \{[\s\S]*?done\(\)/)
+  })
+
+  it('is replaced by Capacitor’s router as the bridge is built, whose plugins keep the tap for the page', () => {
+    const bridge = read('node_modules/@capacitor/ios/Capacitor/Capacitor/CapacitorBridge.swift')
+    const router = read('node_modules/@capacitor/ios/Capacitor/Capacitor/NotificationRouter.swift')
+    expect(bridge).toMatch(/self\.notificationRouter = NotificationRouter\(\)\s*self\.notificationRouter\.handleApplicationNotifications = configuration\.handleApplicationNotifications/)
+    expect(router).toMatch(/if newValue \{\s*center\.delegate = self/)
+    expect(read('capacitor.config.ts')).not.toMatch(/handleApplicationNotifications/)
+    for (const handler of [
+      'node_modules/@capacitor/local-notifications/ios/Sources/LocalNotificationsPlugin/LocalNotificationsHandler.swift',
+      'node_modules/@capacitor/push-notifications/ios/Sources/PushNotificationsPlugin/PushNotificationsHandler.swift',
+    ]) {
+      expect(read(handler), handler).toMatch(/notifyListeners\("(?:local|push)NotificationActionPerformed", data: data, retainUntilConsumed: true\)/)
+    }
+  })
+})
