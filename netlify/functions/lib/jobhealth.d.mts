@@ -2,7 +2,7 @@ type Rest = (path: string, init?: RequestInit) => Promise<unknown>
 
 export type JobName = 'backup' | 'digest'
 /** The background function's jobs (ai-jobs-background.mjs): recorded like the scheduled ones, shown in Admin → Data, never an alarm. */
-export type BackgroundJobName = 'sunday-draft' | 'email-triage'
+export type BackgroundJobName = 'sunday-draft' | 'email-triage' | 'recipe-drafts'
 
 /** What a run hands in: its counts and failures, and whether it worked. */
 export interface JobRun {

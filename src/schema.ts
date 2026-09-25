@@ -9,6 +9,7 @@ import {
   Place,
   PlaceCategory,
   Recipe,
+  RecipeDraftRecord,
   RecipeIngredient,
   Review,
   Meal,
@@ -84,6 +85,7 @@ import { legacyPostToTask } from '../shared/domain.mts'
 import { MAX_SIDES, isQuickPick } from '../shared/kitchen.mts'
 import { SYNC_KINDS } from '../shared/kinds.mts'
 import { NOTICE_LINE_MAX, NOTICE_LINES_MAX, NOTICE_MESSAGES_MAX } from '../shared/notices.mts'
+import { FILL_INGREDIENTS_MAX, FILL_STEPS_MAX, recipeIdOfDraft, type DraftIngredient } from '../shared/recipefill.mts'
 import { tidyPlaceAddress, tidyPlaceAliases } from '../shared/places.mts'
 import { isDayKey } from '../shared/weeks.mts'
 import { tidyCoords } from './geo'
@@ -587,6 +589,65 @@ export function sanitizeRecipe(raw: unknown): Recipe | null {
     sourceUrl: recipeSourceUrl(r.sourceUrl),
     // starred for the Favourites rotation; anything but true is not a star
     favourite: r.favourite === true || undefined,
+    ownerId: idOrUndefined(r.ownerId),
+    createdAt: isoDate(r.createdAt) ?? now,
+    updatedAt: isoDate(r.updatedAt) ?? now,
+    deletedAt: isoDate(r.deletedAt),
+    purged: r.purged === true || undefined,
+  }
+}
+
+/** A draft's ingredient lines: named, a real quantity or none, a short unit or none — and no more of them than Fill in keeps. */
+function draftIngredients(raw: unknown): DraftIngredient[] {
+  if (!Array.isArray(raw)) return []
+  const out: DraftIngredient[] = []
+  for (const row of raw) {
+    if (out.length >= FILL_INGREDIENTS_MAX) break
+    if (!row || typeof row !== 'object') continue
+    const r = row as Record<string, unknown>
+    const name = str(r.name)?.trim().slice(0, 80).trim()
+    if (!name) continue
+    const qty = Number(r.qty)
+    const unit = str(r.unit)?.trim().slice(0, 16).trim()
+    out.push({ name, ...(Number.isFinite(qty) && qty > 0 ? { qty: Math.round(qty * 100) / 100 } : {}), ...(unit ? { unit } : {}) })
+  }
+  return out
+}
+
+/**
+ * A recipe's waiting draft (v3.35). Its recipe is the one its id names
+ * (recipedraft~<recipe id>): a stored `recipeId` that says otherwise is not
+ * believed, and an id that names no recipe is no draft. What it drafted is
+ * held to what Fill in itself keeps — FILL_INGREDIENTS_MAX named lines,
+ * FILL_STEPS_MAX steps, servings from 1 to 64 — so a row written some other
+ * way shows no more than a model's answer would. A tombstone (Save's removal,
+ * the nightly clean-up) carries nothing, and is kept as one.
+ */
+export function sanitizeRecipeDraft(raw: unknown): RecipeDraftRecord | null {
+  if (!raw || typeof raw !== 'object') return null
+  const r = raw as Record<string, unknown>
+  const id = str(r.id)
+  const recipeId = recipeIdOfDraft(id)
+  if (!id || !recipeId) return null
+  const now = new Date().toISOString()
+  const servings = Math.round(Number(r.servings))
+  const tries = count(r.tries)
+  return {
+    kind: 'recipedraft',
+    id,
+    recipeId,
+    servings: servings >= 1 && servings <= 64 ? servings : undefined,
+    ingredients: draftIngredients(r.ingredients),
+    steps: strList(r.steps)
+      .map(t => t.slice(0, 300).trim())
+      .filter(Boolean)
+      .slice(0, FILL_STEPS_MAX),
+    draftedAt: isoDate(r.draftedAt),
+    model: str(r.model)?.trim().slice(0, 120) || undefined,
+    skippedAt: isoDate(r.skippedAt),
+    skippedBy: idOrUndefined(r.skippedBy),
+    triedAt: isoDate(r.triedAt),
+    tries: tries ? Math.min(tries, 99) : undefined,
     ownerId: idOrUndefined(r.ownerId),
     createdAt: isoDate(r.createdAt) ?? now,
     updatedAt: isoDate(r.updatedAt) ?? now,
@@ -1606,6 +1667,7 @@ function sanitizeKnown(converted: Record<string, unknown>): Item | null {
   if (converted.kind === 'person') return sanitizePerson(converted)
   if (converted.kind === 'place') return sanitizePlace(converted)
   if (converted.kind === 'recipe') return sanitizeRecipe(converted)
+  if (converted.kind === 'recipedraft') return sanitizeRecipeDraft(converted)
   if (converted.kind === 'meal') return sanitizeMeal(converted)
   if (converted.kind === 'grocery') return sanitizeGrocery(converted)
   if (converted.kind === 'journal') return sanitizeJournal(converted)

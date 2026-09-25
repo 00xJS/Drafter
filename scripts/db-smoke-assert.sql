@@ -3816,3 +3816,94 @@ rollback;
 
 delete from public.posts_history where id like 'v334-%';
 delete from public.posts where id like 'v334-%';
+
+-- ===== v3.35: recipe drafts, prepared ahead of time =====
+-- 20261012000000_v3_35_recipe_drafts. A draft of a recipe waits for Save as a
+-- record of its own, `recipedraft~<recipe id>`, read as the recipe is read:
+-- the household's by kind. The nightly job writes each one as the recipe's
+-- owner (sync_posts_as, v3.34); either member skips it (a mark) or saves it
+-- (a tombstone) through sync_posts, and it stays its owner's; nobody outside
+-- the household reads it or writes over it. B owns the recipe here.
+
+-- ------------- v3.35-1. the job writes a draft as the recipe's owner
+begin;
+set local role service_role;
+do $$
+declare r jsonb;
+begin
+  if not public.record_kind_allowed('recipedraft') then
+    raise exception 'FAIL v3.35-1: record_kinds does not list recipedraft';
+  end if;
+  if public.record_kind_shared_default('recipedraft') is not null or not public.record_peer_visible('recipedraft', null) then
+    raise exception 'FAIL v3.35-1: a recipe draft should be read as a recipe is: the household''s, not decided per record';
+  end if;
+  insert into public.posts (id, updated_at, data, user_id) values (
+    'v335-soup', '2026-09-24T18:00:00.000Z',
+    '{"kind":"recipe","id":"v335-soup","name":"Leek soup","ingredients":[],"tags":[],"createdAt":"2026-09-24T18:00:00.000Z","updatedAt":"2026-09-24T18:00:00.000Z"}',
+    '00000000-0000-0000-0000-00000000000b');
+  r := public.sync_posts_as('00000000-0000-0000-0000-00000000000b', '[{"kind":"recipedraft","id":"recipedraft~v335-soup","recipeId":"v335-soup","servings":4,"ingredients":[{"name":"leeks","qty":2}],"steps":["Wash the leeks."],"draftedAt":"2026-09-25T10:00:00.000Z","triedAt":"2026-09-25T10:00:00.000Z","model":"nvidia/nemotron-3-super-120b-a12b","createdAt":"2026-09-25T10:00:00.000Z","updatedAt":"2026-09-25T10:00:00.000Z"}]'::jsonb);
+  if r is distinct from '{"items": [], "rejected": [], "stale": [], "gone": []}'::jsonb then
+    raise exception 'FAIL v3.35-1: the draft should be stored, got %', r;
+  end if;
+  if (select user_id from public.posts where id = 'recipedraft~v335-soup') is distinct from '00000000-0000-0000-0000-00000000000b'
+     or (select kind from public.posts where id = 'recipedraft~v335-soup') is distinct from 'recipedraft' then
+    raise exception 'FAIL v3.35-1: the draft should be born the recipe owner''s, as a recipedraft';
+  end if;
+  raise notice 'ok v3.35-1: the service role writes a recipe draft as the recipe''s owner, and the kind reads as a recipe does';
+end $$;
+commit;
+
+-- ------------- v3.35-2. the housemate reads it, skips it and saves it; it stays the owner's
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000a","role":"authenticated","email":"owner@example.test"}', true);
+do $$
+declare r jsonb; ids text[];
+begin
+  r := public.sync_posts('[]'::jsonb, null);
+  select coalesce(array_agg(x ->> 'id'), '{}') into ids from jsonb_array_elements(r -> 'items') x;
+  if not ('recipedraft~v335-soup' = any(ids)) then
+    raise exception 'FAIL v3.35-2: the housemate''s pull should bring the draft, got %', ids;
+  end if;
+  -- Skip: the draft kept, marked. (Every stamp here is in the past: sync_posts
+  -- takes one more than five minutes ahead as now(), which is one instant for
+  -- the whole transaction, so two future ones would read as the same write.)
+  r := public.sync_posts('[{"kind":"recipedraft","id":"recipedraft~v335-soup","recipeId":"v335-soup","servings":4,"ingredients":[{"name":"leeks","qty":2}],"steps":["Wash the leeks."],"skippedAt":"2026-09-25T11:00:00.000Z","skippedBy":"00000000-0000-0000-0000-00000000000a","createdAt":"2026-09-25T10:00:00.000Z","updatedAt":"2026-09-25T11:00:00.000Z"}]'::jsonb, '2099-01-01');
+  if jsonb_array_length(r -> 'rejected') <> 0 or jsonb_array_length(r -> 'stale') <> 0 then
+    raise exception 'FAIL v3.35-2: the housemate could not mark the draft skipped: %', r - 'items';
+  end if;
+  -- Save: the recipe filled in, and the draft a tombstone
+  r := public.sync_posts('[{"kind":"recipe","id":"v335-soup","name":"Leek soup","ingredients":[{"id":"i1","name":"leeks","qty":2}],"tags":[],"createdAt":"2026-09-24T18:00:00.000Z","updatedAt":"2026-09-25T11:05:00.000Z"},{"kind":"recipedraft","id":"recipedraft~v335-soup","deletedAt":"2026-09-25T11:05:00.000Z","purged":true,"createdAt":"2026-09-25T11:05:00.000Z","updatedAt":"2026-09-25T11:05:00.000Z"}]'::jsonb, '2099-01-01');
+  if jsonb_array_length(r -> 'rejected') <> 0 or jsonb_array_length(r -> 'stale') <> 0 then
+    raise exception 'FAIL v3.35-2: the housemate could not save the draft into the recipe: %', r - 'items';
+  end if;
+  if (select deleted from public.posts where id = 'recipedraft~v335-soup') is not true
+     or (select user_id from public.posts where id = 'recipedraft~v335-soup') is distinct from '00000000-0000-0000-0000-00000000000b' then
+    raise exception 'FAIL v3.35-2: the saved draft should be a tombstone that stays its owner''s';
+  end if;
+  raise notice 'ok v3.35-2: a housemate reads the draft, marks it skipped and saves it through sync_posts, and it stays the recipe owner''s';
+end $$;
+commit;
+
+-- ------------- v3.35-3. nobody outside the household reads it or writes over it
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-00000000000c","role":"authenticated","email":"stranger@example.test"}', true);
+do $$
+declare r jsonb;
+begin
+  r := public.sync_posts('[]'::jsonb, null);
+  if exists (select 1 from jsonb_array_elements(r -> 'items') x where x ->> 'id' = 'recipedraft~v335-soup')
+     or (select count(*) from public.posts where id = 'recipedraft~v335-soup') <> 0 then
+    raise exception 'FAIL v3.35-3: a stranger can read the household''s recipe draft';
+  end if;
+  r := public.sync_posts('[{"kind":"recipedraft","id":"recipedraft~v335-soup","recipeId":"v335-soup","ingredients":[{"name":"forged"}],"steps":[],"createdAt":"2026-09-25T10:00:00.000Z","updatedAt":"2026-09-26T10:00:00.000Z"}]'::jsonb, '2099-01-01');
+  if not ((r -> 'rejected') ? 'recipedraft~v335-soup') then
+    raise exception 'FAIL v3.35-3: a stranger wrote over the household''s recipe draft: %', r - 'items';
+  end if;
+  raise notice 'ok v3.35-3: nobody outside the household reads a recipe draft or writes over it';
+end $$;
+commit;
+
+delete from public.posts_history where id like '%v335-%';
+delete from public.posts where id like '%v335-%';

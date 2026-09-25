@@ -5,8 +5,8 @@ import { adminAction, type SyncCheck } from './admin'
 // listErrors, clearErrors). Nobody else can ask; the server checks.
 
 export type JobName = 'backup' | 'digest'
-/** The background function's jobs: Sunday's review draft and email-in's triage, run when asked rather than on a schedule. */
-export type BackgroundJobName = 'sunday-draft' | 'email-triage'
+/** The background function's jobs: Sunday's review draft, email-in's triage and the nightly recipe drafts, run when asked rather than on a schedule. */
+export type BackgroundJobName = 'sunday-draft' | 'email-triage' | 'recipe-drafts'
 
 /** A scheduled job's last run, as public.job_runs keeps it (netlify/functions/lib/jobhealth.mjs). */
 export interface JobRecord {

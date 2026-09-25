@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test'
-import { expect, stubAssistant, test, type App } from './fixtures'
+import { expect, inLocalCopy, stubAssistant, test, type App } from './fixtures'
 
 /** Keep → Kitchen → This week: tonight's dinner as a new recipe, by name, through the meal picker. */
 async function planTonight(page: Page, app: App, dish: string) {
@@ -62,4 +62,68 @@ test('✨ Fill in drafts a named recipe, and the week’s grocery list is built 
   for (const line of ['8 tortillas', '1 lb ground beef', '1 cup cheddar']) {
     await expect(page.getByRole('listitem').filter({ hasText: line })).toBeVisible()
   }
+})
+
+/**
+ * Settings → Data → Import a file: records as a Drafter export holds them,
+ * merged into this device's own — the way in for a record only the server
+ * writes, such as a recipe's overnight draft. Waits for the device's own copy
+ * to hold them, and opens the planner again.
+ */
+async function importRecords(page: Page, app: App, items: Record<string, unknown>[], mark: string) {
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await page.locator('input[type="file"][accept=".json,application/json"]').setInputFiles({ name: 'drafter.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify({ version: 3, items })) })
+  await expect(page.getByText(`Imported: ${items.length} new, 0 updated, 0 unchanged.`)).toBeAttached()
+  await expect.poll(() => inLocalCopy(page, mark)).toBe(true)
+  await app.open()
+}
+
+test('a draft made overnight waits in Fill them in: on screen at once, and Save puts it into the recipe', async ({ page, app }) => {
+  // no assistant call: any would fail, and be counted
+  const ai = await stubAssistant(page, [])
+  await app.open()
+  const at = new Date().toISOString()
+  await importRecords(
+    page,
+    app,
+    [
+      { kind: 'recipe', id: 'e2e-tacos', name: 'Tacos', ingredients: [], tags: [], createdAt: at, updatedAt: at },
+      {
+        kind: 'recipedraft',
+        id: 'recipedraft~e2e-tacos',
+        recipeId: 'e2e-tacos',
+        servings: 4,
+        ingredients: [
+          { name: 'tortillas', qty: 8 },
+          { name: 'ground beef', qty: 1, unit: 'lb' },
+        ],
+        steps: ['Brown the beef.', 'Warm the tortillas.'],
+        draftedAt: at,
+        model: 'nvidia/nemotron-3-super-120b-a12b',
+        createdAt: at,
+        updatedAt: at,
+      },
+    ],
+    'recipedraft~e2e-tacos',
+  )
+
+  await app.go('Keep')
+  await page.getByRole('tab', { name: 'Kitchen' }).click()
+  await page.getByRole('button', { name: 'Recipes', exact: true }).click()
+  await expect(page.getByText('1 recipe has no ingredients — the grocery list can’t use it.')).toBeVisible()
+  await page.getByRole('button', { name: 'Fill it in · 1 ready' }).click()
+  const sheet = page.getByRole('dialog', { name: 'Fill in recipes' })
+  await expect(sheet).toContainText('Drafted ahead of time — nothing is saved until you tap Save.')
+  await expect(sheet.getByText('8 tortillas')).toBeVisible()
+  await sheet.getByRole('button', { name: 'Save', exact: true }).click()
+  await expect(sheet).toContainText('1 recipe filled in.')
+  await sheet.getByRole('button', { name: 'Done', exact: true }).click()
+  await expect(sheet).toBeHidden()
+
+  // the recipe has them now, and nothing is left to fill in
+  await expect(page.getByText(/no ingredients — the grocery list/)).toHaveCount(0)
+  await page.getByRole('listitem').filter({ hasText: 'Tacos' }).getByRole('button', { name: 'Tacos', exact: true }).click()
+  const cook = page.getByRole('dialog', { name: 'Tacos' })
+  await expect(cook.getByText('1 lb ground beef')).toBeVisible()
+  expect(ai.asked).toEqual([])
 })

@@ -353,9 +353,10 @@ export function pullSince(cursor: string | null): string | null {
  * A purged tombstone has no content left to restore. A snooze and a chat turn
  * are states rather than records — nobody came here to put a nudge back off —
  * and a notice is a message about a record, not one: it lives in the hub on
- * Home, and a deleted one is gone.
+ * Home, and a deleted one is gone. A recipe draft is the same: saved into its
+ * recipe or cleared away, it has done its work.
  */
-export const inTrash = (i: Item): boolean => !!i.deletedAt && !i.purged && i.kind !== 'snooze' && i.kind !== 'chat' && i.kind !== 'notice'
+export const inTrash = (i: Item): boolean => !!i.deletedAt && !i.purged && i.kind !== 'snooze' && i.kind !== 'chat' && i.kind !== 'notice' && i.kind !== 'recipedraft'
 
 /**
  * The one toast for a record just moved to the Trash, whatever it is, beside

@@ -10,6 +10,7 @@ import {
   Place,
   PlaceCategory,
   Recipe,
+  RecipeDraftRecord,
   RecipeIngredient,
 } from '../types'
 import { newerStamp } from '../itemops'
@@ -59,7 +60,7 @@ import { favouritesRotation, rotationIdeas } from '../../shared/weekplan.mts'
 import { weekDayKeys } from '../../shared/weeks.mts'
 import type { ReadRecipe } from '../ai'
 import { safeHttpUrl } from '../links'
-import { fillRunDone, fillRunWithDraft, newFillRun, recipeWithDraft, splitDraft } from '../recipefill'
+import { draftCleared, draftsBack, fillButtonLabel, fillPlan, fillRunDone, fillRunWithDraft, newFillRun, recipeWithDraft, splitDraft } from '../recipefill'
 import type { DraftIngredient, DraftSplit, FillRun, RecipeDraft } from '../recipefill'
 import { useDayKey } from '../useDayKey'
 import { haptic, openExternal } from '../native'
@@ -197,6 +198,8 @@ function storedRecipeView(): RecipeView {
 
 /** Nobody to cook with: outside a household, and the default. */
 const NO_MEMBERS: readonly KitchenMember[] = []
+/** No drafts made ahead of time: outside a store, and the default. */
+const NO_DRAFTS: readonly RecipeDraftRecord[] = []
 
 interface Props {
   /**
@@ -212,11 +215,13 @@ interface Props {
   /** The household's members, for who's cooking a shared dish: none outside a household. */
   members?: readonly KitchenMember[]
   recipes: Recipe[]
+  /** Drafts made ahead of time for recipes with no ingredients (v3.35): Fill them in shows a waiting one at once. */
+  recipeDrafts?: readonly RecipeDraftRecord[]
   meals: Meal[]
   groceries: GroceryList[]
   /** Where a bought meal can come from; eating there counts as an outing. */
   places: Place[]
-  onSave(item: Recipe | Meal | GroceryList): void
+  onSave(item: Recipe | Meal | GroceryList | RecipeDraftRecord): void
   onDelete(id: string): void
   /** Plan or clear a meal. Owned by Planner so the grocery rebuild happens once. */
   onSaveMeal(m: Meal): void
@@ -243,7 +248,7 @@ interface Props {
   onOpenDayConsumed?(): void
 }
 
-export function Kitchen({ myId = null, nameOf, inHousehold, members = NO_MEMBERS, recipes, meals, groceries, places, onSave, onDelete, onSaveMeal, onClearMeal, onCreatePlace, onCreateRecipe, openRecipe, onOpenRecipeConsumed, tasks, entries, feedEvents, onToast, openTab, onOpenTabConsumed, openDay, onOpenDayConsumed }: Props) {
+export function Kitchen({ myId = null, nameOf, inHousehold, members = NO_MEMBERS, recipes, recipeDrafts = NO_DRAFTS, meals, groceries, places, onSave, onDelete, onSaveMeal, onClearMeal, onCreatePlace, onCreateRecipe, openRecipe, onOpenRecipeConsumed, tasks, entries, feedEvents, onToast, openTab, onOpenTabConsumed, openDay, onOpenDayConsumed }: Props) {
   // the segment last chosen, unless a way in names one for this visit
   const [seg, setSeg] = useState<KitchenTab>(() => openTab ?? storedKitchenTab())
   const [recipeView, setRecipeView] = useState<RecipeView>(storedRecipeView)
@@ -307,6 +312,8 @@ export function Kitchen({ myId = null, nameOf, inHousehold, members = NO_MEMBERS
   const latelyCount = useMemo(() => notLately(recipes, cooked).length, [recipes, cooked])
   // recipes with nothing to shop for, the ones worth filling in first at the front
   const bare = useMemo(() => fillQueue(recipes, cooked), [recipes, cooked])
+  // …the ones with a draft waiting first, and none a member skipped until they are brought back
+  const fill = useMemo(() => fillPlan(bare, recipeDrafts), [bare, recipeDrafts])
   const includeChips = useMemo(() => recipeIncludeChips(recipes), [recipes])
   const activeInclude = include && includeChips.some(c => c.label === include) ? include : null
 
@@ -532,8 +539,16 @@ export function Kitchen({ myId = null, nameOf, inHousehold, members = NO_MEMBERS
           {bare.length > 0 && !q.trim() && (
             <div className="kitchen-gap" role="status">
               <p>{bareRecipesLine(bare.length)}</p>
-              <button type="button" className="btn" onClick={() => startFill(bare)}>
-                {bare.length === 1 ? 'Fill it in' : 'Fill them in'}
+              <button
+                type="button"
+                className="btn"
+                onClick={() => {
+                  // only skipped ones left: brought back, and gone through
+                  if (!fill.queue.length) for (const row of draftsBack(recipeDrafts, fill.skipped.map(r => r.id))) onSave(row)
+                  startFill(fill.queue.length ? fill.queue : fill.skipped)
+                }}
+              >
+                {fillButtonLabel(fill)}
               </button>
             </div>
           )}
@@ -764,6 +779,9 @@ export function Kitchen({ myId = null, nameOf, inHousehold, members = NO_MEMBERS
         <RecipeFillFlow
           run={fillRun}
           recipes={recipes}
+          waiting={recipeDrafts}
+          onDraftRow={onSave}
+          myId={myId}
           onDraft={(id, draft) => setFillRun(run => run && fillRunWithDraft(run, id, draft))}
           onSave={saveFill}
           onEdit={(recipe, draft) => setEditing({ recipe, from: 'fill', draft })}
@@ -782,7 +800,9 @@ export function Kitchen({ myId = null, nameOf, inHousehold, members = NO_MEMBERS
           onSave={r => {
             persistRecipe(r)
             setEditing(null)
-            // back where Edit was pressed, showing what was saved
+            // back where Edit was pressed, showing what was saved; the draft that waited for it has done its work
+            const cleared = editing.from === 'fill' ? draftCleared(recipeDrafts, r.id) : null
+            if (cleared) onSave(cleared)
             if (editing.from === 'fill') setFillRun(run => run && fillRunDone(run, r.id, 'saved'))
             else if (editing.from === 'side') setCookingSide(r)
             else if (editing.from === 'cook') setCooking(c => (c ? { ...c, recipe: r } : { recipe: r }))

@@ -14,6 +14,8 @@ export function KitchenScreen({ p }: { p: PlannerCtx }) {
       // who's cooking a shared dish: J or M on its card and in the picker
       members={p.inHousehold ? (household.info?.members ?? []) : []}
       recipes={store.recipes}
+      // drafts made overnight for the bare ones: Fill them in shows a waiting one at once
+      recipeDrafts={store.recipeDrafts}
       meals={store.meals}
       groceries={store.groceries}
       places={store.places}

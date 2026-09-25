@@ -38,13 +38,23 @@
 // never reads the notice their housemate got, and neither does the backup,
 // the digest or an assistant working for anyone else.
 //
+// v3.35 adds 'recipedraft': a recipe's draft, prepared overnight and waiting
+// for someone to tap Save (src/types.ts RecipeDraftRecord). It is read exactly
+// as a recipe is — the household's by kind, neither personal nor decided per
+// record — because it is a proposal FOR the recipe: whoever can read the
+// recipe, and so fill it in, must see the draft waiting for it, or the other
+// member would find a recipe "ready" on one phone and bare on the other. The
+// nightly job writes each one as the recipe's own owner (lib/writeas.mjs), so
+// its reach is the recipe's. Nothing in it is anyone's own words but the
+// recipe's, which the household already reads.
+//
 // The app imports these (KNOWN_KINDS in src/schema.ts, PERSONAL_KINDS in
 // src/store.ts); the bot edge function cannot, and mcp.test.ts holds its copy.
 
 import { isRecord } from './domain.mts'
 
 /** The sync_posts allowlist: every kind the server stores. */
-export const SYNC_KINDS: ReadonlySet<string> = new Set(['task', 'project', 'calendar', 'person', 'place', 'review', 'template', 'recipe', 'meal', 'grocery', 'journal', 'event', 'habit', 'routine', 'note', 'garment', 'outfit', 'wear', 'snooze', 'message', 'chat', 'account', 'notice'])
+export const SYNC_KINDS: ReadonlySet<string> = new Set(['task', 'project', 'calendar', 'person', 'place', 'review', 'template', 'recipe', 'meal', 'grocery', 'journal', 'event', 'habit', 'routine', 'note', 'garment', 'outfit', 'wear', 'snooze', 'message', 'chat', 'account', 'notice', 'recipedraft'])
 
 /** Kinds only their owner may read, even inside a household. */
 export const PERSONAL_KINDS: ReadonlySet<string> = new Set(['journal', 'review', 'calendar', 'habit', 'routine', 'garment', 'outfit', 'wear', 'snooze', 'chat', 'notice'])

@@ -500,7 +500,7 @@ function brokenOff(err, late) {
  * @param {import('./ai.mjs').CompletionInput & { keyName?: import('./ai.mjs').NvidiaKeyName, model?: string | null, stream?: boolean }} input
  * @returns {Promise<{ model: string | null, result: import('./ai.mjs').Attempted }>}
  */
-async function nvidiaOnKey({ system, prompt, maxTokens, json = false, reasoning, keyName = nvidiaKeyOrder()[0] ?? 'NVIDIA_API_KEY', model: only = null, deadline = Date.now() + AI_BUDGET_MS, stream = false }) {
+async function nvidiaOnKey({ system, prompt, maxTokens, json = false, reasoning, keyName = nvidiaKeyOrder()[0] ?? 'NVIDIA_API_KEY', model: only = null, deadline = Date.now() + AI_BUDGET_MS, stream = false, onModel }) {
   // an NVIDIA key's name, never another variable
   const apiKey = NVIDIA_KEY_NAME.test(keyName) ? process.env[keyName] : undefined
   const messages = []
@@ -566,6 +566,8 @@ async function nvidiaOnKey({ system, prompt, maxTokens, json = false, reasoning,
       // the thinking in its own field has already kept it out of the answer,
       // and one that does not is caught by stripThinking or by the reader.
       const text = contentText(attempt.data?.choices?.[0]?.message?.content)
+      // who answered, for a caller that keeps it with what it wrote (the nightly recipe drafts)
+      onModel?.(model)
       return { model, result: { text: stripThinking(text), provider: 'nvidia' } }
     }
     if (attempt.status === 404 || ((attempt.status === 400 || attempt.status === 422) && modelTrouble(attempt.message))) {
@@ -636,7 +638,7 @@ export function anthropicRequest({ system, prompt, maxTokens, json = false, mode
  * @param {import('./ai.mjs').CompletionInput} input
  * @returns {Promise<import('./ai.mjs').Completion>}
  */
-export async function completeAnthropic({ system, prompt, maxTokens, json = false, deadline = Date.now() + AI_BUDGET_MS }) {
+export async function completeAnthropic({ system, prompt, maxTokens, json = false, deadline = Date.now() + AI_BUDGET_MS, onModel }) {
   const workspaceId = process.env.ANTHROPIC_WORKSPACE_ID
   const anthropic = new Anthropic(workspaceId ? { defaultHeaders: { 'anthropic-workspace-id': workspaceId } } : {})
   const request = anthropicRequest({
@@ -658,6 +660,7 @@ export async function completeAnthropic({ system, prompt, maxTokens, json = fals
     .filter(block => block.type === 'text')
     .map(block => block.text)
     .join('')
+  onModel?.(response.model || request.model)
   return { text, provider: 'anthropic' }
 }
 
@@ -740,7 +743,7 @@ async function nvidiaOnKeys(input, keys, until) {
  * @param {import('./ai.mjs').CompletionInput} input
  * @returns {Promise<import('./ai.mjs').Completion>}
  */
-export async function complete({ system = '', prompt, maxTokens = 2048, json = false, reasoning, background = false, startedAt, deadline }) {
+export async function complete({ system = '', prompt, maxTokens = 2048, json = false, reasoning, background = false, startedAt, deadline, onModel }) {
   const primary = resolveProvider()
   if (!primary) {
     return {
@@ -750,7 +753,7 @@ export async function complete({ system = '', prompt, maxTokens = 2048, json = f
   }
 
   const until = deadlineOf({ deadline, startedAt, background })
-  const input = { system, prompt, maxTokens, json, reasoning, deadline: until }
+  const input = { system, prompt, maxTokens, json, reasoning, deadline: until, onModel }
   if (primary === 'anthropic') return attempt(completeAnthropic, input)
   // asked without `stream`, never an answer on its way
   return /** @type {Promise<import('./ai.mjs').Completion>} */ (nvidiaOnKeys(input, nvidiaKeyOrder({ background }), until))

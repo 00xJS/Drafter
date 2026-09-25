@@ -17,6 +17,8 @@ export interface CompletionInput {
    * is held to no deadline here: it stops waiting at one of its own.
    */
   deadline?: number
+  /** Told the model that wrote a whole answer, once it has: for a caller that keeps it with what it wrote. */
+  onModel?(model: string): void
 }
 
 /** How long one completion may take in all, from when its request began (ms). */

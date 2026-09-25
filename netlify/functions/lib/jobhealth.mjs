@@ -15,11 +15,11 @@
 export const JOBS = ['backup', 'digest']
 /**
  * The background function's jobs (ai-jobs-background.mjs): Sunday's review
- * draft and email-in's triage. Recorded the same way and shown in Admin →
- * Data once they have run; no alarm reads them, since they run when asked, not
- * on a schedule.
+ * draft, email-in's triage and the nightly recipe drafts. Recorded the same
+ * way and shown in Admin → Data once they have run; no alarm reads them, since
+ * they run when asked, not on a schedule.
  */
-export const BACKGROUND_JOBS = ['sunday-draft', 'email-triage']
+export const BACKGROUND_JOBS = ['sunday-draft', 'email-triage', 'recipe-drafts']
 /** Failure messages kept per run; the count says how many there were. */
 export const FAILURES_KEPT = 5
 const FAILURE_MAX = 300
@@ -75,7 +75,7 @@ function toRow(job, record) {
   }
 }
 
-/** Every job's last run: { backup, digest, 'sunday-draft', 'email-triage' }, each null until it has run once. Throws when the table cannot be read. */
+/** Every job's last run: { backup, digest, 'sunday-draft', 'email-triage', 'recipe-drafts' }, each null until it has run once. Throws when the table cannot be read. */
 export async function readJobs(rest) {
   const rows = await rest('job_runs?select=*')
   const names = [...JOBS, ...BACKGROUND_JOBS]

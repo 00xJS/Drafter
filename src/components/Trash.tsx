@@ -30,6 +30,8 @@ function kindLabel(kind: Item['kind']): string {
       return 'Place'
     case 'recipe':
       return 'Recipe'
+    case 'recipedraft':
+      return 'Recipe draft'
     case 'meal':
       return 'Meal'
     case 'grocery':
@@ -99,7 +101,9 @@ export function Trash({ items, projectMap, onRestore, onPurge, onClose }: Props)
                             ? i.body || 'A message'
                             : i.kind === 'chat'
                               ? i.text || 'A chat turn'
-                              : i.name
+                              : i.kind === 'recipedraft'
+                                ? 'A recipe draft'
+                                : i.name
   return (
     <Modal onClose={onClose}>
       <ModalHead title="Trash" />

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
-import { Account, CalendarEntry, CalendarSource, ChatTurn, Garment, GroceryList, Habit, Item, JournalEntry, Meal, Message, Note, Notice, Outfit, Person, Place, Project, Recipe, Review, Routine, Snooze, Task, TaskStatus, Template, Wear } from './types'
+import { Account, CalendarEntry, CalendarSource, ChatTurn, Garment, GroceryList, Habit, Item, JournalEntry, Meal, Message, Note, Notice, Outfit, Person, Place, Project, Recipe, RecipeDraftRecord, Review, Routine, Snooze, Task, TaskStatus, Template, Wear } from './types'
 import { Capacitor } from '@capacitor/core'
 import { haptic, onAppPause } from './native'
 import { syncNow } from './sync'
@@ -58,6 +58,8 @@ export interface Store {
   /** Places you track outings at. */
   places: Place[]
   recipes: Recipe[]
+  /** Drafts made ahead of time for recipes with no ingredients, waiting for Save (v3.35): the household's, live only. */
+  recipeDrafts: RecipeDraftRecord[]
   meals: Meal[]
   /** Calendar entries you wrote yourself (start AND end), oldest first. */
   events: CalendarEntry[]

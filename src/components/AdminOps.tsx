@@ -11,10 +11,10 @@ import { ConfirmButton } from './ConfirmButton'
 
 const when = (iso: string | null | undefined) => (iso ? new Date(iso).toLocaleString() : 'never')
 
-const JOB_TITLES: Record<JobName | BackgroundJobName, string> = { backup: 'Nightly backup', digest: 'Hourly digest', 'sunday-draft': 'Sunday’s draft', 'email-triage': 'Email triage' }
+const JOB_TITLES: Record<JobName | BackgroundJobName, string> = { backup: 'Nightly backup', digest: 'Hourly digest', 'sunday-draft': 'Sunday’s draft', 'email-triage': 'Email triage', 'recipe-drafts': 'Recipe drafts' }
 
 /** What a background job's counts say, in its own words; the rest as they are named. */
-const BACKGROUND_WORDS: Record<string, string> = { asked: 'asked', drafted: 'drafted', skipped: 'skipped', noAnswer: 'no answer', triaged: 'triaged', unchanged: 'nothing to change', edited: 'edited first', gone: 'gone', noanswer: 'no answer', failed: 'failed' }
+const BACKGROUND_WORDS: Record<string, string> = { asked: 'asked', drafted: 'drafted', skipped: 'skipped', noAnswer: 'no answer', triaged: 'triaged', unchanged: 'nothing to change', edited: 'edited first', gone: 'gone', noanswer: 'no answer', failed: 'failed', steppedAside: 'stepped aside', removed: 'removed', waiting: 'left for another night' }
 
 function Line({ label, value, tone }: { label: ReactNode; value: ReactNode; tone?: 'ok' | 'warn' }) {
   return (
@@ -30,7 +30,7 @@ export function jobSummary(job: JobName | BackgroundJobName, r: JobRecord): stri
   const n = (k: string) => (typeof r.counts[k] === 'number' ? (r.counts[k] as number) : null)
   const plural = (k: string, one: string) => (n(k) === null ? null : `${n(k)!.toLocaleString('en-US')} ${one}${n(k) === 1 ? '' : 's'}`)
   // the background jobs: each count that is not nought, in its own words ("drafted 1 · no answer 1", "triaged 1")
-  if (job === 'sunday-draft' || job === 'email-triage')
+  if (job === 'sunday-draft' || job === 'email-triage' || job === 'recipe-drafts')
     return Object.keys(r.counts)
       .filter(k => n(k))
       .map(k => `${BACKGROUND_WORDS[k] ?? k} ${n(k)}`)
@@ -92,6 +92,7 @@ export function JobsCard({ health, now }: { health: OpsHealth | null; now: Date 
           {/* the background function's jobs, once they have run: their last run, and what failed */}
           {health.jobs?.['sunday-draft'] && <JobLines job="sunday-draft" record={health.jobs['sunday-draft']} />}
           {health.jobs?.['email-triage'] && <JobLines job="email-triage" record={health.jobs['email-triage']} />}
+          {health.jobs?.['recipe-drafts'] && <JobLines job="recipe-drafts" record={health.jobs['recipe-drafts']} />}
         </ul>
       )}
       {health && !health.jobs && <p className="field-hint">The jobs could not be read. Their records start once the v3.29 migration is applied.</p>}
