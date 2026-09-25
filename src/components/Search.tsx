@@ -70,8 +70,13 @@ type Hit =
   | { kind: 'command'; score: number; command: Command }
   | { kind: 'ask'; score: number; question: string }
 
+// the lists left out, as the same empty list every time, so the index is not rebuilt for them
+const NO_PLACES: Place[] = []
+const NO_JOURNAL: JournalEntry[] = []
+const NO_NOTES: Note[] = []
 const NO_GARMENTS: Garment[] = []
 const NO_OUTFITS: Outfit[] = []
+const NO_COMMANDS: Command[] = []
 
 /**
  * Where the "Ask Drafter" row goes: first when the query reads as a question
@@ -87,33 +92,81 @@ export function withAskRow<H extends { kind: string }>(hits: H[], ask: H, query:
   return out
 }
 
-function score(haystack: string, needle: string, weight: number): number {
-  const h = haystack.toLowerCase()
-  if (!h) return 0
-  const i = h.indexOf(needle)
+/*
+ * The palette searches as you type, so a keystroke must not redo what only
+ * changes with the lists: every note's and project pad's HTML read as text
+ * (a DOMParser each), and every title, description, tag, comment and step
+ * lowercased. That is the index below, built when the lists change; a
+ * keystroke only looks the needle up in it.
+ */
+
+/** A haystack as shown, and lowercased as searched. */
+interface Hay {
+  raw: string
+  low: string
+}
+const hay = (raw: string): Hay => ({ raw, low: raw.toLowerCase() })
+
+/** How well `needle` (lowercased) matches a lowercased haystack: earlier and whole-word matches rank higher. */
+function scoreIn(low: string, needle: string, weight: number): number {
+  if (!low) return 0
+  const i = low.indexOf(needle)
   if (i === -1) return 0
-  // earlier and whole-word matches rank higher
-  const wordStart = i === 0 || /\s/.test(h[i - 1])
+  const wordStart = i === 0 || /\s/.test(low[i - 1])
   return weight * (wordStart ? 2 : 1) + (i === 0 ? weight : 0)
 }
 
+/** The same, for a haystack not in the index (the commands, a handful). */
+const score = (haystack: string, needle: string, weight: number): number => scoreIn(haystack.toLowerCase(), needle, weight)
+
 const OPEN = new Set(['wishlist', 'todo', 'doing', 'blocked'])
+
+interface NoteHay {
+  note: Note
+  title: Hay
+  text: Hay
+}
+
+const indexNotes = (notes: readonly Note[]): NoteHay[] =>
+  notes.filter(n => !n.deletedAt).map(n => ({ note: n, title: hay(n.title || 'Untitled note'), text: hay(htmlToText(n.body).replace(/\s+/g, ' ').trim()) }))
+
+function noteHitsIn(index: readonly NoteHay[], needle: string): { score: number; note: Note; where: string }[] {
+  const out: { score: number; note: Note; where: string }[] = []
+  for (const { note, title, text } of index) {
+    const s = scoreIn(title.low, needle, 11) + scoreIn(text.low, needle, 3)
+    if (s <= 0) continue
+    const i = text.low.indexOf(needle)
+    out.push({ score: s, note, where: scoreIn(title.low, needle, 1) ? '' : excerpt(text.raw.slice(Math.max(0, i - 30)), 90) })
+  }
+  return out
+}
 
 /**
  * The notes matching `needle` (lowercased): a title match ranks like a place's
  * name, a match in the text like one in a project's notes, and a text match
  * says where it was.
  */
-export function noteHits(notes: Note[], needle: string): { score: number; note: Note; where: string }[] {
-  const out: { score: number; note: Note; where: string }[] = []
-  for (const n of notes) {
-    if (n.deletedAt) continue
-    const title = n.title || 'Untitled note'
-    const text = htmlToText(n.body).replace(/\s+/g, ' ').trim()
-    const s = score(title, needle, 11) + score(text, needle, 3)
+export const noteHits = (notes: Note[], needle: string) => noteHitsIn(indexNotes(notes), needle)
+
+interface PlaceHay {
+  place: Place
+  name: string
+  aliases: Hay[]
+  address: Hay
+  notes: string
+}
+
+const indexPlaces = (places: readonly Place[]): PlaceHay[] =>
+  places.filter(p => !p.deletedAt).map(p => ({ place: p, name: p.name.toLowerCase(), aliases: (p.aliases ?? []).map(hay), address: hay(p.address ?? ''), notes: (p.notes ?? '').toLowerCase() }))
+
+function placeHitsIn(index: readonly PlaceHay[], needle: string): { score: number; place: Place; where: string }[] {
+  const out: { score: number; place: Place; where: string }[] = []
+  for (const { place, name, aliases, address, notes } of index) {
+    const alias = aliases.find(a => a.low.includes(needle))
+    const s = scoreIn(name, needle, 12) + (alias ? scoreIn(alias.low, needle, 10) : 0) + scoreIn(address.low, needle, 5) + scoreIn(notes, needle, 3)
     if (s <= 0) continue
-    const i = text.toLowerCase().indexOf(needle)
-    out.push({ score: s, note: n, where: score(title, needle, 1) ? '' : excerpt(text.slice(Math.max(0, i - 30)), 90) })
+    const where = scoreIn(name, needle, 1) ? '' : alias ? `also ${alias.raw}` : scoreIn(address.low, needle, 1) ? excerpt(address.raw, 70) : 'in notes'
+    out.push({ score: s, place, where })
   }
   return out
 }
@@ -123,16 +176,43 @@ export function noteHits(notes: Note[], needle: string): { score: number; note: 
  * name it goes by, its address or its notes, a hit that was not the name
  * saying which it was.
  */
-export function placeHits(places: Place[], needle: string): { score: number; place: Place; where: string }[] {
-  const out: { score: number; place: Place; where: string }[] = []
-  for (const p of places) {
-    if (p.deletedAt) continue
-    const alias = (p.aliases ?? []).find(a => a.toLowerCase().includes(needle))
-    const address = p.address ?? ''
-    const s = score(p.name, needle, 12) + (alias ? score(alias, needle, 10) : 0) + score(address, needle, 5) + score(p.notes ?? '', needle, 3)
+export const placeHits = (places: Place[], needle: string) => placeHitsIn(indexPlaces(places), needle)
+
+interface WardrobeHay {
+  garments: { garment: Garment; name: string; tags: string[]; tagLows: string[]; tagsLow: string }[]
+  outfits: { outfit: Outfit; name: string; label: string; labelLow: string; hasPieces: boolean }[]
+}
+
+function indexWardrobe(garments: readonly Garment[], outfits: readonly Outfit[]): WardrobeHay {
+  const byId = liveById(garments as Garment[])
+  return {
+    garments: garments
+      .filter(g => !g.deletedAt)
+      .map(g => {
+        const tags = pieceTags(g)
+        return { garment: g, name: g.name.toLowerCase(), tags, tagLows: tags.map(t => t.toLowerCase()), tagsLow: tags.join(' ').toLowerCase() }
+      }),
+    outfits: outfits
+      .filter(o => !o.deletedAt)
+      .map(o => {
+        const label = o.name || outfitLabel(o.garmentIds, byId)
+        return { outfit: o, name: (o.name ?? '').toLowerCase(), label, labelLow: label.toLowerCase(), hasPieces: orderPieces(o.garmentIds, byId).length > 0 }
+      }),
+  }
+}
+
+function wardrobeHitsIn(index: WardrobeHay, needle: string, { pieces = true }: { pieces?: boolean } = {}): WardrobeHit[] {
+  const out: WardrobeHit[] = []
+  for (const g of pieces ? index.garments : []) {
+    const s = scoreIn(g.name, needle, 12) + scoreIn(g.tagsLow, needle, 6)
     if (s <= 0) continue
-    const where = score(p.name, needle, 1) ? '' : alias ? `also ${alias}` : score(address, needle, 1) ? excerpt(address, 70) : 'in notes'
-    out.push({ score: s, place: p, where })
+    const tag = scoreIn(g.name, needle, 1) ? undefined : g.tags.find((_, i) => g.tagLows[i].includes(needle))
+    out.push({ kind: 'garment', score: s - (g.garment.archivedAt ? 3 : 0), garment: g.garment, where: tag ? `tagged ${tag}` : '' })
+  }
+  for (const o of index.outfits) {
+    // "Pieces since deleted" says what is left; it is not a name to find it by
+    const s = o.outfit.name ? scoreIn(o.name, needle, 11) : o.hasPieces ? scoreIn(o.labelLow, needle, 5) : 0
+    if (s > 0) out.push({ kind: 'outfit', score: s, outfit: o.outfit, label: o.label })
   }
   return out
 }
@@ -146,24 +226,99 @@ export function placeHits(places: Place[], needle: string): { score: number; pla
  * no name to be found by. Nothing in Trash shows. With `pieces` off a piece
  * is no hit of its own, but it still names the outfits it is in.
  */
-export function wardrobeHits(garments: Garment[], outfits: Outfit[], needle: string, { pieces = true }: { pieces?: boolean } = {}): WardrobeHit[] {
-  const out: WardrobeHit[] = []
-  for (const g of pieces ? garments : []) {
-    if (g.deletedAt) continue
-    const tags = pieceTags(g)
-    const s = score(g.name, needle, 12) + score(tags.join(' '), needle, 6)
-    if (s <= 0) continue
-    const tag = score(g.name, needle, 1) ? undefined : tags.find(t => t.toLowerCase().includes(needle))
-    out.push({ kind: 'garment', score: s - (g.archivedAt ? 3 : 0), garment: g, where: tag ? `tagged ${tag}` : '' })
+export const wardrobeHits = (garments: Garment[], outfits: Outfit[], needle: string, opts: { pieces?: boolean } = {}): WardrobeHit[] =>
+  wardrobeHitsIn(indexWardrobe(garments, outfits), needle, opts)
+
+interface TaskHay {
+  task: Task
+  title: string
+  description: Hay
+  tags: string
+  comments: string
+  checklist: string
+}
+
+const lower = (texts: readonly string[]) => texts.join(' ').toLowerCase()
+
+const indexTasks = (tasks: readonly Task[]): { entries: TaskHay[]; titles: Set<string> } => ({
+  entries: tasks.map(t => ({
+    task: t,
+    title: t.title.toLowerCase(),
+    description: hay(t.description),
+    tags: lower(t.tags),
+    comments: lower((t.comments ?? []).map(c => c.body)),
+    checklist: lower((t.checklist ?? []).map(c => c.text)),
+  })),
+  // every title as a query would equal it: an exact one puts "Create task" below the hits
+  titles: new Set(tasks.map(t => t.title.trim().toLowerCase())),
+})
+
+const indexProjects = (projects: readonly Project[]) =>
+  projects.map(p => ({ project: p, name: p.name.toLowerCase(), description: hay(p.description ?? ''), notes: (p.notesHtml ? htmlToText(p.notesHtml) : (p.notes ?? '')).toLowerCase() }))
+
+const indexPeople = (people: readonly Person[]) => people.map(p => ({ person: p, name: p.name.toLowerCase(), notes: (p.notes ?? '').toLowerCase() }))
+
+const indexJournal = (journal: readonly JournalEntry[]) => journal.map(e => ({ entry: e, body: hay(e.body) }))
+
+/** Everything the palette finds things in, lowercased once: each list's part rebuilt when that list changes, and read by every keystroke. */
+export interface SearchIndex {
+  tasks: ReturnType<typeof indexTasks>
+  projects: ReturnType<typeof indexProjects>
+  people: ReturnType<typeof indexPeople>
+  places: PlaceHay[]
+  journal: ReturnType<typeof indexJournal>
+  notes: NoteHay[]
+  wardrobe: WardrobeHay
+}
+
+export const searchIndex = (lists: {
+  tasks: readonly Task[]
+  projects: readonly Project[]
+  people: readonly Person[]
+  places: readonly Place[]
+  journal: readonly JournalEntry[]
+  notes: readonly Note[]
+  garments: readonly Garment[]
+  outfits: readonly Outfit[]
+}): SearchIndex => ({
+  tasks: indexTasks(lists.tasks),
+  projects: indexProjects(lists.projects),
+  people: indexPeople(lists.people),
+  places: indexPlaces(lists.places),
+  journal: indexJournal(lists.journal),
+  notes: indexNotes(lists.notes),
+  wardrobe: indexWardrobe(lists.garments, lists.outfits),
+})
+
+/** The hits for `needle` (lowercased, not empty), best first as the caller sorts them. */
+function searchHits(index: SearchIndex, needle: string, { notes, pieces, outfits }: { notes: boolean; pieces: boolean; outfits: boolean }): Hit[] {
+  const out: Hit[] = []
+  for (const t of index.tasks.entries) {
+    const s = scoreIn(t.title, needle, 10) + scoreIn(t.description.low, needle, 4) + scoreIn(t.tags, needle, 6) + scoreIn(t.comments, needle, 3) + scoreIn(t.checklist, needle, 3)
+    if (s > 0) {
+      const where = scoreIn(t.title, needle, 1) ? '' : scoreIn(t.description.low, needle, 1) ? excerpt(t.description.raw, 70) : scoreIn(t.comments, needle, 1) ? 'in comments' : scoreIn(t.checklist, needle, 1) ? 'in checklist' : ''
+      out.push({ kind: 'task', score: s + (t.task.status === 'done' || t.task.status === 'canceled' ? -3 : 0), task: t.task, where })
+    }
   }
-  const byId = liveById(garments)
-  for (const o of outfits) {
-    if (o.deletedAt) continue
-    const label = o.name || outfitLabel(o.garmentIds, byId)
-    // "Pieces since deleted" says what is left; it is not a name to find it by
-    const s = o.name ? score(o.name, needle, 11) : orderPieces(o.garmentIds, byId).length > 0 ? score(label, needle, 5) : 0
-    if (s > 0) out.push({ kind: 'outfit', score: s, outfit: o, label })
+  for (const p of index.projects) {
+    const s = scoreIn(p.name, needle, 12) + scoreIn(p.description.low, needle, 4) + scoreIn(p.notes, needle, 3)
+    if (s > 0) out.push({ kind: 'project', score: s, project: p.project, where: scoreIn(p.name, needle, 1) ? '' : scoreIn(p.notes, needle, 1) ? 'in notes' : excerpt(p.description.raw, 70) })
   }
+  for (const p of index.people) {
+    const s = scoreIn(p.name, needle, 12) + scoreIn(p.notes, needle, 3)
+    if (s > 0) out.push({ kind: 'person', score: s, person: p.person, where: scoreIn(p.name, needle, 1) ? '' : 'in notes' })
+  }
+  for (const h of placeHitsIn(index.places, needle)) out.push({ kind: 'place', ...h })
+  for (const { entry, body } of index.journal) {
+    const s = scoreIn(body.low, needle, 5)
+    if (s > 0) {
+      const i = body.low.indexOf(needle)
+      out.push({ kind: 'journal', score: s, entry, where: excerpt(body.raw.slice(Math.max(0, i - 30)), 90) })
+    }
+  }
+  if (notes) for (const h of noteHitsIn(index.notes, needle)) out.push({ kind: 'note', ...h })
+  // the pieces always name an unnamed outfit; they are hits themselves only where they can open
+  if (pieces || outfits) out.push(...wardrobeHitsIn(index.wardrobe, needle, { pieces }))
   return out
 }
 
@@ -173,12 +328,12 @@ export function Search({
   tasks,
   projects,
   people,
-  places = [],
-  journal = [],
-  notes = [],
+  places = NO_PLACES,
+  journal = NO_JOURNAL,
+  notes = NO_NOTES,
   garments = NO_GARMENTS,
   outfits = NO_OUTFITS,
-  commands = [],
+  commands = NO_COMMANDS,
   onOpenTask,
   onOpenProject,
   onOpenPerson,
@@ -244,6 +399,18 @@ export function Search({
     else setMicNote('Dictation is not available here.')
   }
 
+  // what each list is searched by, each part built when its list changes and
+  // never on a keystroke; notes only where one can be opened, and outfits likewise
+  const noteList = canOpenNote ? notes : NO_NOTES
+  const outfitList = canOpenOutfit ? outfits : NO_OUTFITS
+  const taskHay = useMemo(() => indexTasks(tasks), [tasks])
+  const projectHay = useMemo(() => indexProjects(projects), [projects])
+  const peopleHay = useMemo(() => indexPeople(people), [people])
+  const placeHay = useMemo(() => indexPlaces(places), [places])
+  const journalHay = useMemo(() => indexJournal(journal), [journal])
+  const noteHay = useMemo(() => indexNotes(noteList), [noteList])
+  const wardrobeHay = useMemo(() => indexWardrobe(garments, outfitList), [garments, outfitList])
+
   const hits = useMemo<Hit[]>(() => {
     const needle = q.trim().toLowerCase()
     if (!needle) {
@@ -261,46 +428,15 @@ export function Search({
       const s = score(c.label, needle, 9) + score(c.keywords ?? '', needle, 6)
       if (s > 0) out.push({ kind: 'command', score: s, command: c })
     }
-    for (const t of tasks) {
-      const s =
-        score(t.title, needle, 10) +
-        score(t.description, needle, 4) +
-        score(t.tags.join(' '), needle, 6) +
-        score((t.comments ?? []).map(c => c.body).join(' '), needle, 3) +
-        score((t.checklist ?? []).map(c => c.text).join(' '), needle, 3)
-      if (s > 0) {
-        const where = score(t.title, needle, 1) ? '' : score(t.description, needle, 1) ? excerpt(t.description, 70) : score((t.comments ?? []).map(c => c.body).join(' '), needle, 1) ? 'in comments' : score((t.checklist ?? []).map(c => c.text).join(' '), needle, 1) ? 'in checklist' : ''
-        out.push({ kind: 'task', score: s + (t.status === 'done' || t.status === 'canceled' ? -3 : 0), task: t, where })
-      }
-    }
-    for (const p of projects) {
-      const notes = p.notesHtml ? htmlToText(p.notesHtml) : (p.notes ?? '')
-      const s = score(p.name, needle, 12) + score(p.description ?? '', needle, 4) + score(notes, needle, 3)
-      if (s > 0) out.push({ kind: 'project', score: s, project: p, where: score(p.name, needle, 1) ? '' : score(notes, needle, 1) ? 'in notes' : excerpt(p.description ?? '', 70) })
-    }
-    for (const p of people) {
-      const s = score(p.name, needle, 12) + score(p.notes ?? '', needle, 3)
-      if (s > 0) out.push({ kind: 'person', score: s, person: p, where: score(p.name, needle, 1) ? '' : 'in notes' })
-    }
-    for (const h of placeHits(places, needle)) out.push({ kind: 'place', ...h })
-    for (const e of journal) {
-      const s = score(e.body, needle, 5)
-      if (s > 0) {
-        const i = e.body.toLowerCase().indexOf(needle)
-        out.push({ kind: 'journal', score: s, entry: e, where: excerpt(e.body.slice(Math.max(0, i - 30)), 90) })
-      }
-    }
-    if (canOpenNote) for (const h of noteHits(notes, needle)) out.push({ kind: 'note', ...h })
-    // the pieces always name an unnamed outfit; they are hits themselves only where they can open
-    if (canOpenGarment || canOpenOutfit) out.push(...wardrobeHits(garments, canOpenOutfit ? outfits : NO_OUTFITS, needle, { pieces: canOpenGarment }))
+    const index: SearchIndex = { tasks: taskHay, projects: projectHay, people: peopleHay, places: placeHay, journal: journalHay, notes: noteHay, wardrobe: wardrobeHay }
+    out.push(...searchHits(index, needle, { notes: canOpenNote, pieces: canOpenGarment, outfits: canOpenOutfit }))
     out.sort((a, b) => b.score - a.score)
     const top = out.slice(0, 12)
     const createHit: Hit = { kind: 'create', score: -1, title: q.trim() }
-    const exactTaskTitle = tasks.some(t => t.title.trim().toLowerCase() === needle)
-    if (exactTaskTitle) top.push(createHit)
+    if (taskHay.titles.has(needle)) top.push(createHit)
     else top.unshift(createHit)
     return canAsk ? withAskRow<Hit>(top, { kind: 'ask', score: 0, question: q.trim() }, q) : top
-  }, [q, tasks, projects, people, places, journal, notes, garments, outfits, commands, canAsk, canOpenNote, canOpenGarment, canOpenOutfit])
+  }, [q, taskHay, projectHay, peopleHay, placeHay, journalHay, noteHay, wardrobeHay, tasks, commands, canAsk, canOpenNote, canOpenGarment, canOpenOutfit])
 
   // a click on the create row opens the editor; only Shift+Enter passes false
   const pick = (h: Hit, openEditor = true) => {
