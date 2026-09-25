@@ -4,30 +4,6 @@
 
 /* --- week view: seven day cards, stacked on a phone, a row of columns wide --- */
 
-.cal-weekday {
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface);
-  min-width: 0;
-  /* NOT overflow:hidden — that clipped the add-menu dropdown to a short,
-     event-less day so only its top rows showed. The header rounds its own top
-     corners instead, so the card still reads as clipped. */
-}
-
-.cal-weekday.today {
-  border-color: var(--accent);
-}
-
-.cal-weekday-head {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding-right: 6px;
-  background: var(--surface-2);
-  border-bottom: 1px solid var(--border);
-  border-radius: var(--radius) var(--radius) 0 0;
-}
-
 .cal-weekday-open {
   flex: 1;
   min-width: 0;
@@ -41,23 +17,6 @@
   border: none;
   color: inherit;
   text-align: left;
-}
-
-.cal-weekday-num {
-  /* a day number drawn to a fixed 24px circle, like .cal-daynum */
-  font-size: 15px;
-  font-weight: 700;
-  min-width: 24px;
-  height: 24px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-}
-
-.cal-weekday.today .cal-weekday-num {
-  background: var(--accent);
-  color: var(--on-accent);
 }
 
 .cal-weekday-add {
@@ -83,18 +42,6 @@
   background: none;
   color: inherit;
   text-align: left;
-}
-
-.cal-item:hover {
-  background: color-mix(in srgb, var(--accent) 6%, var(--surface));
-}
-
-.cal-item-main {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
 }
 
 .cal-item-title.done {
@@ -136,20 +83,6 @@
   padding: 24px max(16px, var(--safe-r)) 24px max(16px, var(--safe-l));
 }
 
-.cal-sheet-head {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 8px 10px;
-  border-bottom: 1px solid var(--border);
-}
-
-.cal-sheet-title {
-  flex: 1;
-  min-width: 0;
-  text-align: center;
-}
-
 .cal-sheet-title h2 {
   margin: 0;
   font-size: 1rem;
@@ -175,12 +108,6 @@
   padding: 6px 14px;
 }
 
-.cal-rows {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
 .cal-row-tap {
   flex: 1;
   min-width: 0;
@@ -196,15 +123,6 @@
   text-align: left;
 }
 
-.cal-row-main {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  padding: 2px 0;
-}
-
 .cal-row-action {
   flex: none;
   min-height: 44px;
@@ -214,19 +132,6 @@
 .cal-sheet-new {
   width: 100%;
   min-height: 44px;
-}
-
-/* the Day tab: the same day as the sheet, on the page */
-.cal-day {
-  display: flex;
-  flex-direction: column;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  overflow: hidden;
-}
-.cal-day .cal-sheet-body {
-  overflow: visible;
 }
 
 /* --- phones: one day card at a time, and a full-height day sheet --- */
@@ -240,15 +145,6 @@
   .cal-sheet-backdrop {
     padding: 0 var(--safe-r) 0 var(--safe-l);
     align-items: stretch;
-  }
-
-  /* clear of the status bar / Dynamic Island, like the other full sheets */
-  .cal-sheet-head {
-    padding-top: calc(8px + env(safe-area-inset-top));
-  }
-
-  .cal-sheet-body {
-    padding: 6px 12px;
   }
 }
 

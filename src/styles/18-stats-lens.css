@@ -47,12 +47,6 @@
    chart's "now" mark is the same colour drawn a step towards the text. The
    Kitchen's is the chart series itself, the colour its cooked meals have
    always been drawn in. */
-.ink-tasks {
-  --area-ink: var(--tone-blue);
-}
-.ink-money {
-  --area-ink: var(--tone-green);
-}
 .ink-people,
 .people-stats {
   --area-ink: var(--tone-violet);
@@ -69,9 +63,6 @@
 .ink-wardrobe,
 .wardrobe-stats {
   --area-ink: var(--tone-rose);
-}
-.ink-habits {
-  --area-ink: var(--tone-mint);
 }
 .ink-journal {
   --area-ink: var(--tone-amber);
@@ -94,12 +85,6 @@
 }
 
 /* ---------- This year: one card per area ---------- */
-
-.area-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
-  gap: 10px;
-}
 
 .area-card {
   display: flex;
@@ -294,30 +279,6 @@
 }
 
 /* ---------- the rows the lens's own segments draw ---------- */
-
-.lens-rows {
-  display: flex;
-  flex-direction: column;
-}
-
-/* the mood columns, one per step, so the shape of a month reads without a key */
-.mood-spread {
-  display: flex;
-  align-items: flex-end;
-  gap: 8px;
-  padding: 6px 0 0;
-  min-height: 92px;
-}
-
-.mood-spread > div {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 4px;
-  min-width: 0;
-}
 
 /* ---------- entry ----------
 

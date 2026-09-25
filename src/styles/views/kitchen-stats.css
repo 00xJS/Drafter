@@ -6,6 +6,65 @@
    themselves; the partial each came from is named above it. */
 
 /* ---------- from 05-stats-charts.css ---------- */
+.hit {
+  fill: transparent;
+  outline: none;
+}
+
+/* ---------- from 14-kitchen-today.css ---------- */
+/* a day's dinner under its date: its dish, where it was eaten, or 🥡 */
+.kitchen-cal-dish {
+  position: absolute;
+  inset: 12px 0 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-2);
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1;
+}
+.kitchen-month-bars .tick-label.now {
+  fill: var(--text-2);
+  font-weight: 700;
+}
+.kitchen-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.75rem;
+  color: var(--text-2);
+}
+/* the year's figures as a table, for a reader who wants them exact */
+.kitchen-by-month {
+  margin-top: 8px;
+}
+.kitchen-by-month td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+/* lunch and dinner: each a bar split by how it was had, a 2px gap of the card between the parts */
+.kitchen-shares {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.kitchen-share-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 0.8125rem;
+}
+
+/* ---------- from 05-stats-charts.css ---------- */
 .chart-table {
   width: 100%;
   border-collapse: collapse;

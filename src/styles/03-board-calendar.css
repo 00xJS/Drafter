@@ -18,14 +18,6 @@
   min-height: 220px;
 }
 
-.board-col-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 600;
-  padding: 2px 4px;
-}
-
 .board-count {
   margin-left: auto;
   color: var(--muted);
@@ -38,20 +30,6 @@
   flex-direction: column;
   gap: 8px;
   min-height: 40px;
-}
-
-.board-add {
-  border: none;
-  background: transparent;
-  color: var(--muted);
-  text-align: left;
-  padding: 6px 8px;
-  border-radius: 8px;
-}
-
-.board-add:hover {
-  background: var(--surface);
-  color: var(--text-2);
 }
 
 .card {
@@ -73,17 +51,6 @@
 .card:hover {
   border-color: var(--accent-ring);
   box-shadow: var(--shadow-md);
-}
-
-.card-title {
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.card-body {
-  color: var(--text-2);
-  font-size: 0.8125rem;
 }
 
 .card-meta {
@@ -124,30 +91,6 @@
   font-size: 0.75rem;
 }
 
-.cal-grid {
-  display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  /* no grid-auto-rows minimum here: the weekday header is a row of this grid
-     too, and a minimum would pad it into a blank band. The cells carry the
-     minimum (.cal-cell min-height), and a grid row is as tall as its tallest
-     cell, so a busy day still grows its whole row. */
-}
-
-.cal-head {
-  padding: 6px 8px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--text-2);
-}
-
-.cal-body {
-  border: 1px solid var(--border);
-  border-radius: 0 0 var(--radius) var(--radius);
-  overflow: hidden;
-  background: var(--border);
-  gap: 1px;
-}
-
 .cal-cell {
   background: var(--surface);
   /* a minimum, not a fixed height: the old 108px cut every third event and
@@ -165,30 +108,6 @@
 }
 .cal-cell > * {
   flex: none;
-}
-
-.cal-cell:hover {
-  background: color-mix(in srgb, var(--accent) 4%, var(--surface));
-}
-
-.cal-cell.out {
-  background: var(--bg);
-  color: var(--muted);
-}
-
-/* The month grid is fixed-height cells (88px on a phone), so its numbers and
-   pills are drawn to the cell rather than to the ramp — at scale 1.6 scaled
-   text would simply be clipped by the cell it sits in. The day sheet and the
-   agenda rows below carry the same information as prose, and those do scale. */
-.cal-daynum {
-  font-size: 12px;
-  font-weight: 600;
-  width: 22px;
-  height: 22px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
 }
 
 .cal-pill {

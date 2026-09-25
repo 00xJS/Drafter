@@ -33,9 +33,6 @@
 }
 
 /* ---- the sheet */
-.notices-day + .notices-day {
-  margin-top: 16px;
-}
 .notices-day h3 {
   margin: 0 0 6px;
   font-size: 0.75rem;
@@ -43,14 +40,6 @@
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--muted);
-}
-.notices-list {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
 }
 .notice-row {
   display: grid;
@@ -67,20 +56,4 @@
   text-align: left;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
-}
-.notices-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  padding: 24px 8px;
-  text-align: center;
-  color: var(--muted);
-}
-.notices-empty p {
-  margin: 0;
-}
-.notices-empty p:first-of-type {
-  color: var(--text);
-  font-weight: 600;
 }

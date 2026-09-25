@@ -219,11 +219,6 @@
 
 /* ---------- chips & badges ---------- */
 
-.chips {
-  display: inline-flex;
-  gap: 4px;
-}
-
 .badge {
   font-size: 0.75rem;
   font-weight: 600;
@@ -238,13 +233,6 @@
   background: var(--surface-2);
   padding: 1px 7px;
   border-radius: 999px;
-}
-
-.status-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  display: inline-block;
 }
 
 /* ---------- rows that open something ----------
@@ -281,7 +269,6 @@
 [role='dialog']:focus {
   outline: none;
 }
-
 
 /* ---- The period bar: ‹ what you are looking at › ------------------------
    Seven screens hand-rolled this row — the calendar's month, the review's

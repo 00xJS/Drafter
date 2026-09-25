@@ -5,6 +5,174 @@
    later partial, stay in the partials. These keep their order among
    themselves; the partial each came from is named above it. */
 
+/* ---------- from 02-chrome.css ---------- */
+.chips {
+  display: inline-flex;
+  gap: 4px;
+}
+
+/* ---------- from 07-dialogs-dashboard.css ---------- */
+.media-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.media-add {
+  width: 64px;
+  height: 64px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+}
+.media-add:hover {
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
+/* ---------- from 09-tasks-today.css ---------- */
+.versions {
+  margin-top: 12px;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+.versions-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.capture-fields {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+  font-size: 0.8125rem;
+}
+
+/* ---------- from 10-editor-notes.css ---------- */
+.editor-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(260px, 1fr);
+  gap: 0 24px;
+}
+.editor-main,
+.editor-side {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+/* whose words they are (v3.32): the name leads the time, in the text's own colour */
+.comment-by {
+  color: var(--text-2);
+  font-weight: 600;
+}
+.comment-body {
+  white-space: pre-wrap;
+  font-size: 0.8125rem;
+}
+.comment-form {
+  display: flex;
+  gap: 6px;
+  align-items: flex-end;
+  margin-top: 6px;
+}
+@media (max-width: 900px) {
+  .editor-grid {
+    grid-template-columns: 1fr;
+  }
+}
+/* AI description rewrites */
+.desc-ai {
+  margin-top: 6px;
+}
+/* task editor: what the description links to — the GitHub card, then every
+   other URL as a chip that opens in a new tab (Safari's sheet on the phone) */
+.desc-links {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: -6px;
+}
+.link-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.link-chip-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* task editor: the foot of the form, full width under both columns — Repeat
+   and Tags, then the Activity feed (comments, newest last), then Versions */
+.editor-bottom {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+}
+.editor-bottom .versions {
+  margin-top: 0;
+}
+.activity-empty {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--muted);
+}
+
+/* ---------- from 11-people-review-search.css ---------- */
+/* attachments, costs, blockers */
+.attachments {
+  list-style: none;
+  margin: 0 0 6px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.attachment {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 5px 9px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.blockers {
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+
+/* ---------- from 17-meals-work-bills.css ---------- */
+.bill-field {
+  margin-bottom: 8px;
+}
+.bill-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 6px;
+}
+.bill-fields .field-inline {
+  grid-column: 1 / -1;
+}
+@media (max-width: 640px) {
+  .bill-fields {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* ---------- from 07-dialogs-dashboard.css ---------- */
 .media-thumb {
   position: relative;

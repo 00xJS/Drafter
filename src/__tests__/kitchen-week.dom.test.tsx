@@ -250,7 +250,7 @@ describe('Plan this week’s meals, from the week’s header', () => {
     const k = openKitchen()
     fireEvent.click(screen.getByRole('button', { name: 'Plan this week’s meals' }))
     // the sheet loads on its first tap, from a chunk of its own: a moment after
-    await screen.findByRole('dialog', { name: /Plan this week’s meals/ })
+    await screen.findByRole('dialog', { name: /Plan this week’s meals/ }, { timeout: 5000 })
     const plan = sheet(/Plan this week’s meals/)
     fireEvent.click(within(plan).getByRole('button', { name: /^Plan \d meals?$/ }))
     // Saturday's is the week's something new; Friday has nothing cooled down enough to offer

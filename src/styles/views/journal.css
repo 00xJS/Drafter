@@ -6,6 +6,194 @@
    themselves; the partial each came from is named above it. */
 
 /* ---------- from 15-journal.css ---------- */
+/* ‹ week › over the strip (v3.24). Its own full-width row above the seven
+   cells, so stepping never squeezes them: at 375pt the cells are already a
+   seventh of the width each. */
+.journal-week-days {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  gap: 4px;
+  flex: 1;
+  min-width: 240px;
+}
+.journal-week-num {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text);
+}
+.journal-days {
+  list-style: none;
+  padding: 0;
+  margin: 14px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+/* A landmark every month while thumbing back: the day keys are sorted, so the
+   list emits one wherever the month changes. It sticks on a phone (see the
+   phone block below) — on a desktop the page is short enough to see. */
+.journal-month-head {
+  margin: 4px 0 -2px;
+  padding: 2px;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: var(--bg);
+}
+.journal-month-head:first-child {
+  margin-top: 0;
+}
+.journal-day {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  box-shadow: var(--shadow);
+}
+/* label + date + mood + faces + Edit. It must wrap: `.content` clips sideways
+   overflow, so an unwrapped row would take Edit — the only way to reopen a past
+   day — off the page with no scroll to recover it. */
+.journal-day-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.journal-day-head > button {
+  margin-left: auto;
+}
+.journal-body {
+  margin: 0;
+  white-space: pre-wrap;
+  line-height: 1.55;
+}
+.journal-body + .journal-body {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border);
+}
+/* the KPI tiles and the chart, behind one disclosure on a phone (JournalView
+   renders the button only under 640px, so the desktop page is unchanged).
+   Today's card sits above it now and .chart-card carries no bottom margin. */
+.journal-stats {
+  margin-top: 12px;
+}
+/* mood chart */
+.mood-chart-card {
+  margin-bottom: 12px;
+}
+.mood-chart-plot {
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+/* the weekly-average line crosses the columns, where its ink all but vanished
+   (under 2:1 on the light theme's column, near 1:1 on dark's), so it runs on a
+   casing of the card's own colour, as the markers do: its ground is always
+   --surface, and --viz-avg-opacity holds 3:1 there */
+.mood-chart-empty {
+  margin: 0;
+  padding: 18px 0;
+}
+/* journal search results.
+   A search is its own list, not a filtered day list: a hit from two years ago
+   has to say WHEN it was and WHY it matched, and the day list said neither. */
+.journal-results {
+  margin-top: 14px;
+}
+.journal-hits {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+/* Sticky at every width, unlike the month header on the day list: results can
+   jump from this year to 2024 in three rows, and the year is the only thing
+   telling them apart. Same offset as .journal-month-head, so both clear the
+   sticky topbar and the status bar it pads itself for. */
+.journal-year-head {
+  position: sticky;
+  top: calc(var(--topbar-h) + env(safe-area-inset-top));
+  z-index: 2;
+  margin: 6px 0 -2px;
+  padding: 2px;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  background: var(--bg);
+}
+.journal-year-head:first-child {
+  margin-top: 0;
+}
+/* the whole row is the control — a hit is one tap from the day it came from */
+.journal-hit-row {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 10px 12px;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.journal-hit-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+/* mood by weekday: seven bars under the 12-week chart */
+.weekday-mood {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+}
+/* the lowest average, marked. The caption under the bars names it too — the
+   one thing this chart is for must not be carried by colour alone. */
+.weekday-empty {
+  margin: 0;
+  padding: 12px 0;
+}
+@media (max-width: 640px) {
+  /* The month keeps its place while the days scroll under it. The offset clears
+     the sticky `.topbar` — 10px + a ~36px control + 10px — plus the status bar
+     it pads itself for. `.app`/`.content` clip sideways with `overflow-x: clip`,
+     which (unlike `hidden`) makes no scroll container, so this still sticks to
+     the viewport rather than to a box the list's own height. */
+  .journal-month-head {
+    position: sticky;
+    top: calc(var(--topbar-h) + env(safe-area-inset-top));
+    z-index: 2;
+  }
+  /* A past day scrolls under the month header, not just under the bar: the
+     header is stuck at the bar's edge and is ~21px tall (12px at the inherited
+     1.45 line-height, plus 2px of padding top and bottom), so a target parked
+     at the bar loses its top border, its rounded corners and its padding
+     behind the label. `.journal-card` keeps the global margin — it is the top
+     of the list, with no month header above it. */
+  .journal-day {
+    scroll-margin-top: calc(var(--topbar-h) + 24px + env(safe-area-inset-top));
+  }
+}
+
+/* ---------- from 15-journal.css ---------- */
 /* This week, every day of it, under today's card: seven equal cells so a day
    you skipped is still a thing you can press, and a date field beside them for
    anything older. The archive below only ever lists days that were written. */

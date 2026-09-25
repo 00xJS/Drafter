@@ -6,6 +6,241 @@
    themselves; the partial each came from is named above it. */
 
 /* ---------- from 07-dialogs-dashboard.css ---------- */
+.cutout {
+  gap: 10px;
+}
+.cutout-panes {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+.cutout-panes.two {
+  grid-template-columns: 1fr 1fr;
+}
+.cutout-pane {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+@media (max-width: 640px) {
+  .cutout-panes.two {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ---------- from 18-wardrobe.css ---------- */
+/* Outfit · Clothes · Stats keep the small-button shape (the native track is
+   scoped to the tab-level switchers), with Add clothing at the end of the row */
+.wardrobe-add {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.wardrobe-occasion {
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-2);
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.wardrobe-logged {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+/* a day still to come, or one whose plan is not yet said to be worn */
+.wardrobe-planned {
+  background: var(--tone-sky-bg);
+  color: var(--tone-sky);
+}
+.wardrobe-acc-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+.acc-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding-left: 4px;
+}
+.acc-add {
+  padding-left: 12px;
+  border-style: dashed;
+}
+.acc-held {
+  font-size: 0.6875rem;
+  color: var(--muted);
+}
+/* a saved outfit's menu, when Wear today is off: why */
+.outfit-why {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--muted);
+}
+.wardrobe-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 6px 0 12px;
+  padding: 8px 0;
+}
+.saved-load {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 112px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+.wardrobe-looks {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px;
+}
+.wardrobe-looks-mid {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+  font-size: 0.875rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.clothes-tools {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+/* one row of filters that scrolls sideways rather than wrapping */
+.clothes-filters {
+  flex: 1 1 16rem;
+  min-width: 0;
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-bottom: 2px;
+}
+.clothes-filters .toggle {
+  flex: none;
+  white-space: nowrap;
+}
+.clothes-filters .count {
+  opacity: 0.7;
+}
+/* the tags a wardrobe uses, on a line of their own under the rest */
+.clothes-tags {
+  flex-basis: 100%;
+}
+.clothes-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  gap: 10px;
+}
+.clothes-retired {
+  margin-top: 14px;
+}
+.clothes-retired .clothes-grid {
+  margin-top: 8px;
+}
+/* the file field itself is out of sight: the label around it is the target */
+.garment-busy {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-2);
+  font-size: 0.8125rem;
+}
+/* the sheet's star, beside its close button */
+.garment-with {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.outfit-fav {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+/* the back photo's moves, under the photo; and Add clothing's optional back */
+.garment-figures {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.garment-figures .person-bars {
+  flex: none;
+  height: 30px;
+}
+.garment-outfits {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 0.8125rem;
+}
+.garment-actions {
+  flex-wrap: wrap;
+}
+@media (max-width: 640px) {
+  .wardrobe-actions {
+    position: sticky;
+    /* the tab bar measures up to 4px over its 56px token (its capped label
+       grows with the text), so the bar keeps that clear and never tucks under */
+    bottom: calc(var(--tabbar-h) + var(--safe-b) + 4px);
+    z-index: 3;
+    /* one row, always: "+ Look" and the capped type below keep the three in 375pt */
+    flex-wrap: nowrap;
+    margin-inline: -12px;
+    padding: 8px 12px;
+    background: var(--surface);
+    border-top: 1px solid var(--hairline);
+  }
+  /* the app's toast sits on the tab bar, as the bar does, and would cover all
+     three buttons for its six seconds: while the composer is on screen it
+     rises clear of the bar. With the keyboard up the tab bar is gone, and
+     .keyboard-open .toast places it as ever */
+  html:not(.keyboard-open) body:has(.wardrobe-actions) .toast {
+    bottom: calc(var(--tabbar-h) + var(--safe-b) + 64px);
+  }
+}
+
+/* ---------- from 19-native-shell.css ---------- */
+@media (max-width: 640px) {
+  /* the composer is 4px taller once its buttons are 44, so the toast that
+     clears it needs the same 4px or it sits on "+ Look" */
+  .native .wardrobe-actions {
+    margin-inline: -16px;
+    padding: 8px 16px;
+  }
+  html.native:not(.keyboard-open) body:has(.wardrobe-actions) .toast {
+    bottom: calc(var(--tabbar-h) + var(--safe-b) + 68px);
+  }
+}
+
+/* ---------- from 07-dialogs-dashboard.css ---------- */
 .cutout-pane figcaption {
   font-size: 0.75rem;
   color: var(--muted);

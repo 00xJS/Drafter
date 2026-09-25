@@ -269,38 +269,14 @@
 .review-top-row input {
   flex: 1;
 }
-.you-said-reflections {
-  margin: 8px 0 0;
-  color: var(--text-2);
-  white-space: pre-wrap;
-}
-.versions {
-  margin-top: 12px;
-  border-top: 1px solid var(--border);
-  padding-top: 10px;
-}
 .versions summary {
   cursor: pointer;
   font-weight: 600;
-}
-.versions-list {
-  list-style: none;
-  margin: 8px 0 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
 }
 .versions-list li {
   display: flex;
   align-items: center;
   gap: 8px;
-}
-.capture-fields {
-  list-style: none;
-  margin: 0 0 8px;
-  padding: 0;
-  font-size: 0.8125rem;
 }
 .capture-fields li {
   margin: 4px 0;
@@ -315,33 +291,6 @@
   flex: none;
   accent-color: var(--accent);
   cursor: pointer;
-}
-.project-cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(220px, 100%), 1fr));
-  gap: 10px;
-  margin-bottom: 16px;
-  min-width: 0;
-}
-.project-card {
-  text-align: left;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 12px 14px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface);
-  box-shadow: var(--shadow);
-  color: var(--text);
-}
-.project-card:hover {
-  border-color: var(--muted);
-}
-.project-card-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
 }
 
 /* Who can see a record, on its row in the task list, on a board card and in

@@ -15,7 +15,7 @@ export { KitchenStats, PeopleStats, PlacesStats, WardrobeStats }
 // scripts/check-precache.mjs checks the built launch holds no assistant code).
 export const Calendar = preloadable(() => withSheet(import('../Calendar'), import('../../styles/views/calendar.css')).then(m => m.Calendar), 'Calendar')
 export const TasksTable = preloadable(() => withSheet(import('../TasksTable'), import('../../styles/views/tasks-table.css')).then(m => m.TasksTable), 'TasksTable')
-export const Board = preloadable(() => import('../Board').then(m => m.Board), 'Board')
+export const Board = preloadable(() => withSheet(import('../Board'), import('../../styles/views/board.css')).then(m => m.Board), 'Board')
 // Tasks → Finance: the month of bills, the paydays and the accounts. Bills.tsx
 // is drawn inside it, so the two share one chunk rather than shipping twice.
 export const Finance = preloadable(() => withSheet(import('../Finance'), import('../../styles/views/finance.css')).then(m => m.Finance), 'Finance')
@@ -44,12 +44,12 @@ export const StatsLens = preloadable(() => withSheet(import('../StatsLens'), imp
 
 export const TaskEditor = preloadable(() => withSheet(import('../TaskEditor'), import('../../styles/views/task-editor.css')).then(m => m.TaskEditor), 'TaskEditor')
 export const ProjectEditor = preloadable(() => import('../ProjectEditor').then(m => m.ProjectEditor), 'ProjectEditor')
-export const EventEditor = preloadable(() => import('../EventEditor').then(m => m.EventEditor), 'EventEditor')
+export const EventEditor = preloadable(() => withSheet(import('../EventEditor'), import('../../styles/views/event-editor.css')).then(m => m.EventEditor), 'EventEditor')
 export const AttendancePicker = preloadable(() => import('../AttendancePicker').then(m => m.AttendancePicker), 'AttendancePicker')
 export const Search = preloadable(() => withSheet(import('../Search'), import('../../styles/views/search.css')).then(m => m.Search), 'Search')
 export const Trash = preloadable(() => import('../Trash').then(m => m.Trash), 'Trash')
-export const Settings = preloadable(() => import('../Settings').then(m => m.Settings), 'Settings')
-export const Admin = preloadable(() => import('../Admin').then(m => m.Admin), 'Admin')
+export const Settings = preloadable(() => withSheet(import('../Settings'), import('../../styles/views/settings.css')).then(m => m.Settings), 'Settings')
+export const Admin = preloadable(() => withSheet(import('../Admin'), import('../../styles/views/admin.css')).then(m => m.Admin), 'Admin')
 // the daily routines' sheets, opened from Today's strip, the palette and ?plan=
 export const PlanDaySheet = preloadable(() => import('../PlanDaySheet').then(m => m.PlanDaySheet), 'PlanDaySheet')
 export const ShutdownSheet = preloadable(() => import('../ShutdownSheet').then(m => m.ShutdownSheet), 'ShutdownSheet')
@@ -58,7 +58,7 @@ export const WeekPlanSheet = preloadable(() => import('../WeekPlanSheet').then(m
 export const AskSheet = preloadable(() => import('../AskSheet').then(m => m.AskSheet), 'AskSheet')
 export const ImHereSheet = preloadable(() => import('../ImHereSheet').then(m => m.ImHereSheet), 'ImHereSheet')
 // Who, and how often: Today's cold-start card and the People and Places rows open it
-export const RhythmSheet = preloadable(() => import('../RhythmSheet').then(m => m.RhythmSheet), 'RhythmSheet')
+export const RhythmSheet = preloadable(() => withSheet(import('../RhythmSheet'), import('../../styles/views/rhythm-sheet.css')).then(m => m.RhythmSheet), 'RhythmSheet')
 // The notification hub, behind the bell on Home: only the bell is in the launch
 export const NoticesSheet = preloadable(() => withSheet(import('../NoticesSheet'), import('../../styles/views/notices.css')).then(m => m.NoticesSheet), 'NoticesSheet')
 
@@ -76,7 +76,7 @@ export const SettingsScreen = preloadable(() => import('./SettingsScreen').then(
 export const ChatScreen = preloadable(() => import('./ChatScreen').then(m => m.ChatScreen), 'ChatScreen')
 export const AdminScreen = preloadable(() => import('./AdminScreen').then(m => m.AdminScreen), 'AdminScreen')
 // Today's wardrobe card, drawn only when the wardrobe can dress you (Today.tsx)
-export const WardrobeCard = preloadable(() => import('../wardrobe/WardrobeCard').then(m => m.WardrobeCard), 'WardrobeCard')
+export const WardrobeCard = preloadable(() => withSheet(import('../wardrobe/WardrobeCard'), import('../../styles/views/wardrobe-today.css')).then(m => m.WardrobeCard), 'WardrobeCard')
 
 /** The views the lazy screens draw: handed down in the planner's context, as `p.views`, so a screen's chunk names none of them. */
 export const SCREEN_VIEWS = { Admin, Board, Calendar, Chat, EventEditor, Finance, JournalView, Kitchen, NotesView, People, PeopleStats, Places, PlacesStats, Review, Settings, StatsLens, TaskEditor, TasksTable, Wardrobe }

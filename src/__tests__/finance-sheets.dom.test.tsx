@@ -18,9 +18,10 @@ describe('a sheet on its first tap', () => {
     render(<Finance tasks={[]} accounts={[]} members={[]} myId="me" inHousehold={false} now={NOW} {...fns} />)
     expect(screen.queryByRole('dialog')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Add to Finance' }))
-    const sheet = await screen.findByRole('dialog', { name: 'Add to Finance' })
+    // loading a chunk is slower in a busy test run than on a phone: a generous wait
+    const sheet = await screen.findByRole('dialog', { name: 'Add to Finance' }, { timeout: 5000 })
     // …and what it opens next loads the same way
     fireEvent.click(within(sheet).getByRole('button', { name: /^Goal/ }))
-    expect(await screen.findByRole('dialog', { name: 'New goal' })).toBeTruthy()
+    expect(await screen.findByRole('dialog', { name: 'New goal' }, { timeout: 5000 })).toBeTruthy()
   })
 })

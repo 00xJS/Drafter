@@ -3,16 +3,6 @@
    element that shows it, the way a place's is. Phone rules sit under the
    max-width and pointer guards, and nothing here spends --keyboard-h. */
 
-/* Outfit · Clothes · Stats keep the small-button shape (the native track is
-   scoped to the tab-level switchers), with Add clothing at the end of the row */
-.wardrobe-add {
-  margin-left: auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  white-space: nowrap;
-}
-
 /* a piece's picture: whole, never cropped. A photo sits on the photo's own
    white, the ground a cut-out is made on, so no grey band shows round it;
    a piece with no photo is its type's outline on the sunken surface */
@@ -118,58 +108,8 @@
 
 /* ----- the Outfit board's day: Work day or Day off, a tap turns it the other
    way for the visit and saves nothing; a look's Logged or Planned */
-.wardrobe-occasion {
-  padding: 2px 8px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--surface);
-  color: var(--text-2);
-  font: inherit;
-  font-size: 0.75rem;
-  font-weight: 600;
-  white-space: nowrap;
-}
-.wardrobe-logged {
-  background: var(--accent-soft);
-  color: var(--accent-text);
-}
-/* a day still to come, or one whose plan is not yet said to be worn */
-.wardrobe-planned {
-  background: var(--tone-sky-bg);
-  color: var(--tone-sky);
-}
 
 /* ----- the accessories, as chips on the look card */
-.wardrobe-acc-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 4px;
-}
-.acc-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding-left: 4px;
-}
-.acc-add {
-  padding-left: 12px;
-  border-style: dashed;
-}
-.acc-held {
-  font-size: 0.6875rem;
-  color: var(--muted);
-}
-/* a cold or wet day's word, with the coat it suggests */
-.wardrobe-weather {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px 8px;
-  margin: 6px 0;
-  font-size: 0.8125rem;
-  color: var(--text-2);
-}
 /* a favourite's star: a badge on the card's own surface, never on the photo's colours */
 .fav-mark {
   position: absolute;
@@ -207,22 +147,8 @@
   clip-path: inset(50%);
   white-space: nowrap;
 }
-/* a saved outfit's menu, when Wear today is off: why */
-.outfit-why {
-  margin: 0;
-  font-size: 0.8125rem;
-  color: var(--muted);
-}
 
 /* ----- the look's moves, in reach: sticky above the tab bar on a phone, in the flow on a desktop */
-.wardrobe-actions {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 6px 0 12px;
-  padding: 8px 0;
-}
 .wardrobe-actions .btn {
   white-space: nowrap;
 }
@@ -231,18 +157,6 @@
 }
 
 /* ----- saved outfits, and a look drawn as one tile */
-.saved-load {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  width: 112px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-}
 .saved-load .collage {
   width: 112px;
   height: 140px;
@@ -288,31 +202,6 @@
 }
 
 /* ----- Today's card */
-.wardrobe-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-/* The looks share the row rather than sitting at a fixed 70px: four of them
-   left ~50pt of dead space against the right edge of the card on a phone,
-   which read as the row having been cut short (v3.28). They grow to fill and
-   stop at 104px, so a wide desktop card keeps them thumbnail-sized. */
-.wardrobe-chip {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  flex: 1 1 70px;
-  min-width: 70px;
-  max-width: 104px;
-  padding: 6px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface);
-  color: var(--text);
-  font-size: 0.6875rem;
-  text-align: center;
-}
 .wardrobe-chip .collage {
   width: 56px;
   height: 70px;
@@ -321,129 +210,6 @@
 .wardrobe-chip .collage-badge {
   width: 18px;
   height: 18px;
-}
-.wardrobe-chip-label {
-  width: 100%;
-  overflow: hidden;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  line-height: 1.2;
-}
-.wardrobe-chip.pick {
-  justify-content: center;
-  min-height: 96px;
-  border-style: dashed;
-  color: var(--accent-text);
-  font-size: 0.8125rem;
-  font-weight: 600;
-}
-.wardrobe-forgot {
-  margin-top: 8px;
-  padding: 4px 0;
-  border: 0;
-  background: none;
-  color: var(--accent-text);
-  font: inherit;
-  font-size: 0.8125rem;
-  text-decoration: underline;
-}
-/* once logged (or planned): the look on one line, its note under it */
-.wardrobe-card.logged {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding-block: 10px;
-}
-.wardrobe-card-stack {
-  list-style: none;
-  margin: 0;
-  padding: 0 0 8px;
-  border-bottom: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.wardrobe-card-prior {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 4px 0;
-  border: 0;
-  background: none;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-.wardrobe-card-add {
-  align-self: flex-start;
-  margin-top: 4px;
-}
-.wardrobe-card-names {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-.wardrobe-looks {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0 0 12px;
-}
-.wardrobe-looks-mid {
-  flex: 1;
-  min-width: 0;
-  text-align: center;
-  font-size: 0.875rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.wardrobe-card-look {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-}
-.wardrobe-card-foot {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.wardrobe-card-foot .btn.primary {
-  margin-left: auto;
-}
-.wardrobe-card-note {
-  align-self: flex-start;
-  padding: 2px 0;
-  border: 0;
-  background: none;
-  color: var(--muted);
-  font: inherit;
-  font-size: 0.8125rem;
-  text-align: left;
-}
-.wardrobe-card-note.has-note {
-  color: var(--text-2);
-  font-style: italic;
-}
-.wardrobe-card-note-input {
-  flex: 1 1 10rem;
-  min-width: 0;
-  width: 100%;
-}
-.wardrobe-card .wardrobe-weather {
-  margin: 0 0 8px;
-}
-.wardrobe-card.logged .wardrobe-weather {
-  margin: 0;
-}
-.wardrobe-card-thumbs {
-  display: inline-flex;
-  flex: none;
 }
 .wardrobe-card-thumbs .garment-photo {
   width: 32px;
@@ -454,62 +220,14 @@
 .wardrobe-card-thumbs .garment-photo:first-child {
   margin-left: 0;
 }
-.wardrobe-card-line {
-  flex: 1;
-  min-width: 0;
-  margin: 0;
-  font-size: 0.875rem;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
 
 /* ----- Clothes */
-.clothes-tools {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 10px;
-}
-/* one row of filters that scrolls sideways rather than wrapping */
-.clothes-filters {
-  flex: 1 1 16rem;
-  min-width: 0;
-  display: flex;
-  gap: 6px;
-  overflow-x: auto;
-  scrollbar-width: none;
-  padding-bottom: 2px;
-}
 .clothes-filters::-webkit-scrollbar {
   display: none;
-}
-.clothes-filters .toggle {
-  flex: none;
-  white-space: nowrap;
-}
-.clothes-filters .count {
-  opacity: 0.7;
-}
-/* the tags a wardrobe uses, on a line of their own under the rest */
-.clothes-tags {
-  flex-basis: 100%;
-}
-.clothes-grid {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
-  gap: 10px;
 }
 .clothes-grid > li {
   display: flex;
   min-width: 0;
-}
-.clothes-retired {
-  margin-top: 14px;
 }
 .clothes-retired summary,
 .wardrobe-by-piece summary,
@@ -519,20 +237,9 @@
   font-weight: 600;
   cursor: pointer;
 }
-.clothes-retired .clothes-grid {
-  margin-top: 8px;
-}
 
 /* ----- the piece sheet */
 /* dropping and pasting are a desktop's; a finger has the picker */
-/* the file field itself is out of sight: the label around it is the target */
-.garment-busy {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--text-2);
-  font-size: 0.8125rem;
-}
 @keyframes garment-spin {
   to {
     transform: rotate(360deg);
@@ -544,21 +251,6 @@
 .garment-seasons {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-}
-/* the sheet's star, beside its close button */
-.garment-with {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.outfit-fav {
-  align-self: flex-start;
-  display: inline-flex;
-  align-items: center;
   gap: 6px;
 }
 /* A piece with no photo yet: the tile its type draws IS the picker, with the
@@ -580,24 +272,6 @@
   font-size: 0.8125rem;
   font-weight: 500;
   white-space: nowrap;
-}
-/* the back photo's moves, under the photo; and Add clothing's optional back */
-.garment-figures {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.garment-figures .person-bars {
-  flex: none;
-  height: 30px;
-}
-.garment-outfits {
-  margin: 0;
-  padding-left: 18px;
-  font-size: 0.8125rem;
-}
-.garment-actions {
-  flex-wrap: wrap;
 }
 .wardrobe-retired {
   background: var(--surface-2);
@@ -986,36 +660,6 @@ button.photo-cal-day:focus-visible {
   font-size: 0.75rem;
   text-align: left;
 }
-/* in the day sheet it is set off from the rows under it as a row is from the next: a straight divider */
-.cal-look-thumbs {
-  flex: none;
-  display: inline-flex;
-  color: var(--muted);
-}
-.cal-look-thumbs .garment-photo {
-  width: 18px;
-  height: 22px;
-  margin-left: -5px;
-  border: 1px solid var(--surface);
-  border-radius: 4px;
-}
-.cal-look-thumbs .garment-photo:first-child {
-  margin-left: 0;
-}
-.cal-look-thumbs .garment-photo-type {
-  display: none;
-}
-
-/* the Week review's looks: a strip of small collages, one a day */
-.review-looks {
-  list-style: none;
-  margin: 0;
-  padding: 2px 0 6px;
-  display: flex;
-  gap: 8px;
-  overflow-x: auto;
-  overscroll-behavior-x: contain;
-}
 
 /* The tiles pair up in the phone's two columns as every Stats view's do, a
    last one on its own taking the row (08-responsive.css). The first used to
@@ -1031,30 +675,10 @@ button.photo-cal-day:focus-visible {
 
 /* ----- a phone: the bar sticks above the tab bar, four Home segments fit one line */
 @media (max-width: 640px) {
-  .wardrobe-actions {
-    position: sticky;
-    /* the tab bar measures up to 4px over its 56px token (its capped label
-       grows with the text), so the bar keeps that clear and never tucks under */
-    bottom: calc(var(--tabbar-h) + var(--safe-b) + 4px);
-    z-index: 3;
-    /* one row, always: "+ Look" and the capped type below keep the three in 375pt */
-    flex-wrap: nowrap;
-    margin-inline: -12px;
-    padding: 8px 12px;
-    background: var(--surface);
-    border-top: 1px solid var(--hairline);
-  }
   /* chrome gives before content: the bar's buttons grow with Dynamic Type
      only so far, as the tab bar's labels do, so the look card keeps the room */
   .wardrobe-actions .btn {
     font-size: calc(14px * min(1.15, var(--type-scale)));
-  }
-  /* the app's toast sits on the tab bar, as the bar does, and would cover all
-     three buttons for its six seconds: while the composer is on screen it
-     rises clear of the bar. With the keyboard up the tab bar is gone, and
-     .keyboard-open .toast places it as ever */
-  html:not(.keyboard-open) body:has(.wardrobe-actions) .toast {
-    bottom: calc(var(--tabbar-h) + var(--safe-b) + 64px);
   }
 }
 

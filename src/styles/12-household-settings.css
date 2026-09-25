@@ -237,18 +237,6 @@
   }
 }
 
-/* connected Outlook accounts */
-.ms-account {
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 10px 12px;
-  margin-bottom: 10px;
-  background: var(--surface-2);
-}
-.ms-account .sync-line {
-  margin-top: 0;
-}
-
 .stat-aside {
   font-size: 0.8125rem;
   font-weight: 400;
@@ -304,35 +292,8 @@
   color: var(--text-2);
   margin: 0.35rem 0 0.2rem;
 }
-
-.admin-health {
-  margin-bottom: 1.1rem;
-  padding-bottom: 0.85rem;
-  border-bottom: 1px solid var(--border);
-}
-.admin-health:last-child {
-  border-bottom: none;
-  margin-bottom: 0;
-  padding-bottom: 0;
-}
-.admin-users .cal-source-name {
-  flex: 1;
-  min-width: 0;
-}
-/* Admin → Backups: what Read it or Download brought back, under its own row.
-   The bottom margin keeps it clear of the phone's tab bar when it scrolls in. */
-.backup-open {
-  padding: 8px 10px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface);
-  scroll-margin: 12px 0 calc(var(--tabbar-h) + var(--safe-b) + 16px);
-}
 .backup-open p {
   margin: 0 0 4px;
-}
-.backup-open .check-add {
-  margin-top: 4px;
 }
 
 /* the Data / Backups health lists: label left, figure right, scannable */
@@ -361,31 +322,11 @@
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
-
-/* zero backups is not a detail — give it the orange it deserves */
-.admin-alarm {
-  border: 1px solid var(--accent);
-  border-radius: var(--radius);
-  background: var(--warn-bg);
-  padding: 10px 12px;
-  margin-bottom: 1.1rem;
-}
 .admin-alarm .field-hint {
   color: var(--warn-text);
 }
-
-/* inline result of a live integration test */
-.admin-test {
-  margin: 6px 0 0;
-  font-size: 0.75rem;
-}
 .admin-test small {
   color: var(--muted);
-}
-.admin-test-error {
-  display: block;
-  color: var(--danger);
-  word-break: break-word;
 }
 
 /* on a phone the toast spanned a narrow column and sat under the New task
@@ -411,7 +352,6 @@
   }
 }
 
-
 /* the signed-out pages have their own headers: keep them out from under the
    status bar / Dynamic Island on an installed app */
 .landing-header {
@@ -421,41 +361,12 @@
   padding-top: calc(24px + env(safe-area-inset-top));
   padding-bottom: calc(24px + env(safe-area-inset-bottom));
 }
-
-
-/* Settings → You (v3.25): your picture beside what you can change about it,
-   and the two password boxes as their own block so Cancel sits with them. */
-.profile-row {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  flex-wrap: wrap;
-  margin-bottom: 12px;
-}
 .profile-face {
   flex: none;
-}
-.profile-face-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  flex: 1 1 200px;
-  min-width: 180px;
 }
 .profile-face-actions .field-hint {
   flex: 1 0 100%;
   margin: 0;
-}
-.profile-password {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-top: 10px;
-  padding: 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface-2);
 }
 
 /* A member's face, everywhere one is drawn (MemberFace): their picture, or
@@ -477,12 +388,6 @@
   overflow: hidden;
 }
 
-/* "More…" in the Settings nav: the same chip as a group, dimmed, because it
-   opens the rest of the list rather than a page of its own. */
-.settings-more {
-  color: var(--text-2);
-}
-
 /* Settings is a column of one-off actions, and every button had sized itself
    to its own words: "Sign out" at 87pt under "Change your password" at 172pt
    under "Save name" at 103pt, a ragged edge running down the whole sheet. On
@@ -496,19 +401,4 @@
   .settings-section > .sync-line > .btn {
     flex: 1 1 auto;
   }
-}
-
-/* Admin → Data's Integration health, folded away (v3.25). Its <summary> holds
-   an <h3> so the heading still reads as one; the marker sits with it rather
-   than on a line of its own. */
-.admin-integrations > details > summary {
-  cursor: pointer;
-  list-style-position: outside;
-}
-.admin-integrations > details > summary h3 {
-  display: inline;
-  margin: 0;
-}
-.admin-integrations > details[open] > summary {
-  margin-bottom: 8px;
 }
