@@ -26,15 +26,15 @@ captureAuthorizeRequest()
 
 // stamp html.native / html.ios before first paint so the native look never flashes web-first
 applyPlatformClasses()
-// the iOS keyboard: its Done bar, `keyboard-open`, and the field being typed
-// kept in sight — from the start, so the sign-in form has them too, not only
-// the planner. For the life of the page; nothing on the web.
-void watchKeyboard()
 // Settings → Appearance. index.html's inline script already painted the stored
 // theme; this re-applies it (should that script not have run) and keeps it true
 // for the session: Match system following the device, a change made in another
 // tab, and the iPhone's own status bar, keyboard and pickers.
 startTheme((pref, theme) => void syncNativeAppearance(pref, theme))
+// the iOS keyboard: its Done bar, `keyboard-open`, and the field being typed
+// kept in sight — from the start, so the sign-in form has them too, not only
+// the planner. For the life of the page; nothing on the web.
+void watchKeyboard()
 
 // inside the iOS shell there is no service worker: the bundle IS the app.
 // On the web the worker is registered here, and every load and return to the
