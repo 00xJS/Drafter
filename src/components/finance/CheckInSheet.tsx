@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { formatMoney } from '../../bills'
-import { isLiability, latestBalance, parseBalance, withBalance } from '../../finance'
+import { accountEmoji, accountFromForm, isLiability, latestBalance, parseBalance, withBalance, type AccountKind } from '../../finance'
 import { newerStamp } from '../../itemops'
-import { ACCOUNT_TYPES, ACCOUNT_TYPE_META, type Account, type AccountType } from '../../types'
+import type { Account } from '../../types'
 import { uid } from '../../utils'
 import { Modal, ModalHead } from '../Modal'
+import { KindPicker, NAME_EXAMPLES, PickedKind } from './KindPicker'
 import { ageOf } from './labels'
 
 // Check in: every account at once, what each holds today. It is the whole of
@@ -12,6 +13,9 @@ import { ageOf } from './labels'
 // so it is one sheet, one Save and one toast rather than an account at a time.
 // A card is typed as what is owed on it, a positive number, as its balance
 // has always been kept (types.ts BalanceCheck).
+//
+// An account added here is picked by its kind first, then named: it will not
+// add one without a name, so none is ever called after its kind.
 
 /** One account written by a check-in: as it was (null for one added here), and as it is now. */
 export interface CheckInChange {
@@ -34,7 +38,7 @@ export function CheckInSheet({ accounts, focus, today, onSave, onClose }: Props)
   const [typed, setTyped] = useState<Record<string, string>>({})
   const [added, setAdded] = useState<Account[]>([])
   const [adding, setAdding] = useState(() => focus === 'add' || accounts.length === 0)
-  const [kind, setKind] = useState<AccountType>('checking')
+  const [kind, setKind] = useState<AccountKind | null>(null)
   const [name, setName] = useState('')
   // a field is focused for the keyboard only where a keyboard is: on a phone a
   // focus raises the keyboard over the very field it went to
@@ -58,9 +62,12 @@ export function CheckInSheet({ accounts, focus, today, onSave, onClose }: Props)
   }
 
   const addAccount = () => {
-    const label = name.trim() || ACCOUNT_TYPE_META[kind].label
-    setAdded(list => [...list, { kind: 'account', id: uid(), name: label, type: kind, balances: [], createdAt: '', updatedAt: '' }])
+    // stamped when the check-in is saved, with the rest
+    const account = kind && accountFromForm({ kind, name }, { id: uid(), now: '', today })
+    if (!account) return
+    setAdded(list => [...list, account])
     setName('')
+    setKind(null)
     setAdding(false)
   }
 
@@ -95,7 +102,7 @@ export function CheckInSheet({ accounts, focus, today, onSave, onClose }: Props)
                 <li key={a.id} ref={a.id === focus ? focusRow : undefined} className={a.id === focus ? 'checkin-row focus' : 'checkin-row'}>
                   <label className="checkin-field">
                     <span className="checkin-name">
-                      <span aria-hidden="true">{ACCOUNT_TYPE_META[a.type].emoji}</span> {a.name}
+                      <span aria-hidden="true">{accountEmoji(a)}</span> {a.name}
                     </span>
                     <small className="muted">{latest ? `${formatMoney(latest.amount)}${owed ? ' owed' : ''} · ${ageOf(latest.on, today)}` : 'Nothing typed in yet'}</small>
                     <input
@@ -119,17 +126,28 @@ export function CheckInSheet({ accounts, focus, today, onSave, onClose }: Props)
         )}
         {adding ? (
           <div className="checkin-add" role="group" aria-label="Add an account">
-            <select value={kind} aria-label="Kind of account" onChange={e => setKind(e.target.value as AccountType)}>
-              {ACCOUNT_TYPES.map(t => (
-                <option key={t} value={t}>
-                  {ACCOUNT_TYPE_META[t].emoji} {ACCOUNT_TYPE_META[t].label}
-                </option>
-              ))}
-            </select>
-            <input value={name} placeholder={`Name, e.g. ${kind === 'credit' ? 'Amex' : kind === 'savings' ? 'Rainy day' : 'Joint checking'}`} aria-label="Account name" onChange={e => setName(e.target.value)} onKeyDown={e => e.key === 'Enter' && addAccount()} />
-            <button type="button" className="btn" onClick={addAccount}>
-              Add
-            </button>
+            {kind ? (
+              <>
+                <PickedKind kind={kind} onChange={() => setKind(null)} />
+                <input
+                  value={name}
+                  required
+                  placeholder={`Name, e.g. ${NAME_EXAMPLES[kind]}`}
+                  aria-label="Account name"
+                  autoComplete="off"
+                  onChange={e => setName(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && addAccount()}
+                />
+                <button type="button" className="btn" disabled={!name.trim()} onClick={addAccount}>
+                  Add
+                </button>
+              </>
+            ) : (
+              <>
+                <span className="checkin-add-ask">What kind of account?</span>
+                <KindPicker value={null} onPick={setKind} />
+              </>
+            )}
           </div>
         ) : (
           <button type="button" className="btn subtle checkin-add-open" onClick={() => setAdding(true)}>

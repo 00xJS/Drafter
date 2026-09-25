@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { OPEN_STATUSES, RECURRENCE_META, Task } from '../types'
+import { RECURRENCE_META, Task } from '../types'
 import { billEmoji, billMonth, formatMoney, isBill, monthlyCost } from '../bills'
 import { noonOf, useDayKey } from '../useDayKey'
 import { MoneyMeta, NextDate } from './finance/NextDate'
@@ -7,12 +7,13 @@ import { MoneyMeta, NextDate } from './finance/NextDate'
 // The household's payments, one month at a time: what is overdue, what is
 // still to come, what has been paid, and what an average month costs. Every
 // row is a task, so it is also on the calendar, in reminders and on Today.
-// A bill with no date belongs to no month, so it is listed on its own above
-// them, saying so, rather than left out of every month without a word.
+// It is the month of bills under Manage → Bills now, below the list of every
+// bill: a bill with no date belongs to no month, and that list shows it first,
+// under Needs a date, so this one leaves it to the list.
 
 const fmtDay = (iso?: string) => (iso ? new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) : '')
 
-type RowState = 'undated' | 'overdue' | 'upcoming' | 'paid'
+type RowState = 'overdue' | 'upcoming' | 'paid'
 
 export function Bills({
   tasks,
@@ -22,8 +23,8 @@ export function Bills({
 }: {
   tasks: Task[]
   onOpen(t: Task): void
-  /** Open the task editor on a new bill. */
-  onNew(): void
+  /** + Bill, when the month has one of its own to offer. */
+  onNew?(): void
   onMarkPaid(t: Task): void
 }) {
   const [cursor, setCursor] = useState(() => {
@@ -36,7 +37,6 @@ export function Bills({
   const month = useMemo(() => billMonth(tasks, cursor, noonOf(today)), [tasks, cursor, today])
   const perMonth = useMemo(() => monthlyCost(tasks), [tasks])
   const any = useMemo(() => tasks.some(isBill), [tasks])
-  const undated = useMemo(() => tasks.filter(t => isBill(t) && OPEN_STATUSES.includes(t.status) && !t.dueAt), [tasks])
   const monthName = cursor.toLocaleDateString(undefined, { month: 'long' })
   const shift = (n: number) => setCursor(c => new Date(c.getFullYear(), c.getMonth() + n, 1))
 
@@ -79,9 +79,11 @@ export function Bills({
         <button className="btn" onClick={() => shift(1)} aria-label="Next month">
           ›
         </button>
-        <button className="btn primary period-end" onClick={onNew}>
-          + Bill
-        </button>
+        {onNew && (
+          <button className="btn primary period-end" onClick={onNew}>
+            + Bill
+          </button>
+        )}
       </div>
 
       {!any ? (
@@ -105,13 +107,6 @@ export function Bills({
               <span className="stat-sub">every repeating payment</span>
             </div>
           </div>
-
-          {undated.length > 0 && (
-            <section>
-              <h3 className="bills-head">Needs a date</h3>
-              <ul className="bill-list">{undated.map(t => row(t, 'undated'))}</ul>
-            </section>
-          )}
 
           {month.overdue.length > 0 && (
             <section>

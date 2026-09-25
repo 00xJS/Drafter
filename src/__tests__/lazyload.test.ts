@@ -142,8 +142,24 @@ const LAZY_ONLY = [
   // the paydays and the accounts rather than shipping as a second chunk
   component('Bills'),
   resolve(SRC, 'finance.ts'),
-  // …and its timeline, the sheets it opens and the bills + Bill fills in
-  ...['finance/Timeline', 'finance/CashLineChart', 'finance/CheckInSheet', 'finance/BillSheet', 'finance/GoalSheet', 'finance/ShareChoice'].map(component),
+  // …and its pay periods, Manage, the rows and sheets they open, and the bills + Bill fills in
+  ...[
+    'finance/Periods',
+    'finance/Manage',
+    'finance/Rows',
+    'finance/Goals',
+    'finance/CashLineChart',
+    'finance/LineSheet',
+    'finance/AddSheet',
+    'finance/CheckInSheet',
+    'finance/BillSheet',
+    'finance/PaydaySheet',
+    'finance/GoalSheet',
+    'finance/AccountSheet',
+    'finance/KindPicker',
+    'finance/SheetActions',
+    'finance/ShareChoice',
+  ].map(component),
   resolve(SRC, 'components', 'finance', 'labels.ts'),
   resolve(SRC, 'billtemplates.ts'),
   // Kitchen → Stats' counting travels with it
