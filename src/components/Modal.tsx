@@ -259,6 +259,15 @@ export function useDiscardPrompt(): { ask(then: () => void): void; prompt: React
   return { ask: next => setThen(() => next), prompt }
 }
 
+/**
+ * Whether what a sheet holds has changed since it opened: `now`, the fields
+ * as they stand, against what they were on its first render. For `dirty`.
+ */
+export function useChanged(now: unknown): boolean {
+  const [opened] = useState(() => JSON.stringify(now))
+  return JSON.stringify(now) !== opened
+}
+
 /** A Cancel in a sheet's own footer: out the way ✕ goes, asking first when the sheet has unsaved changes. */
 export function ModalCancel({ children = 'Cancel', className = 'btn' }: { children?: ReactNode; className?: string }) {
   const modal = useContext(ModalContext)

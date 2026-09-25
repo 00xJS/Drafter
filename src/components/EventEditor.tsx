@@ -3,7 +3,7 @@ import { CalendarEntry, Person, WORK_MODES, WORK_MODE_META, WorkMode, isWorkingM
 import { newerStamp } from '../itemops'
 import { uid } from '../utils'
 import { expandWorkDays } from '../calendars'
-import { Modal, ModalHead } from './Modal'
+import { Modal, ModalCancel, ModalHead, useChanged } from './Modal'
 import { PeoplePicker } from './PeoplePicker'
 
 // The one thing a task cannot express: a block of time with a start AND an end.
@@ -158,6 +158,7 @@ export function EventEditor({
   const [notes, setNotes] = useState(entry?.notes ?? '')
   const [peopleIds, setPeopleIds] = useState<string[]>(entry?.peopleIds ?? [])
   const [error, setError] = useState('')
+  const dirty = useChanged({ work, title, allDay, startLocal, endLocal, startDay, workDay, from, to, repeatDays, repeatWeeks, location, notes, peopleIds })
 
   const build = (f: { title: string; start: string; end: string; allDay: boolean }, keepId: boolean): CalendarEntry =>
     buildEntry(entry, f, { location, notes, work, peopleIds }, keepId)
@@ -256,7 +257,7 @@ export function EventEditor({
   const heading = entry ? (work ? 'Edit work day' : 'Edit event') : work ? 'New work day' : 'New event'
 
   return (
-    <Modal onClose={onClose} className="modal event-modal">
+    <Modal onClose={onClose} dirty={dirty} className="modal event-modal">
       <ModalHead title={heading} />
 
       <div className="modal-body">
@@ -413,9 +414,7 @@ export function EventEditor({
           </button>
         )}
         <span className="spacer" />
-        <button className="btn subtle" onClick={onClose}>
-          Cancel
-        </button>
+        <ModalCancel className="btn subtle" />
         <button className="btn primary" onClick={save}>
           Save
         </button>

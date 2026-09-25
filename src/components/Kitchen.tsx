@@ -68,7 +68,7 @@ import type { CaptureMode } from './kitchen/RecipeCapture'
 import { RecipeFillFlow } from './kitchen/RecipeFillFlow'
 import { Icon } from './Icon'
 import { MealDayCard } from './kitchen/MealCards'
-import { Modal, ModalHead } from './Modal'
+import { Modal, ModalCancel, ModalHead, useChanged } from './Modal'
 import { MealPlanSheet, mealsForPicks, type MealPick } from './MealPlanSheet'
 import { RecipeSuggestions } from './RecipeSuggestions'
 import { KitchenStats } from './planner/lazy'
@@ -1621,7 +1621,7 @@ function DraftSpare({ spare, onIngredients, onSteps, onDismiss }: { spare: Draft
   )
 }
 
-function RecipeForm({
+export function RecipeForm({
   recipe,
   capture,
   draft,
@@ -1678,6 +1678,7 @@ function RecipeForm({
   const [spare, setSpare] = useState<DraftSplit['spare'] | null>(start.spare)
 
   const has = { ingredients: ingredients.some(i => i.name.trim() !== ''), steps: steps.trim() !== '' }
+  const dirty = useChanged({ name, emoji, servings, ingredients, qtyText, steps, tags, notes, sourceUrl })
   // an answer arrives after an await: it lands on what the fields hold then
   const now = useRef({ has, servings })
   useLayoutEffect(() => {
@@ -1773,7 +1774,7 @@ function RecipeForm({
   const servingCount = Number(servings)
 
   return (
-    <Modal onClose={onClose}>
+    <Modal onClose={onClose} dirty={dirty}>
       <ModalHead title={recipe ? `Edit ${recipe.name}` : 'New recipe'} />
       <div className="modal-body">
         <RecipeCapture
@@ -1861,9 +1862,7 @@ function RecipeForm({
           </ConfirmButton>
         )}
         <span className="spacer" />
-        <button className="btn" onClick={onClose}>
-          Cancel
-        </button>
+        <ModalCancel />
         <button className="btn primary" onClick={save} disabled={!name.trim()}>
           Save
         </button>

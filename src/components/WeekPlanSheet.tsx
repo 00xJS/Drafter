@@ -9,7 +9,7 @@ import { readWeekPlanDismissed, rememberWeekPlanDismissed, weekPlanDismissedKey 
 import { CalendarEntry, Meal, Person, Place, PlaceCategory, Recipe, Task } from '../types'
 import { aiFailureText } from './AskSheet'
 import { MealPicker } from './MealPicker'
-import { Modal, ModalHead } from './Modal'
+import { Modal, ModalCancel, ModalHead, useChanged } from './Modal'
 
 // "Plan next week": the proposal from shared/weekplan.mts as rows to tick —
 // dinners, catch-ups, overdue work, bills, a Top 3. Nothing here writes. The
@@ -137,6 +137,8 @@ interface Props {
 
 export function WeekPlanSheet({ plan, recipes, places, people, meals, tasks, entries, myId = null, onCreatePlace, onCreateRecipe, onApply, onClose, polish = polishWeekPlan, now }: Props) {
   const [c, setC] = useState(() => initialChoices(plan))
+  // a pick, a day or a tick changed from the plan as it was offered: what closing would lose
+  const dirty = useChanged(c)
   const [picking, setPicking] = useState<string | null>(null)
   const [pol, setPol] = useState<Polish>({ status: 'idle' })
   const ids = useId()
@@ -206,7 +208,7 @@ export function WeekPlanSheet({ plan, recipes, places, people, meals, tasks, ent
   const nothing = !summary
 
   return (
-    <Modal onClose={onClose} className="modal week-plan-sheet">
+    <Modal onClose={onClose} dirty={dirty} className="modal week-plan-sheet">
       <ModalHead title="Plan next week" />
       <div className="modal-body">
         <p className="week-plan-sub">
@@ -416,9 +418,7 @@ export function WeekPlanSheet({ plan, recipes, places, people, meals, tasks, ent
       <footer className="modal-foot">
         <small className="week-plan-note week-plan-foot-note">Nothing is added until you press Add.</small>
         <span className="spacer" />
-        <button className="btn" onClick={onClose}>
-          {nothing ? 'Close' : 'Cancel'}
-        </button>
+        <ModalCancel>{nothing ? 'Close' : 'Cancel'}</ModalCancel>
         {!nothing && (
           <button className="btn primary" disabled={n === 0} onClick={() => onApply(accepted)}>
             Add {n} to next week

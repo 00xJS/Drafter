@@ -7,7 +7,7 @@ import { localDayKey, mentions } from '../journal'
 import { fmtDate, fromLocalInput, uid } from '../utils'
 import { Bars } from './bits'
 import { ConfirmButton } from './ConfirmButton'
-import { Modal, ModalHead } from './Modal'
+import { Modal, ModalCancel, ModalHead, useChanged } from './Modal'
 import { PlacePicker } from './PlacePicker'
 import { CatchUpIdea, suggestCatchUp } from '../ai'
 import { useDayKey } from '../useDayKey'
@@ -68,7 +68,7 @@ const SORTS: { key: SortKey; label: string }[] = [
   { key: 'least', label: 'Least recently seen' },
 ]
 
-function PersonForm({ person, onSave, onDelete, onClose }: { person?: Person; onSave(p: Person): void; onDelete?(id: string): void; onClose(): void }) {
+export function PersonForm({ person, onSave, onDelete, onClose }: { person?: Person; onSave(p: Person): void; onDelete?(id: string): void; onClose(): void }) {
   const [name, setName] = useState(person?.name ?? '')
   const [emoji, setEmoji] = useState(person?.emoji ?? '')
   const [group, setGroup] = useState<PersonGroup>(person?.group ?? 'family')
@@ -78,6 +78,7 @@ function PersonForm({ person, onSave, onDelete, onClose }: { person?: Person; on
   const [notes, setNotes] = useState(person?.notes ?? '')
   const [birthday, setBirthday] = useState(person?.birthday ?? '')
   const [anniversary, setAnniversary] = useState(person?.anniversary ?? '')
+  const dirty = useChanged({ name, emoji, group, cadence, color, notes, birthday, anniversary })
   const save = () => {
     if (!name.trim()) return
     const now = new Date().toISOString()
@@ -99,7 +100,7 @@ function PersonForm({ person, onSave, onDelete, onClose }: { person?: Person; on
     onClose()
   }
   return (
-    <Modal onClose={onClose} className="modal narrow">
+    <Modal onClose={onClose} dirty={dirty} className="modal narrow">
       <ModalHead title={person ? `Edit ${person.name}` : 'Add a person'} />
       <div className="modal-body">
         <div className="field-row">
@@ -173,9 +174,7 @@ function PersonForm({ person, onSave, onDelete, onClose }: { person?: Person; on
           </ConfirmButton>
         )}
         <span className="spacer" />
-        <button className="btn" onClick={onClose}>
-          Cancel
-        </button>
+        <ModalCancel />
         <button className="btn primary" disabled={!name.trim()} onClick={save}>
           Save
         </button>
@@ -184,7 +183,7 @@ function PersonForm({ person, onSave, onDelete, onClose }: { person?: Person; on
   )
 }
 
-function LogVisit({
+export function LogVisit({
   person,
   places,
   onLog,
@@ -202,8 +201,9 @@ function LogVisit({
   const [date, setDate] = useState(() => localDayKey())
   const [note, setNote] = useState('')
   const [placeId, setPlaceId] = useState<string | undefined>()
+  const dirty = useChanged({ date, note, placeId })
   return (
-    <Modal onClose={onClose} className="modal narrow">
+    <Modal onClose={onClose} dirty={dirty} className="modal narrow">
       <ModalHead title={`Saw ${person.name}`} />
       <div className="modal-body">
         <label className="field">
@@ -218,9 +218,7 @@ function LogVisit({
       </div>
       <footer className="modal-foot">
         <span className="spacer" />
-        <button className="btn" onClick={onClose}>
-          Cancel
-        </button>
+        <ModalCancel />
         <button
           className="btn primary"
           disabled={!date}

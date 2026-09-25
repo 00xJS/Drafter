@@ -41,7 +41,7 @@ import { FindAddress } from './AddressFinder'
 import type { AddressCandidate } from '../geocode'
 import { fmtDate, fromLocalInput, uid } from '../utils'
 import { ConfirmButton } from './ConfirmButton'
-import { Modal, ModalHead } from './Modal'
+import { Modal, ModalCancel, ModalHead, useChanged } from './Modal'
 
 interface Props {
   places: Place[]
@@ -139,6 +139,7 @@ export function PlaceForm({
   const [aliases, setAliases] = useState((place?.aliases ?? []).join(', '))
   const [pin, setPin] = useState(() => tidyCoords(place ?? {}))
   const [pinning, setPinning] = useState(false)
+  const dirty = useChanged({ name, emoji, category, color, cadence, notes, address, aliases, pin })
   const save = () => {
     if (!name.trim() || !category) return
     const now = new Date().toISOString()
@@ -167,7 +168,7 @@ export function PlaceForm({
     if (here) setPin(here)
   }
   return (
-    <Modal onClose={onClose} className="modal narrow">
+    <Modal onClose={onClose} dirty={dirty} className="modal narrow">
       <ModalHead title={place ? `Edit ${place.name}` : 'Add a place'} />
       <div className="modal-body">
         <div className="field-row">
@@ -267,9 +268,7 @@ export function PlaceForm({
           </ConfirmButton>
         )}
         <span className="spacer" />
-        <button className="btn" onClick={onClose}>
-          Cancel
-        </button>
+        <ModalCancel />
         <button className="btn primary" disabled={!name.trim() || !category} onClick={save}>
           Save
         </button>
@@ -278,7 +277,7 @@ export function PlaceForm({
   )
 }
 
-function LogOuting({
+export function LogOuting({
   place,
   people,
   onLog,
@@ -293,8 +292,9 @@ function LogOuting({
   const [date, setDate] = useState(() => localDayKey())
   const [note, setNote] = useState('')
   const [ids, setIds] = useState<string[]>([])
+  const dirty = useChanged({ date, note, ids })
   return (
-    <Modal onClose={onClose} className="modal narrow">
+    <Modal onClose={onClose} dirty={dirty} className="modal narrow">
       <ModalHead title={`Went to ${place.name}`} />
       <div className="modal-body">
         <label className="field">
@@ -327,9 +327,7 @@ function LogOuting({
       </div>
       <footer className="modal-foot">
         <span className="spacer" />
-        <button className="btn" onClick={onClose}>
-          Cancel
-        </button>
+        <ModalCancel />
         <button
           className="btn primary"
           disabled={!date}

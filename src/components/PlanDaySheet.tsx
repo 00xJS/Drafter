@@ -298,7 +298,7 @@ export function PlanDaySheet({
   void initialStep
 
   return (
-    <Modal onClose={onClose} className="modal narrow plan-sheet" closeOnBackdrop={!dirty}>
+    <Modal onClose={onClose} className="modal narrow plan-sheet" dirty={dirty}>
       <ModalHead title="Plan my day" variant="compose">
         <button type="button" className="btn primary" onClick={() => (dirty ? onApply(result) : onClose())}>
           Done
