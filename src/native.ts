@@ -158,6 +158,19 @@ export async function startOAuth(url: string): Promise<'native' | 'redirect'> {
   return 'redirect'
 }
 
+/**
+ * A link's click, sent to openExternal. In the shell a bare target="_blank"
+ * leaves for the Safari app, and coming back after the lock's grace asks for
+ * Face ID; openExternal keeps the page in Safari's sheet over the app. The
+ * link keeps its href, so it still reads, copies and long-presses as one.
+ */
+export function openExternalOnClick(url: string): (e: { preventDefault(): void }) => void {
+  return e => {
+    e.preventDefault()
+    void openExternal(url)
+  }
+}
+
 /** Dismiss the sheet opened by openExternal, e.g. once an OAuth flow has come back. */
 export async function closeExternal(): Promise<void> {
   if (!isNative()) return

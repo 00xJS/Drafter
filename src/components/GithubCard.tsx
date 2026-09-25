@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { GITHUB_STATE_META, GithubCard as Card, fetchGithubCard, githubLabel, parseGithubUrl, setIssueState } from '../github'
 import { readableInk } from '../contrast'
+import { openExternalOnClick } from '../native'
 import { useTheme } from '../theme'
 import { timeAgo } from '../utils'
 import { useNow } from '../useNow'
@@ -83,7 +84,7 @@ export function GithubCard({ url, onUnlink }: Props) {
         <span className="gh-glyph" aria-hidden>
           {glyph}
         </span>
-        <a href={card?.url ?? url} target="_blank" rel="noreferrer" className="gh-title">
+        <a href={card?.url ?? url} target="_blank" rel="noreferrer" className="gh-title" onClick={openExternalOnClick(card?.url ?? url)}>
           {card?.title ?? githubLabel(ref)}
         </a>
         {state && (
