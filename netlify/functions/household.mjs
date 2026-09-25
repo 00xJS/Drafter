@@ -8,7 +8,7 @@
 import { withCors } from './lib/cors.mjs'
 import { getUser, settingsGet, settingsSet, settingsStoreConfigured } from './lib/session.mjs'
 import { keyHeaders } from './lib/supabasekeys.mjs'
-import { PERSONAL_KINDS } from '../../shared/kinds.mts'
+import { PERSONAL_KINDS, SHARED_BY_DEFAULT } from '../../shared/kinds.mts'
 
 /** A user id has to look like one before it reaches a filter. */
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -235,15 +235,22 @@ const handler = async req => {
       // point, so the peer branch of the policy cannot reach it either: one
       // statement would disclose it to the creator AND lose it to its author.
       //
-      // Two statements, each with a filter that is one flat term list. The
-      // rule wants an AND of two ORs — no private note, no private task — and
-      // PostgREST can nest that, but a nested filter is a thing the stand-in
-      // in the tests has to imitate, and a stand-in that imitates it wrongly
-      // answers differently from the database while every test passes. So the
-      // notes are moved on their own instead, and each filter here says one
-      // simple thing. Nothing is lost in between: a row that has not moved yet
-      // is still its author's, which is the safe half.
-      const notPrivate = `or=(kind.neq.task,data->>shared.is.null,data->>shared.neq.false)`
+      // What else stays with them. A meal they kept to themselves ("Just me",
+      // v3.22) is as private as a withheld task. And the household shares the
+      // address book, not the log of who saw whom or who was where (v3.24): a
+      // visit they logged (a task tagged `visit`) and their calendar entries —
+      // their work days, and who was there — are their own, and handed to the
+      // creator they would count as the creator's own life.
+      //
+      // One statement per kind whose audience is per record, each filter one
+      // flat term list. The rule wants ANDs of ORs, and PostgREST can nest
+      // them, but a nested filter is a thing the stand-in in the tests has to
+      // imitate, and a stand-in that imitates it wrongly answers differently
+      // from the database while every test passes. So each kind is moved on its
+      // own, and each filter says one simple thing. Nothing is lost in between:
+      // a row that has not moved yet is still its author's, which is the safe
+      // half — and so is a per-record kind added later with no statement here.
+      const notPrivate = `or=(data->>shared.is.null,data->>shared.neq.false)`
       // `synced_at` moves with `user_id`, or the other devices never hear of
       // it: a delta returns rows newer than the caller's cursor, and changing
       // hands touches neither `data` nor `updated_at`. Their cached copies
@@ -255,10 +262,18 @@ const handler = async req => {
         headers: { prefer: 'return=minimal' },
         body: JSON.stringify({ user_id: ownerId, synced_at: new Date().toISOString() }),
       }
-      // everything the household shares, minus the notes, minus a private task
-      await rest(`posts?user_id=eq.${encodeURIComponent(target)}&kind=not.in.(${[...PERSONAL_KINDS, 'note'].join(',')})&${notPrivate}`, moveTo)
-      // and the notes they did share, which are household work like a task
-      await rest(`posts?user_id=eq.${encodeURIComponent(target)}&kind=eq.note&data->>shared=eq.true`, moveTo)
+      const theirs = `posts?user_id=eq.${encodeURIComponent(target)}`
+      // everything the household shares by kind: never a personal kind, an event, or a kind decided per record
+      await rest(`${theirs}&kind=not.in.(${[...PERSONAL_KINDS, ...Object.keys(SHARED_BY_DEFAULT), 'event'].join(',')})`, moveTo)
+      // the notes they did share, which are household work like a task
+      await rest(`${theirs}&kind=eq.note&data->>shared=eq.true`, moveTo)
+      // the meals they did not keep to themselves
+      await rest(`${theirs}&kind=eq.meal&${notPrivate}`, moveTo)
+      // the tasks they did not keep to themselves, and never a visit: those
+      // with no tags, then those whose tags do not name one (`not.cs` alone
+      // passes over a row with no tags, as SQL's NOT of a null does)
+      await rest(`${theirs}&kind=eq.task&${notPrivate}&data->tags=is.null`, moveTo)
+      await rest(`${theirs}&kind=eq.task&${notPrivate}&data->tags=not.cs.${encodeURIComponent('["visit"]')}`, moveTo)
       // Nothing is stamped for the others to notice: user_settings has no
       // column for it, so that write failed every time. The app that asked
       // resyncs in full once this answers (Settings → Household); the others'
