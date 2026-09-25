@@ -208,6 +208,36 @@ function addMonthsOnDay(date: Date, months: number, day: number): Date {
 }
 
 /**
+ * One step of a repeat: when it falls due next after `from`, in local time.
+ * A day, a week or two weeks on; whole months on for the ones that go by the
+ * month, on a day clamped to the month's length, so 31 January goes to 28
+ * February rather than rolling into March.
+ *
+ * `day` is the day of the month the series means to fall on, where it keeps
+ * one (a bill's `day`). It is used while `from` is that day, clamped to its
+ * month, so a bill due on the 31st goes 31 Jan -> 28 Feb -> 31 Mar instead of
+ * settling on the 28th; otherwise the date's own day wins, because the owner
+ * has moved it since. The step returns the day to keep for the one after.
+ *
+ * The one rule for where a repeat lands: nextOccurrence steps an occurrence
+ * just done with it, and Finance steps a series on with it to count what is
+ * still to come (src/finance.ts), so the two cannot disagree.
+ */
+export function stepDue(from: Date, freq: RecurrenceFreq, day?: number): { at: Date; day: number | undefined } {
+  const at = new Date(from)
+  if (freq === 'daily') at.setDate(at.getDate() + 1)
+  else if (freq === 'weekly') at.setDate(at.getDate() + 7)
+  else if (freq === 'biweekly') at.setDate(at.getDate() + 14)
+  else {
+    const baseDay = at.getDate()
+    const monthLen = new Date(at.getFullYear(), at.getMonth() + 1, 0).getDate()
+    const keep = day !== undefined && Number.isInteger(day) && Math.min(day, monthLen) === baseDay ? day : baseDay
+    return { at: addMonthsOnDay(at, MONTH_STEPS[freq] ?? 1, keep), day: keep }
+  }
+  return { at, day }
+}
+
+/**
  * The next occurrence of a recurring task, cloned from the one just completed.
  *
  * `held`, where the caller has the records, says what already holds an id. The
@@ -231,25 +261,15 @@ export function nextOccurrence(task: Task, uidFn: () => string, held?: (id: stri
   const base = baseIso ? new Date(baseIso) : new Date()
   if (isNaN(base.getTime())) return null
   const freq = task.recurrence.freq
+  // Monthly, quarterly and yearly land on a clamped day (setMonth used to roll
+  // 31 January into 3 March), and a bill remembers the day it means to fall on:
+  // stepDue, the step Finance projects a series with too
+  const stored = bill && Number.isInteger(bill.day) ? bill.day : undefined
   let billDay: number | undefined
   const advance = (from: Date): Date => {
-    const at = new Date(from)
-    if (freq === 'daily') at.setDate(at.getDate() + 1)
-    else if (freq === 'weekly') at.setDate(at.getDate() + 7)
-    else if (freq === 'biweekly') at.setDate(at.getDate() + 14)
-    else {
-      // Monthly, quarterly and yearly land on a clamped day: setMonth used to roll
-      // 31 January into 3 March. A bill also remembers its intended day, so one due
-      // on the 31st goes 31 Jan -> 28 Feb -> 31 Mar instead of settling on the 28th;
-      // if the owner has moved the date since, the new day wins.
-      const baseDay = at.getDate()
-      const monthLen = new Date(at.getFullYear(), at.getMonth() + 1, 0).getDate()
-      const stored = bill && Number.isInteger(bill.day) ? bill.day : undefined
-      const day = stored !== undefined && Math.min(stored, monthLen) === baseDay ? stored : baseDay
-      if (bill) billDay = day
-      return addMonthsOnDay(at, MONTH_STEPS[freq] ?? 1, day)
-    }
-    return at
+    const step = stepDue(from, freq, stored)
+    if (bill) billDay = step.day
+    return step.at
   }
   let next = advance(base)
   // …and one done late, or missed for weeks, is next due on the first slot
