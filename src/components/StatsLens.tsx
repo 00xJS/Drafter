@@ -140,7 +140,8 @@ export function StatsLens(p: StatsLensProps) {
   // sync and each toast recomputed the lot. Midnight starts the new day's
   // clock (useDayClock), even on a lens left open overnight.
   const now = useDayClock(handed)
-  const [span, setSpan] = useState<DayWindow>(30)
+  // a page opens on the last 30 days, and the year's on the last 12 months
+  const [span, setSpan] = useState<DayWindow>(tab === 'year' ? 365 : 30)
   const [year, setYear] = useState(now.getFullYear())
   const myId = p.myId ?? null
   // alone there is nobody else's log to count, whatever this device once chose
@@ -419,43 +420,60 @@ function YearLens(p: Lens) {
         {/* Every one of these opens a page of THIS tab. Nothing here sends
             you to another tab to read the rest of your own figures. */}
         <p className="stats-note">Each opens that area&rsquo;s own figures, here.</p>
+        {/* each card in its own area's colour, as its page is drawn */}
         <div className="area-list">
-          <AreaCard name="Tasks" value={`${report.open} open`} sub={report.overdue > 0 ? `${report.overdue} past their date` : 'nothing overdue'} series={done} seriesLabel="Finished each month" onOpen={() => p.onOpen('tasks')} openLabel="Open Tasks" />
-          <AreaCard name="Money" value={formatMoney(money.spent)} sub={`paid in ${year}`} series={money.months} seriesLabel={`What you paid each month of ${year}`} onOpen={() => p.onOpen('money')} openLabel="Open Money" />
-          <AreaCard
-            name="People"
-            value={countOf(peopleDays.length, 'day')}
-            sub={`with anyone, in the last ${spanWords}`}
-            series={doneSeries}
-            seriesLabel="Days you saw someone each month"
-            onOpen={() => p.onOpen('people')}
-            openLabel="Open People"
-          />
-          <AreaCard
-            name="Places"
-            value={countOf(placesVisited, 'place')}
-            sub="you have been to at least once"
-            onOpen={() => p.onOpen('places')}
-            openLabel="Open Places"
-            aside={<Ring value={placesVisited} of={Math.max(1, livePlaces.length)} size={52} label={String(placesVisited)} tone="var(--tone-sky)" />}
-          />
-          <AreaCard
-            name="Kitchen"
-            value={`${kitchen.cookedDays} of ${kitchen.daysThisMonth}`}
-            sub="days cooked at home this month"
-            onOpen={() => p.onOpen('kitchen')}
-            openLabel="Open Kitchen"
-            aside={<Ring value={kitchen.cookedDays} of={Math.max(1, kitchen.daysThisMonth)} size={52} label={`${Math.round((kitchen.cookedDays / Math.max(1, kitchen.daysThisMonth)) * 100)}%`} />}
-          />
-          <AreaCard
-            name="Wardrobe"
-            value={countOf(pieces, 'piece')}
-            sub={clothes.perWear === undefined ? 'nothing priced yet' : `${formatMoney(clothes.perWear)} a wear`}
-            onOpen={() => p.onOpen('wardrobe')}
-            openLabel="Open Wardrobe"
-          />
-          <AreaCard name="Habits" value={`${hr.pct}%`} sub={hr.due > 0 ? `of ${hr.due} days due` : 'nothing was due'} onOpen={() => p.onOpen('habits')} openLabel="Open Habits" />
-          <AreaCard name="Journal" value={countOf(jr.entries, 'entry').replace('entrys', 'entries')} sub={`written in the last ${spanWords}`} onOpen={() => p.onOpen('journal')} openLabel="Open Journal" />
+          <div className="ink-tasks">
+            <AreaCard name="Tasks" value={`${report.open} open`} sub={report.overdue > 0 ? `${report.overdue} past their date` : 'nothing overdue'} series={done} seriesLabel="Finished each month" onOpen={() => p.onOpen('tasks')} openLabel="Open Tasks" />
+          </div>
+          <div className="ink-money">
+            <AreaCard name="Money" value={formatMoney(money.spent)} sub={`paid in ${year}`} series={money.months} seriesLabel={`What you paid each month of ${year}`} onOpen={() => p.onOpen('money')} openLabel="Open Money" />
+          </div>
+          <div className="ink-people">
+            <AreaCard
+              name="People"
+              value={countOf(peopleDays.length, 'day')}
+              sub={`with anyone, in the last ${spanWords}`}
+              series={doneSeries}
+              seriesLabel="Days you saw someone each month"
+              onOpen={() => p.onOpen('people')}
+              openLabel="Open People"
+            />
+          </div>
+          <div className="ink-places">
+            <AreaCard
+              name="Places"
+              value={countOf(placesVisited, 'place')}
+              sub="you have been to at least once"
+              onOpen={() => p.onOpen('places')}
+              openLabel="Open Places"
+              aside={<Ring value={placesVisited} of={Math.max(1, livePlaces.length)} size={52} label={String(placesVisited)} />}
+            />
+          </div>
+          <div className="ink-kitchen">
+            <AreaCard
+              name="Kitchen"
+              value={`${kitchen.cookedDays} of ${kitchen.daysThisMonth}`}
+              sub="days cooked at home this month"
+              onOpen={() => p.onOpen('kitchen')}
+              openLabel="Open Kitchen"
+              aside={<Ring value={kitchen.cookedDays} of={Math.max(1, kitchen.daysThisMonth)} size={52} label={`${Math.round((kitchen.cookedDays / Math.max(1, kitchen.daysThisMonth)) * 100)}%`} />}
+            />
+          </div>
+          <div className="ink-wardrobe">
+            <AreaCard
+              name="Wardrobe"
+              value={countOf(pieces, 'piece')}
+              sub={clothes.perWear === undefined ? 'nothing priced yet' : `${formatMoney(clothes.perWear)} a wear`}
+              onOpen={() => p.onOpen('wardrobe')}
+              openLabel="Open Wardrobe"
+            />
+          </div>
+          <div className="ink-habits">
+            <AreaCard name="Habits" value={`${hr.pct}%`} sub={hr.due > 0 ? `of ${hr.due} days due` : 'nothing was due'} onOpen={() => p.onOpen('habits')} openLabel="Open Habits" />
+          </div>
+          <div className="ink-journal">
+            <AreaCard name="Journal" value={countOf(jr.entries, 'entry').replace('entrys', 'entries')} sub={`written in the last ${spanWords}`} onOpen={() => p.onOpen('journal')} openLabel="Open Journal" />
+          </div>
         </div>
       </section>
 

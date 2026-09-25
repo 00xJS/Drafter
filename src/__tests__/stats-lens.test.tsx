@@ -561,7 +561,7 @@ describe('the lens drawn', () => {
     // the window lives on the lens, not inside a page's section, and every
     // part of the page reads that one
     const src = readSource('components/StatsLens.tsx')
-    expect(src).toMatch(/const \[span, setSpan\] = useState<DayWindow>\(30\)/)
+    expect(src).toMatch(/const \[span, setSpan\] = useState<DayWindow>\(tab === 'year' \? 365 : 30\)/)
     expect(src.indexOf('const [span')).toBeLessThan(src.indexOf('function YearLens'))
   })
 })

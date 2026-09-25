@@ -1,8 +1,9 @@
 // Money's rules the app and the server share: how an amount is written, which
-// kinds of bill are money out, and what counts as PAID. Dependency-free ESM.
-// src/bills.ts and src/types.ts re-export each under the name they always had,
-// so the Stats lens, Review, Finance, Insights' highlights and the monthly
-// recap (netlify/functions/digest.mjs) all add money up one way.
+// kinds of bill are money out, and what a bill ticked with nothing under Paid
+// paid. Dependency-free ESM. src/bills.ts and src/types.ts re-export each
+// under the name they always had, so the Stats lens, Review, Finance,
+// Insights' highlights and the monthly recap (netlify/functions/digest.mjs)
+// all add money up one way; payments.mts adds up what was paid by them.
 
 import type { BillKind, Task } from '../src/types.ts'
 
@@ -40,30 +41,4 @@ export const isSpending = (t: Pick<Task, 'bill'>): boolean => !t.bill || (!isInc
  */
 export function withPaidDefault<T extends Task>(t: T): T {
   return t.bill && t.status === 'done' && t.actualCost === undefined && t.estimateCost !== undefined ? { ...t, actualCost: t.estimateCost } : t
-}
-
-/** One payment: when it was made, what it came to, and who was paid. */
-export interface Payment {
-  at: string
-  amount: number
-  payee: string
-}
-
-/**
- * Everything PAID: a finished task's actual cost, filed when it was finished,
- * a bill's own amount unless you changed it (withPaidDefault), and only money
- * spent (isSpending) — a payday received and a set-aside moved are not
- * payments, and counting them made a wage read as the biggest thing you paid
- * for. Nothing in Trash, and nothing that cost nothing.
- */
-export function payments(tasks: readonly Task[]): Payment[] {
-  const out: Payment[] = []
-  for (const raw of tasks) {
-    if (raw.deletedAt || raw.status !== 'done' || !raw.completedAt || !isSpending(raw)) continue
-    const t = raw.bill ? withPaidDefault(raw) : raw
-    const amount = t.actualCost
-    if (amount === undefined || !Number.isFinite(amount) || amount <= 0) continue
-    out.push({ at: raw.completedAt, amount, payee: t.bill?.payee?.trim() || t.title || 'Untitled' })
-  }
-  return out
 }

@@ -1,5 +1,5 @@
 import { weekKeyStart } from '../shared/weeks.mts'
-import { mealWay, mealWays, savedPlaces, type MealWay } from '../shared/kitchen.mts'
+import { mealWay, mealWays, savedPlaces, type MealWay } from '../shared/mealways.mts'
 import { cookedIndex, cookedRecipeIds, ingredientKey, mealSides, notLately, type CookedIndex } from './kitchen'
 import { countDays, dayStreaks, daysWithin, inWindow, monthBuckets, monthsAndTrend, topN, type DayWindow, type Streaks } from './stats'
 import type { GroceryList, Meal, MealSlot, Place, Recipe } from './types'
@@ -31,7 +31,7 @@ import { dateKey } from './utils'
  * own kinds count; anything else handed in counts for nothing.
  */
 
-/** How a meal was had, once it counts: cooked at home, eaten out at a saved place, or bought with no place named (shared/kitchen.mts). */
+/** How a meal was had, once it counts: cooked at home, eaten out at a saved place, or bought with no place named (shared/mealways.mts). */
 export type { MealWay }
 
 /** The three, in the order every chart, bar and key draws them. */
@@ -63,8 +63,9 @@ export interface KitchenIndex {
 /**
  * The saved places a meal can be eaten out at (savedPlaces), how a meal is
  * had or planned to be (mealWay), and which meals count and how (mealWays):
- * the Kitchen's rules, kept in shared/kitchen.mts because Insights' highlights
- * and the monthly recap on the server count meals by them too.
+ * the Kitchen's rules, kept in shared/ because Insights' highlights
+ * and the monthly recap on the server count meals by them too
+ * (shared/mealways.mts).
  */
 export { mealWay, savedPlaces }
 

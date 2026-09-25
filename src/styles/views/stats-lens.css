@@ -79,6 +79,10 @@
 .lens-row:last-child {
   border-bottom: none;
 }
+/* "93%" inside a habit's 44px ring, rather than spilling over its arc */
+.lens-row .ring-label {
+  font-size: 0.6875rem;
+}
 .lens-row-name {
   flex: 1;
   min-width: 0;
@@ -95,15 +99,18 @@
 }
 .lens-row-value {
   flex: none;
+  min-width: 2.5em;
+  text-align: right;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 /* A bar that fills its own row, for a share that needs no gutter of labels.
    The track is a surface step rather than --viz-empty at its opacity: opacity
-   here would fade the fill inside it too. */
+   here would fade the fill inside it too. From no basis, as the name beside it
+   is, so every row's bar starts and ends where the others do. */
 .lens-meter {
-  flex: 1 1 90px;
+  flex: 1 1 0;
   height: 8px;
   border-radius: 999px;
   background: var(--surface-3);
@@ -184,6 +191,9 @@
   display: flex;
   align-items: center;
   gap: 6px;
+  /* as wide as the tracks above it, so ‹ and › sit under their ends rather
+     than at the two edges of a desktop page */
+  max-width: 520px;
 }
 .when-step {
   flex: none;

@@ -1017,12 +1017,11 @@ button.photo-cal-day:focus-visible {
   overscroll-behavior-x: contain;
 }
 
-/* five tiles in the phone's two columns: the count of clothes spans the row, the four figures pair up under it */
-@media (max-width: 640px) {
-  .wardrobe-tiles > :first-child {
-    grid-column: 1 / -1;
-  }
-}
+/* The tiles pair up in the phone's two columns as every Stats view's do, a
+   last one on its own taking the row (08-responsive.css). The first used to
+   span the row as well, which with five left the fourth alone beside a gap;
+   and a tile is drawn only for a figure there is now, so how many there are
+   changes with the week. */
 @media (pointer: coarse) {
   .cal-look,
   .review-most-worn {

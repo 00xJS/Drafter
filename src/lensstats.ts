@@ -1,5 +1,5 @@
 import { isBill, withPaidDefault } from './bills'
-import { payments } from '../shared/money.mts'
+import { payments } from '../shared/payments.mts'
 import { habitsConsistency, isDueOn, streakOf } from './habits'
 import { isVisit } from './review'
 import { dayOffset } from './taskutils'
@@ -196,7 +196,7 @@ export interface MoneyReport {
  * filed when it was finished. A payday received and a set-aside moved are
  * not payments — one is money in and the other money kept (isSpending) — and
  * counting them made a wage read as the biggest thing you paid for. The rule
- * is shared/money.mts's `payments`, which the monthly recap reads too.
+ * is shared/payments.mts's, which the monthly recap reads too.
  */
 const paidMarks = (tasks: readonly Task[]): (Dated & { amount: number; payee: string })[] => payments(tasks)
 
