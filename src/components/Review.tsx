@@ -14,6 +14,7 @@ import { liveById, outfitLabel, wearIndex, wornBetween } from '../wardrobe'
 import { DueBadge, StatTile } from './bits'
 import { useNow } from '../useNow'
 import { noonOf } from '../useDayKey'
+import { intoFirstEmpty, unfinishedGoals } from '../weekgoals'
 import type { WardrobeOpen } from './planner/useNavigation'
 import { Collage, GarmentPhoto } from './wardrobe/GarmentPhoto'
 
@@ -261,6 +262,18 @@ export function Review({
     onSaveReview({ ...base, top: top.map(t => t.trim()).filter(Boolean), reflections: reflections.trim() || undefined, summary: summary || undefined, ...patch, updatedAt })
   }
 
+  /**
+   * The period's own goals left unticked — the Top 3 written for it last
+   * time, on this page, in Plan next week or on Home — offered for the next
+   * one while it has an empty line, each a tap from its place in the list.
+   */
+  const carry = top.some(line => !line.trim()) ? unfinishedGoals(prevSaved, top) : []
+  const carryOver = (line: string) => {
+    const next = intoFirstEmpty(top, line)
+    setTop(next)
+    persist({ top: next.map(t => t.trim()).filter(Boolean) })
+  }
+
   const togglePrevTop = (index: number) => {
     if (!prevSaved) return
     const next = [...(prevSaved.topDone ?? [])]
@@ -465,6 +478,15 @@ export function Review({
               </div>
             ))}
           </div>
+          {carry.length > 0 && (
+            <div className="review-carry" role="group" aria-label="Unfinished goals to carry over">
+              {carry.map(line => (
+                <button key={line} type="button" className="review-carry-chip" aria-label={`Carry over “${line}”`} onClick={() => carryOver(line)}>
+                  <span className="review-carry-lead">Carry over:</span> {line}
+                </button>
+              ))}
+            </div>
+          )}
           <label className="field">
             <span>Reflections</span>
             <textarea rows={3} value={reflections} onChange={e => setReflections(e.target.value)} onBlur={() => persist({})} placeholder="What worked, what didn't, what to change…" />

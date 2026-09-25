@@ -5,6 +5,58 @@
    later partial, stay in the partials. These keep their order among
    themselves; the partial each came from is named above it. */
 
+/* ---------- carrying goals over (2026-09-25) ----------
+   Under "Top 3 for next week": the goals the period ended with unticked, a
+   chip each, filling the first empty line. */
+.review-carry {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: -2px 0 12px;
+}
+.review-carry-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  min-width: 0;
+  padding: 5px 12px;
+  border: 1px dashed var(--accent-ring);
+  border-radius: 999px;
+  background: var(--accent-softer);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.8125rem;
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.review-carry-chip:hover {
+  background: var(--accent-soft);
+}
+.review-carry-chip:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.review-carry-lead {
+  flex: none;
+  color: var(--accent-text);
+  font-weight: 600;
+}
+@media (pointer: coarse) {
+  .review-carry-chip {
+    min-height: 44px;
+  }
+}
+/* You said: last week's Top 3 — set on Home, or here — to tick. Each line
+   reads from the left beside its box; the row's space-between had pushed a
+   short goal to the far edge of a phone */
+.you-said .dash-main {
+  flex: 1;
+  min-width: 0;
+}
+
 /* ---------- from 09-tasks-today.css ---------- */
 .you-said-reflections {
   margin: 8px 0 0;
