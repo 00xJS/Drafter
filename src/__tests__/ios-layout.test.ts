@@ -171,6 +171,8 @@ describe('the small ones', () => {
     expect(title).toMatch(/(?<!-)hyphens:\s*auto/)
     // at the pills' own size: at 12px it was cut to "+8 m…"
     expect(phone('.cal-cell .cal-more')).toMatch(/font-size:\s*10px/)
+    expect(phone('.cal-cell .cal-more')).toMatch(/padding-left:\s*0/)
+    expect(phone('.cal-pill')).toMatch(/padding:\s*4px 3px/)
   })
 
   it('keeps a coming bill’s Autopay whole beside words that give way', () => {

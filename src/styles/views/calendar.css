@@ -303,8 +303,10 @@
     -webkit-hyphens: auto;
     hyphens: auto;
   }
-  /* "+8 more" at the pills' own size: at 12px it was cut to "+8 m…" */
+  /* "+8 more" at the pills' own size, and the 2px it was indented: at 12px
+     it was cut to "+8 m…" */
   .cal-cell .cal-more {
+    padding-left: 0;
     font-size: 10px;
   }
   /* the glyph alone says home, office, off or holiday; the words do not fit
@@ -326,7 +328,9 @@
      would spill out of the geometry rather than move it. */
   .cal-pill {
     font-size: 10px;
-    padding: 4px 5px;
+    /* 3px a side, not 5: at ~42pt a pill, the 4px it gives back is a
+       "Brunch" or a "Salmon" on one line instead of split in two */
+    padding: 4px 3px;
   }
   .cal-pill-time {
     font-size: 9px;
