@@ -235,13 +235,13 @@ describe('Kitchen', () => {
     expect(css).toMatch(/\.kitchen-recipe-compose \.btn,\s*\.kitchen-empty-actions \.btn \{[^}]*flex:\s*1/)
   })
 
-  it('offers to plan a week with empty dinners from a button in its header, the count a line under the days — not on one that is planned', () => {
+  it('offers to plan a week with empty dinners in one line of its header, the count and a link — not on one that is planned', () => {
     vi.stubGlobal('localStorage', fakeStorage({ 'drafter:kitchen-tab': 'week' }))
     const empty = renderToStaticMarkup(<Kitchen {...props} />)
-    // slimmer than the banner it was: a button in the week's header, and its count
+    // slimmer than the banner it was: the count, and the sheet's way in
     expect(empty).not.toContain('meal-plan-cta')
-    expect(empty).toMatch(/<button type="button" class="btn period-end kitchen-plan-week" aria-label="Plan this week’s meals">/)
-    expect(empty).toMatch(/<p class="kitchen-week-todo">(Nothing planned yet|\d dinners? still to plan)<\/p>/)
+    expect(empty).toMatch(/<p class="kitchen-week-todo"><span>(Nothing planned yet|\d dinners? still to plan)<\/span><button type="button" class="kitchen-plan-week" aria-haspopup="dialog">/)
+    expect(empty).toContain('Plan this week’s meals</button>')
     expect(empty).toContain('aria-label="Dinners this week"')
     // the open day, a card for each of its meals, every one of them empty
     expect(empty.match(/<li id="meal-day-[^"]+"/g)).toHaveLength(1)

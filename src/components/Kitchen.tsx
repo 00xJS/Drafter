@@ -911,14 +911,6 @@ function WeekPlan({
         <button className="btn" onClick={() => onShift(1)} aria-label="Next week">
           ›
         </button>
-        {/* "Plan this week's meals" was a banner across the week; it is a
-            button in its header now, with its count a line under the days */}
-        {planning && (
-          <button type="button" className="btn period-end kitchen-plan-week" aria-label="Plan this week’s meals" onClick={onPlan}>
-            <Icon name="shuffle" size={16} />
-            <span className="kitchen-plan-words">Plan meals</span>
-          </button>
-        )}
       </div>
       <nav className="week-strip" aria-label="Dinners this week">
         {days.map(d => {
@@ -946,7 +938,17 @@ function WeekPlan({
           )
         })}
       </nav>
-      {planning && <p className="kitchen-week-todo">{emptyDinners === 7 ? 'Nothing planned yet' : `${emptyDinners} dinner${emptyDinners === 1 ? '' : 's'} still to plan`}</p>}
+      {/* "Plan this week's meals" was a banner across the week: it is one
+          line of the week's header now, its count and its link */}
+      {planning && (
+        <p className="kitchen-week-todo">
+          <span>{emptyDinners === 7 ? 'Nothing planned yet' : `${emptyDinners} dinner${emptyDinners === 1 ? '' : 's'} still to plan`}</span>
+          <button type="button" className="kitchen-plan-week" aria-haspopup="dialog" onClick={onPlan}>
+            <Icon name="shuffle" size={14} />
+            Plan this week’s meals
+          </button>
+        </p>
+      )}
       <ul className="meal-week">
         <li
           key={picked}

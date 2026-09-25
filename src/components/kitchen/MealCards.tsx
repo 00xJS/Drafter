@@ -180,6 +180,9 @@ export function MealDayCard({
           <span className="meal-card-slot">
             <span aria-hidden="true">{meta.emoji}</span> {meta.label}
           </span>
+          <button type="button" className="meal-card-change" aria-haspopup="dialog" onClick={() => setPicking('slot')}>
+            Choose…
+          </button>
         </header>
         {ideas.length > 0 && (
           <div className="meal-card-chips" role="group" aria-label={`Ideas for ${slotName}`}>
@@ -195,16 +198,13 @@ export function MealDayCard({
             ))}
           </div>
         )}
-        <div className="meal-card-chips" role="group" aria-label={`Quick picks for ${slotName}`}>
+        <div className="meal-card-quick" role="group" aria-label={`Quick picks for ${slotName}`}>
           {QUICK_PICKS.map(k => (
             <button key={k} type="button" className="meal-chip quick" onClick={() => plan(quickMain(k), fresh)}>
               <span aria-hidden="true">{QUICK_PICK_META[k].emoji}</span> {QUICK_PICK_META[k].label}
             </button>
           ))}
         </div>
-        <button type="button" className="btn meal-card-choose" aria-haspopup="dialog" onClick={() => setPicking('slot')}>
-          Choose…
-        </button>
         {others}
         {picker}
       </section>
@@ -239,19 +239,21 @@ export function MealDayCard({
         {shown.title}
       </p>
       {who && <p className="meal-card-who">{who}</p>}
-      {(canCook || recipe) && (
-        <div className="meal-card-actions">
+      {/* who is cooking and cook mode share a line; with nobody to ask, the
+          sides do, so the card is never a line for one button */}
+      {(canCook || hasSides || recipe) && (
+        <div className="meal-card-foot">
           {canCook && <CookToggle meal={shown} members={cooks} onChange={id => onAdjust(mealAdjusted(shown, { cookId: id }))} />}
+          {hasSides && (
+            <div className={canCook ? 'meal-card-sides own-line' : 'meal-card-sides'}>
+              <MealSides meal={shown} date={date} slot={slot} recipes={recipes} cooked={cooked} editable={isMine} onSave={onAdjust} />
+            </div>
+          )}
           {recipe && (
             <button type="button" className={date === today ? 'btn primary meal-card-cook' : 'btn meal-card-cook'} onClick={() => onOpenRecipe(recipe, shown)}>
               {date === today ? 'Start cooking' : 'Cook'}
             </button>
           )}
-        </div>
-      )}
-      {hasSides && (
-        <div className="meal-card-sides">
-          <MealSides meal={shown} date={date} slot={slot} recipes={recipes} cooked={cooked} editable={isMine} onSave={onAdjust} />
         </div>
       )}
       {shown.notes && <p className="meal-card-notes">{shown.notes}</p>}

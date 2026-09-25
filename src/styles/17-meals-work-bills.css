@@ -99,12 +99,17 @@
   flex: 1;
   min-width: 0;
 }
-/* J | M: two letters, not a full-width track */
-.meal-pick-line > .segmented.meal-cook-seg,
-.segmented.seg-track.meal-cook-seg {
+/* the sheet's own width, not the 520px a track keeps on a mouse page */
+.meal-pick-line > .segmented.seg-track,
+.meal-pick-sheet .segmented.seg-track.meal-pick-tabs {
+  max-width: none;
+}
+/* J | M: two letters, not a full-width track. Width and flex as the phone's
+   track rule has them (19-native-shell.css), so the cap below is what wins */
+.meal-pick-line > .segmented.seg-track.meal-cook-seg {
   flex: none;
-  width: auto;
-  min-width: 6.5rem;
+  width: 100%;
+  max-width: 7rem;
 }
 .segmented.seg-track.meal-cook-seg .seg {
   min-width: 2.75rem;
@@ -233,6 +238,7 @@
 }
 .meal-pick-group {
   margin: 4px 0 2px;
+  text-align: left;
   font-size: 0.72rem;
   font-weight: 700;
   letter-spacing: 0.06em;

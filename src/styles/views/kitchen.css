@@ -151,25 +151,49 @@
 .week-strip-day.picked .week-strip-dots > i {
   background: var(--accent-text);
 }
+/* "2 dinners still to plan · Plan this week's meals": the count and the
+   sheet's way in, one quiet line where the banner was */
+.kitchen-week-todo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 2px 10px;
+  margin: -4px 0 12px;
+  font-size: 0.8125rem;
+  color: var(--text-2);
+}
 .kitchen-plan-week {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
+  padding: 4px 0;
+  border: 0;
+  background: none;
   color: var(--accent-text);
   font-weight: 600;
 }
-.kitchen-week-todo {
-  margin: -4px 0 12px;
-  font-size: 0.8125rem;
-  color: var(--muted);
-  text-align: center;
-}
-@media (max-width: 400px) {
-  /* the week's range keeps its line at 375pt: the plan button is its icon alone,
-     its name still said to a screen reader (aria-label) */
-  .kitchen-plan-words {
-    display: none;
+@media (pointer: coarse) {
+  .kitchen-plan-week {
+    min-height: 44px;
   }
+  .kitchen-week-todo {
+    margin-top: -10px;
+    margin-bottom: 6px;
+  }
+}
+/* the open day holds a card for each meal: no frame of its own around theirs */
+.meal-week > .meal-day,
+.meal-week > .meal-day.picked,
+.meal-week > .meal-day.today {
+  gap: 10px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.meal-week > .meal-day > .meal-day-head {
+  padding: 0 2px;
 }
 
 /* ---------- This week: a card for each meal of the open day ---------------- */
@@ -237,14 +261,8 @@
   font-size: 0.875rem;
   color: var(--text-2);
 }
-.meal-card-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 12px;
-  margin-top: 4px;
-}
 .meal-card-cooking {
+  flex: none;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -253,21 +271,42 @@
   font-size: 0.8125rem;
   color: var(--text-2);
 }
-.meal-card-cook {
-  margin-left: auto;
+/* the card's last line: who is cooking and cook mode, or its sides — + Side,
+   "with Rice · Naan" — and cook mode at the end. With both a cook to ask and
+   sides, the sides take a line of their own after them. */
+.meal-card-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin-top: 2px;
 }
-/* its sides, compact: + Side, "with Rice · Naan" and the side form, wrapping */
 .meal-card-sides {
   display: flex;
+  flex: 0 1 auto;
   flex-wrap: wrap;
   align-items: center;
   gap: 6px 8px;
   min-width: 0;
 }
+.meal-card-sides.own-line {
+  order: 1;
+  flex-basis: 100%;
+}
 /* on the row the sides line up under the picker; on a card there is nothing to line up with */
 .meal-card-sides > .meal-sides {
-  flex-basis: auto;
+  flex: 0 1 auto;
   padding-left: 0;
+}
+.meal-card-sides > .meal-side-add {
+  margin-left: -8px;
+}
+.meal-card-sides > .meal-side-form {
+  flex-basis: 100%;
+}
+.meal-card-cook {
+  margin-left: auto;
 }
 .meal-card-notes {
   margin: 0;
@@ -312,8 +351,30 @@
 .meal-chip-star {
   color: var(--accent-text);
 }
-.meal-card-choose {
-  align-self: flex-start;
+/* the three quick picks, one line of three whatever the width: a long name
+   takes two lines of its own tile rather than pushing Takeout under the rest */
+.meal-card-quick {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  /* three tiles, not three stripes across a desktop */
+  max-width: 30rem;
+}
+.meal-chip.quick {
+  justify-content: center;
+  gap: 4px;
+  max-width: none;
+  padding: 6px;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 0.8125rem;
+  line-height: 1.2;
+  text-align: center;
+  white-space: normal;
+  /* between words only: "Leftovers" never loses its s to the next line */
+  overflow-wrap: normal;
+  word-break: normal;
 }
 @media (pointer: coarse) {
   .meal-chip,
@@ -323,13 +384,14 @@
   }
   .meal-card-change {
     padding-inline: 8px;
-    margin-right: -8px;
+    margin: -10px -8px -10px 0;
   }
 }
-@media (max-width: 640px) {
-  .meal-card-choose {
-    align-self: stretch;
-  }
+/* J | M: two letters, not a full-width track. The container is in the
+   selector so it outranks the phone's full-width track (19-native-shell.css) */
+.meal-card-cooking > .segmented.seg-track.meal-cook-seg {
+  flex: none;
+  width: 7rem;
 }
 
 /* ---------- Recipes: the star ------------------------------------------------ */
@@ -352,6 +414,13 @@
 /* the row's star takes the push to the end; Edit sits straight after it */
 .recipe-card > .recipe-star + .recipe-card-edit {
   margin-left: 0;
+}
+@media (max-width: 640px) {
+  /* with the star beside Edit a long name wraps rather than losing its end */
+  .recipe-card .dash-title {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
 }
 @media (pointer: coarse) {
   .recipe-star,
