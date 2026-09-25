@@ -3,7 +3,6 @@ import { formatMoney } from '../../bills'
 import {
   STALE_DAYS,
   TIMELINE_DAYS,
-  accountEmoji,
   countable,
   daysBetween,
   isLiability,
@@ -22,6 +21,7 @@ import {
 import type { Account, Task } from '../../types'
 import { Icon } from '../Icon'
 import { GoalRow } from './Goals'
+import { AccountMark } from './KindMark'
 import { ageOf, dayLabel, moneyName, shortDay } from './labels'
 import { ComingRow, UndatedRow, soonWord } from './Rows'
 
@@ -324,7 +324,9 @@ function AccountChip({ account, today, whose, onOpen }: { account: Account; toda
       aria-label={`${account.name}: ${latest ? `${formatMoney(latest.amount)}${owed ? ' owed' : ''}, ${age}` : 'no balance yet'}${whose ? `, ${whose}’s` : ''}`}
     >
       <span className="fin-chip-name">
-        <span aria-hidden="true">{accountEmoji(account)}</span> {account.name}
+        <span aria-hidden="true">
+          <AccountMark account={account} />
+        </span> {account.name}
       </span>
       <span className="fin-chip-line">
         <strong className={owed ? 'owed' : undefined}>{latest ? formatMoney(latest.amount) : '—'}</strong>

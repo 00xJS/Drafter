@@ -927,6 +927,29 @@
   font-size: 1.4rem;
   line-height: 1;
 }
+/* crypto's mark (KindMark.tsx): a gold coin with ₿ tilted as Bitcoin's own
+   is. Sized off the text around it to an emoji's drawn size, about 1em, and
+   sat where one sits: its baseline is its bottom edge, a touch below the
+   line's. */
+.fin-coin {
+  display: inline-block;
+  width: 1.55em;
+  height: 1.55em;
+  overflow: hidden;
+  border-radius: 50%;
+  background: radial-gradient(circle at 32% 28%, var(--coin-shine) 0 10%, var(--coin-gold) 40%, var(--coin-deep) 78%, var(--coin-edge) 100%);
+  box-shadow:
+    inset 0 0 0 0.07em var(--coin-edge),
+    inset 0 0 0 0.16em var(--coin-gold);
+  color: var(--coin-ink);
+  font-size: 0.66em;
+  font-weight: 800;
+  line-height: 1.55em;
+  text-align: center;
+  text-shadow: 0 0.05em 0 var(--coin-shine);
+  vertical-align: -0.18em;
+  transform: rotate(14deg);
+}
 .fin-kind-name {
   max-width: 100%;
   font-size: 0.8125rem;

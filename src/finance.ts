@@ -88,16 +88,13 @@ export function kindOf(a: Pick<Account, 'type' | 'holding'>): AccountKind | null
 export const kindLabel = (kind: AccountKind): string => (isHolding(kind) ? HOLDING_META[kind].short : ACCOUNT_TYPE_META[kind].label)
 /** …and in full, where there is room to say what it covers: "Retirement (401(k), IRA)". */
 export const kindName = (kind: AccountKind): string => (isHolding(kind) ? HOLDING_META[kind].label : ACCOUNT_TYPE_META[kind].label)
+/** A kind's emoji, as text; on screen, finance/KindMark.tsx draws crypto's as a gold ₿ coin instead. */
 export const kindEmoji = (kind: AccountKind): string => (isHolding(kind) ? HOLDING_META[kind].emoji : ACCOUNT_TYPE_META[kind].emoji)
 
 /** What an account is, after its name: "Retirement", or "Investment" for one whose holding is not written yet. */
 export function accountKindLabel(a: Pick<Account, 'type' | 'holding'>): string {
   const kind = kindOf(a)
   return kind ? kindLabel(kind) : ACCOUNT_TYPE_META.investment.label
-}
-export function accountEmoji(a: Pick<Account, 'type' | 'holding'>): string {
-  const kind = kindOf(a)
-  return kind ? kindEmoji(kind) : ACCOUNT_TYPE_META.investment.emoji
 }
 
 /** The account as another kind: an investment's holding goes when it stops being one. */

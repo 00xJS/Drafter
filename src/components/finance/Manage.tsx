@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react'
 import { formatMoney, isBill, isPayday, isSaving, monthlyCost, monthlyIncome, monthlySetAside, monthlySpare } from '../../bills'
-import { CHECK_IN_DEFAULT, accountEmoji, accountGroups, accountKindLabel, isLiability, latestBalance, moneySeries, moneyTotals, openCheckIn, savingGoals, slotOf, type AccountGroupKey } from '../../finance'
+import { CHECK_IN_DEFAULT, accountGroups, accountKindLabel, isLiability, latestBalance, moneySeries, moneyTotals, openCheckIn, savingGoals, slotOf, type AccountGroupKey } from '../../finance'
 import type { Account, Bill, Task } from '../../types'
 import { Bills } from '../Bills'
 import { Segmented } from '../stats/Segmented'
 import { GoalCard } from './Goals'
+import { AccountMark } from './KindMark'
 import { WEEKDAYS, ageOf } from './labels'
 import { SeriesRow, UndatedRow } from './Rows'
 
@@ -267,7 +268,7 @@ function AccountItem({ account: a, today, whose, onOpen }: { account: Account; t
     <li className={a.archivedAt ? 'bill-row fin-item archived' : 'bill-row fin-item'}>
       <button type="button" className="bill-main" onClick={onOpen}>
         <span className="bill-glyph" aria-hidden="true">
-          {accountEmoji(a)}
+          <AccountMark account={a} />
         </span>
         <span className="bill-copy">
           <strong>{a.name}</strong>

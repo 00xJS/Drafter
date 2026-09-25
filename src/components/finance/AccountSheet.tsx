@@ -1,12 +1,13 @@
 import { useId, useState } from 'react'
 import { formatMoney } from '../../bills'
-import { accountEmoji, accountFromForm, accountKindLabel, isLiability, kindEmoji, kindLabel, kindOf, kindParts, latestBalance, parseBalance, withBalance, withKind, type AccountKind } from '../../finance'
+import { accountFromForm, accountKindLabel, isLiability, kindLabel, kindOf, kindParts, latestBalance, parseBalance, withBalance, withKind, type AccountKind } from '../../finance'
 import { newerStamp } from '../../itemops'
 import type { Account } from '../../types'
 import { uid } from '../../utils'
 import { ConfirmButton } from '../ConfirmButton'
 import { Modal, ModalHead } from '../Modal'
 import { Segmented } from '../stats/Segmented'
+import { KindMark } from './KindMark'
 import { KindPicker, NAME_EXAMPLES, PickedKind } from './KindPicker'
 import { shortDay } from './labels'
 
@@ -123,12 +124,18 @@ export function AccountSheet({ account, members, today, onSave, onRemove, onClos
     )
   }
 
-  const emoji = kind ? kindEmoji(kind) : account ? accountEmoji(account) : ''
   const latest = account ? latestBalance(account) : null
   const history = account ? account.balances.slice(-HISTORY - 1) : []
   return (
     <Modal onClose={close} className="modal narrow fin-sheet account-sheet">
-      <ModalHead title={`${emoji} ${name.trim() || (kind ? kindLabel(kind) : (account?.name ?? ''))}`} variant="compose">
+      <ModalHead
+        title={
+          <>
+            <KindMark kind={kind} /> {name.trim() || (kind ? kindLabel(kind) : (account?.name ?? ''))}
+          </>
+        }
+        variant="compose"
+      >
         <button type="button" className="btn primary" disabled={!ready} onClick={save}>
           {account ? 'Save' : 'Add'}
         </button>

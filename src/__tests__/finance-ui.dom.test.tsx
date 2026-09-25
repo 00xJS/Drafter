@@ -689,6 +689,29 @@ describe('an account', () => {
     expect(message).toBe('Checked in “Coinbase”')
   })
 
+  it('holding crypto, is marked with a gold ₿ coin wherever it shows, and the other kinds keep their emoji', () => {
+    const coinbase = account('cb', 'Coinbase', 'investment', ['2026-09-23', 3150.4], { holding: 'crypto' })
+    render(<Finance {...props({ accounts: [...accounts, coinbase] })} />)
+    const coin = (el: Element | null | undefined) => el?.querySelector('.fin-coin')?.textContent
+    // the strip, then its sheet: the title, and the kinds
+    const chip = screen.getByRole('button', { name: /^Coinbase:/ })
+    expect(coin(chip)).toBe('₿')
+    expect(chip.textContent).not.toContain('🪙')
+    fireEvent.click(chip)
+    expect(within(dialog()).getByRole('heading', { name: '₿ Coinbase' })).toBeTruthy()
+    const kinds = within(dialog()).getByRole('radiogroup', { name: 'Kind of account' })
+    expect(coin(within(kinds).getByRole('radio', { name: 'Crypto' }))).toBe('₿')
+    expect(within(kinds).getByRole('radio', { name: 'Stocks & funds' }).textContent).toBe('📈Stocks & funds')
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Cancel' }))
+    // Check in's rows
+    fireEvent.click(within(card('Safe to spend')).getByRole('button', { name: 'Check in' }))
+    expect(coin(within(dialog()).getByLabelText('Coinbase: balance today').closest('li'))).toBe('₿')
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Cancel' }))
+    // and Manage's list
+    manage('Accounts')
+    expect(coin(within(screen.getByRole('region', { name: 'Investments' })).getByRole('listitem'))).toBe('₿')
+  })
+
   it('becomes another type altogether, and leaves its holding behind', () => {
     const coinbase = account('cb', 'Coinbase', 'investment', ['2026-09-23', 3150.4], { holding: 'crypto' })
     const p = props({ accounts: [...accounts, coinbase] })

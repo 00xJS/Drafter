@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { formatMoney } from '../../bills'
-import { accountEmoji, accountFromForm, isLiability, latestBalance, parseBalance, withBalance, type AccountKind } from '../../finance'
+import { accountFromForm, isLiability, latestBalance, parseBalance, withBalance, type AccountKind } from '../../finance'
 import { newerStamp } from '../../itemops'
 import type { Account } from '../../types'
 import { uid } from '../../utils'
 import { Modal, ModalHead } from '../Modal'
+import { AccountMark } from './KindMark'
 import { KindPicker, NAME_EXAMPLES, PickedKind } from './KindPicker'
 import { ageOf } from './labels'
 
@@ -102,7 +103,9 @@ export function CheckInSheet({ accounts, focus, today, onSave, onClose }: Props)
                 <li key={a.id} ref={a.id === focus ? focusRow : undefined} className={a.id === focus ? 'checkin-row focus' : 'checkin-row'}>
                   <label className="checkin-field">
                     <span className="checkin-name">
-                      <span aria-hidden="true">{accountEmoji(a)}</span> {a.name}
+                      <span aria-hidden="true">
+                        <AccountMark account={a} />
+                      </span> {a.name}
                     </span>
                     <small className="muted">{latest ? `${formatMoney(latest.amount)}${owed ? ' owed' : ''} · ${ageOf(latest.on, today)}` : 'Nothing typed in yet'}</small>
                     <input

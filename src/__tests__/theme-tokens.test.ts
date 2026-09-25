@@ -48,6 +48,12 @@ const FIXED: Record<string, string> = {
   '--on-deep-user-color': '#ffffff',
   '--mark-bg': 'color-mix(in srgb, var(--accent) 28%, transparent)', // rgba(249, 115, 22, 0.28)
   '--photo-white': '#ffffff', // the garment cut-out's ground: the product image, white in both
+  // crypto's ₿ coin (finance/KindMark.tsx): gold in both
+  '--coin-shine': '#fff6cf',
+  '--coin-gold': '#f9cf3a',
+  '--coin-deep': '#dea004',
+  '--coin-edge': '#a86f00',
+  '--coin-ink': '#8a5300',
 }
 
 /**

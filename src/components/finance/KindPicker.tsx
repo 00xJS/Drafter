@@ -1,4 +1,5 @@
-import { ACCOUNT_KINDS, kindEmoji, kindLabel, kindName, type AccountKind } from '../../finance'
+import { ACCOUNT_KINDS, kindLabel, kindName, type AccountKind } from '../../finance'
+import { KindMark } from './KindMark'
 
 // What kind of account: the nine as one grid, money to spend first and what
 // is invested last. Picked before the name, so the name field can suggest
@@ -24,7 +25,7 @@ export function KindPicker({ value, onPick, label = 'What kind of account' }: { 
       {ACCOUNT_KINDS.map(kind => (
         <button key={kind} type="button" role="radio" aria-checked={value === kind} className={value === kind ? 'fin-kind on' : 'fin-kind'} onClick={() => onPick(kind)}>
           <span className="fin-kind-emoji" aria-hidden="true">
-            {kindEmoji(kind)}
+            <KindMark kind={kind} />
           </span>
           <span className="fin-kind-name">{kindLabel(kind)}</span>
         </button>
@@ -38,7 +39,7 @@ export function PickedKind({ kind, onChange }: { kind: AccountKind; onChange(): 
   return (
     <div className="fin-kind-picked">
       <span>
-        <span aria-hidden="true">{kindEmoji(kind)}</span> {kindName(kind)}
+        <span aria-hidden="true"><KindMark kind={kind} /></span> {kindName(kind)}
       </span>
       <button type="button" className="btn subtle" onClick={onChange} aria-label={`Change the kind: ${kindLabel(kind)}`}>
         Change
