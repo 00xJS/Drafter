@@ -109,6 +109,9 @@ const nudgeable = u => pushConfigured() && (u.push_subscriptions ?? []).some(s =
  * The run then keeps, as it always did, only those due since each account's
  * last check.
  */
+/** The rows the nightly recipe drafts look at in an hour that is otherwise quiet: every live recipe (lib/recipedrafts.mjs keeps the bare ones each account can see). */
+export const RECIPE_ROWS = 'posts?select=id,data,user_id&deleted=is.false&kind=eq.recipe'
+
 export function dueWindowPath(now) {
   const day = ms => new Date(ms).toISOString().slice(0, 10)
   const from = day(now.getTime() - MAX_NUDGE_WINDOW - DAY)
@@ -528,10 +531,20 @@ async function digestRun(now, run) {
   }
 
   // Recipe drafts for the households whose night it is and that have a recipe
-  // still bare, subscribed or not: written by the background function too
+  // still bare, subscribed or not: written by the background function too. A
+  // quiet hour read only the tasks that can come due, so it reads the recipes
+  // the drafts look at on their own; any other hour's read already holds them.
   if (recipeNight) {
-    const unstarted = await startRecipeNight(recipeNightAccounts(accounts, rows, peers, now), now, site)
-    if (unstarted) failures.push(unstarted)
+    const recipeRows = quiet
+      ? await restAll(RECIPE_ROWS).catch(e => {
+          failures.push(`recipe drafts: ${e?.message ?? e}`)
+          return null
+        })
+      : rows
+    if (recipeRows) {
+      const unstarted = await startRecipeNight(recipeNightAccounts(accounts, recipeRows, peers, now), now, site)
+      if (unstarted) failures.push(unstarted)
+    }
   }
 
   // hard-delete purged tombstones older than the TTL (peers have had time to see them);

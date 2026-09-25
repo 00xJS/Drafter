@@ -17,10 +17,12 @@ vi.mock('../../netlify/functions/push.mjs', () => ({
     return { gone: [], failed: [], updated: [] }
   },
 }))
-vi.mock('../../netlify/functions/lib/ai.mjs', () => ({ resolveProvider: () => null, complete: async () => ({ error: 'no model here' }) }))
+// no model unless a test says there is one (a recipe night needs one to start)
+const ai = vi.hoisted(() => ({ provider: null as null | { name: string } }))
+vi.mock('../../netlify/functions/lib/ai.mjs', () => ({ resolveProvider: () => ai.provider, complete: async () => ({ error: 'no model here' }) }))
 
 // @ts-expect-error — a function file ships with no .d.mts: Netlify would deploy one as a function of its own
-import digestFunction, { dueWindowPath } from '../../netlify/functions/digest.mjs'
+import digestFunction, { RECIPE_ROWS, dueWindowPath } from '../../netlify/functions/digest.mjs'
 
 const SUPABASE = 'https://db.example.test'
 const REST = `${SUPABASE}/rest/v1/`
@@ -104,6 +106,7 @@ beforeEach(() => {
   vi.stubEnv('URL', 'https://site.test')
   vi.useFakeTimers({ toFake: ['Date'] })
   pushes.length = 0
+  ai.provider = null
   settings = []
   rows = household()
   reads = []
@@ -202,6 +205,27 @@ describe('a quiet hour reads only the tasks that can come due now', () => {
     expect(pushes).toEqual([])
     // the iPhone's watermark moves on as it did, so a browser added later starts from here
     expect(settings[0].last_due_check).toBe(HOUR)
+  })
+})
+
+describe('a recipe night that is otherwise quiet', () => {
+  // 03:30 in Phoenix, when the nightly recipe drafts start (lib/recipedrafts.mjs):
+  // no digest, draft or recap is due, so the hour stays quiet and reads the
+  // recipes the drafts look at on their own, never every kind
+  it('reads the tasks that can come due and the recipes, not every kind', async () => {
+    ai.provider = { name: 'test' }
+    const at = { last_due_check: '2026-09-23T10:00:00.000Z' }
+    settings = [account(JOE, [browser('joe')], at), account(MARIA, [browser('maria')], at)]
+    await runAt('2026-09-23T10:30:00.000Z')
+    expect(new Set(reads.map(r => r.path))).toEqual(new Set([dueWindowPath(new Date('2026-09-23T10:30:00.000Z')), RECIPE_ROWS]))
+    expect(reads.find(r => r.path === RECIPE_ROWS)?.rows).toBe(44)
+  })
+
+  it('reads no recipe on a night hour with no model to draft with', async () => {
+    const at = { last_due_check: '2026-09-23T10:00:00.000Z' }
+    settings = [account(JOE, [browser('joe')], at), account(MARIA, [browser('maria')], at)]
+    await runAt('2026-09-23T10:30:00.000Z')
+    expect(reads.map(r => r.path)).not.toContain(RECIPE_ROWS)
   })
 })
 
