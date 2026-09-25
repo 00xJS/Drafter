@@ -1,4 +1,4 @@
-import { REFINE_META, RefineMode } from '../../ai'
+import { REFINE_META, type RefineMode } from '../../refine'
 import { AiBusy, SetForm } from '../../taskform'
 
 /** A proposed rewrite of the description, waiting for the user to accept or discard it. */

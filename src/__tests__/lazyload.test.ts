@@ -267,3 +267,29 @@ describe('the lazy set stays out of the first load', () => {
     for (const name of LAZY_VIEWS) expect(lazy).toContain(`import('../${name}')`)
   })
 })
+
+/*
+ * The iPhone's warm-up (planner/lazy.ts NATIVE_PRELOAD_ORDER) parses the task
+ * editor, the palette and Settings a moment after launch, and it parsed the
+ * assistant's code (ai.ts and the retrieval Ask runs, ask.ts) and the
+ * calendar mirrors' engine (calendars.ts) with them, through a few static
+ * imports: the palette's question rule, the editor's ✨ buttons, and Settings'
+ * calendar sections. Those load when used now, and none is on the way.
+ */
+describe('the warm-up parses no assistant code and no calendar mirrors', () => {
+  const warm = reachable(['TaskEditor', 'Search', 'Settings'].map(component))
+
+  it('walks the real graph: the three reach their small halves', () => {
+    for (const file of ['questions.ts', 'refine.ts', 'calendarsettings.ts', 'taskform.ts'].map(f => resolve(SRC, f))) expect(warm).toContain(file)
+  })
+
+  it('reaches neither the assistant nor the mirrors’ engine', () => {
+    const reached = ['ai.ts', 'ask.ts', 'chatactions.ts', 'calendars.ts', 'components/settings/GoogleCalendar.tsx', 'components/settings/OutlookCalendars.tsx'].filter(f => warm.has(resolve(SRC, f)))
+    expect(reached).toEqual([])
+  })
+
+  it('still loads them where they are used: the editor’s ✨ buttons and Settings → Calendars', () => {
+    expect(readFileSync(component('TaskEditor'), 'utf8')).toContain("const assistant = () => import('../ai')")
+    expect(readFileSync(component('Settings'), 'utf8')).toContain("import('./settings/Calendars')")
+  })
+})

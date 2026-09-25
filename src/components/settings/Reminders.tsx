@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { copyRemindersOn, setCopyReminders } from '../../calendars'
+import { copyRemindersOn, setCopyReminders } from '../../calendarsettings'
 import {
   LocalPermission,
   PlanDayPref,

@@ -8,6 +8,7 @@ import { mealHistory } from '../shared/weekplan.mts'
 import { JSON_ONLY, NO_THINKING, REVIEW_SYSTEM, extractJSON, looksLikeThinking, parseLooseJSON, scanJSON, stripThinking } from '../shared/ai.mts'
 import { sseReader, type SseEvent } from '../shared/sse.mts'
 import type { MealHistory, WeekPlan } from '../shared/weekplan.mts'
+import type { RefineMode } from './refine'
 
 // All AI calls go through the session-gated /api/ai proxy (the Netlify
 // function). No API key ever reaches the browser.
@@ -330,13 +331,8 @@ export async function suggestChecklist(title: string, description: string): Prom
     .slice(0, 8)
 }
 
-export type RefineMode = 'clarify' | 'expand' | 'summarize'
-
-export const REFINE_META: Record<RefineMode, { label: string; busy: string; hint: string }> = {
-  clarify: { label: '✨ Clarify', busy: 'Clarifying…', hint: 'Rewrite for clarity, same facts' },
-  expand: { label: '✨ Add details', busy: 'Expanding…', hint: 'Fill in steps, specifics and open questions' },
-  summarize: { label: '✨ Summarize', busy: 'Summarizing…', hint: 'Condense to the essentials' },
-}
+// the three rewrites' names live on their own (refine.ts), drawn by the editor before this loads
+export { REFINE_META, type RefineMode } from './refine'
 
 const REFINE_PROMPTS: Record<RefineMode, string> = {
   clarify:

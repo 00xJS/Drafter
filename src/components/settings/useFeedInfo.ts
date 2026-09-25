@@ -1,5 +1,5 @@
 import { Dispatch, SetStateAction, useEffect, useState } from 'react'
-import { CalendarFeedInfo, feedAction, fetchFeedInfo } from '../../calendars'
+import { CalendarFeedInfo, feedAction, fetchFeedInfo } from '../../calendarsettings'
 import { useAsyncAction } from './useAsyncAction'
 
 export interface FeedInfo {

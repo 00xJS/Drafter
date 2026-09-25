@@ -5,7 +5,7 @@ import { googleLedgerKey, msLedgerKey, readCursor, writeCursor, type MirrorSpec 
 import { hashId, localMidnightIso, newerStamp } from './itemops'
 import { oauthReasonLabel } from './links'
 import { isNative, onOAuthReturn, startOAuth } from './native'
-import { getSupabase } from './supabase'
+import { actionJson as json, deviceTimeZone, type ActionError } from './calendarsettings'
 import { dateKey } from './utils'
 
 // The calendars: subscribing, connecting Google and Outlook, and the engine
@@ -13,7 +13,8 @@ import { dateKey } from './utils'
 // there. What the shell holds from launch — the feeds' events, the mirrors'
 // state and the day arithmetic Today draws with — is src/calendarstate.ts;
 // this file loads with the first mirror pass, the first entry written through
-// to a mirror, or Settings. Re-exported here so the calendars read as one API.
+// to a mirror, or Settings → Calendars. Re-exported here so the calendars read
+// as one API.
 export {
   GOOGLE_PUSH_ID,
   GOOGLE_PUSH_URL,
@@ -27,39 +28,17 @@ export {
   prepDueFor,
 } from './calendarstate'
 export type { CalendarState, GooglePushState, MirrorSpec } from './calendarstate'
-
-export interface CalendarFeedInfo {
-  configured: boolean
-  enabled: boolean
-  url: string | null
-  inboundUrl?: string | null
-  missing: string[]
-}
-
-export function inboundAction(action: 'inbound-enable' | 'inbound-rotate' | 'inbound-disable'): Promise<{ inboundUrl: string | null }> {
-  // the zone rides along so an emailed "Thursday 3pm" is read where you are
-  return apiFetch('/api/feed.ics', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action, timezone: deviceTimeZone() }) }).then(json<{ inboundUrl: string | null }>)
-}
+// What Settings asks of the calendars outside its Calendars group — the feed,
+// email-in and whether the copies remind (calendarsettings.ts) — so Settings
+// does not bring this whole file with it. Re-exported here, as one API.
+export { COPY_REMINDERS_KEY, copyRemindersOn, feedAction, fetchFeedInfo, inboundAction, setCopyReminders } from './calendarsettings'
+export type { CalendarFeedInfo } from './calendarsettings'
 
 /** A refused call, with the status and — for a sign-in the provider no longer takes — `reason: 'reauth'`. */
-export type ActionError = Error & { status?: number; reason?: string }
-
-async function json<T>(res: Response): Promise<T> {
-  const body = (await res.json().catch(() => null)) as (T & { error?: string; reason?: string }) | null
-  if (!res.ok || !body) throw Object.assign(new Error(body?.error ?? `HTTP ${res.status}`), { status: res.status, reason: body?.reason }) as ActionError
-  return body
-}
+export type { ActionError } from './calendarsettings'
 
 /** Whether a failure is an account whose sign-in the provider refuses for good: retrying cannot mend it, signing in again can. */
 export const needsSignIn = (e: unknown): boolean => (e as ActionError | null)?.reason === 'reauth'
-
-export function fetchFeedInfo(): Promise<CalendarFeedInfo> {
-  return apiFetch('/api/feed.ics').then(json<CalendarFeedInfo>)
-}
-
-export function feedAction(action: 'enable' | 'rotate' | 'disable'): Promise<CalendarFeedInfo> {
-  return apiFetch('/api/feed.ics', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action }) }).then(json<CalendarFeedInfo>)
-}
 
 // ---- Google Calendar (OAuth, per user) ---------------------------------------
 
@@ -197,22 +176,6 @@ export function expandWorkDays(
     out.push({ day: dateKey(d), start: start.toISOString(), end: end.toISOString() })
   }
   return out
-}
-
-/**
- * The device's IANA zone, sent with every mirror push and with each email-in
- * address action (triage reads an emailed "Thursday 3pm" in it). The server decides
- * whether a task is untimed in the owner's zone, and an account that never
- * saved push prefs had none, so it judged in UTC and every untimed task reached
- * both calendars as a 00:00 event all summer. It is only ever adopted, never
- * used to overwrite a zone the owner chose.
- */
-function deviceTimeZone(): string | undefined {
-  try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone || undefined
-  } catch {
-    return undefined
-  }
 }
 
 const PUSH_CURSOR_KEY = 'drafter:google-push-cursor'
@@ -973,37 +936,6 @@ export function resetGooglePushCursor(userId?: string | null): void {
   // an explicit empty ledger, so the next sweep cannot seed itself from a stale cursor
   resetMirrorLedger(googleLedgerKey(userId))
 }
-
-// ---- the copies' own reminders ----------------------------------------------------
-//
-// Drafter sends every reminder itself — the iPhone's own, and push — so the
-// copies the mirrors write into Google and every Outlook account carry none.
-// "Calendar copies remind me too" (Settings → Notifications, off by default) brings
-// each calendar's own back. It lives in the account's sign-in metadata, which
-// the mirror functions read with the session (COPY_REMINDERS_KEY in
-// netlify/functions/lib/session.mjs), so every device agrees without a column
-// of its own. A copy takes the setting the next time Drafter writes it: nothing
-// rewrites the owner's calendars in bulk.
-
-export const COPY_REMINDERS_KEY = 'calendar_copies_remind'
-
-/** Whether the copies remind too; false with no account. Throws with the reason when it cannot be read. */
-export async function copyRemindersOn(): Promise<boolean> {
-  const sb = getSupabase()
-  if (!sb) return false
-  const { data, error } = await sb.auth.getUser()
-  if (error) throw new Error(error.message)
-  return data.user?.user_metadata?.[COPY_REMINDERS_KEY] === true
-}
-
-/** Turn the copies' own reminders on or off for the account. Throws with the reason when it cannot. */
-export async function setCopyReminders(on: boolean): Promise<void> {
-  const sb = getSupabase()
-  if (!sb) throw new Error('Calendar copies need a signed-in account.')
-  const { error } = await sb.auth.updateUser({ data: { [COPY_REMINDERS_KEY]: on } })
-  if (error) throw new Error(error.message)
-}
-
 
 // ---- Outlook / Microsoft 365 (OAuth, per user, several accounts) -------------
 

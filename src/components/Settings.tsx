@@ -1,4 +1,5 @@
-import { ComponentType, useState } from 'react'
+import { ComponentType, Suspense, useState } from 'react'
+import { preloadable } from '../lazyload'
 import { Store } from '../store'
 import type { CalendarState, GooglePushState } from '../calendarstate'
 import { isSupabaseConfigured } from '../supabase'
@@ -9,7 +10,6 @@ import { About } from './settings/About'
 import { AdminLink } from './settings/AdminLink'
 import { Appearance } from './settings/Appearance'
 import { Assistants } from './settings/Assistants'
-import { Calendars } from './settings/Calendars'
 import { EmailIn } from './settings/EmailIn'
 import { Account, Household } from './settings/Household'
 import { Profile } from './settings/Profile'
@@ -18,6 +18,24 @@ import { Reminders } from './settings/Reminders'
 import { ImportExport } from './settings/ImportExport'
 import { Sync } from './settings/Sync'
 import { Templates } from './settings/Templates'
+
+/**
+ * Settings → Calendars: Google, Outlook, any .ics address and the subscribe
+ * link, with the calendar mirrors' engine (calendars.ts) behind them — the
+ * biggest part of Settings, and the part least often opened. It mounts as
+ * Settings opens, as every section does, but from a chunk of its own: the app
+ * warms Settings at launch (on the iPhone, parsing it then), and this is left
+ * out of that.
+ */
+const CalendarsSection = preloadable(() => import('./settings/Calendars').then(m => m.Calendars), 'Calendars')
+
+function Calendars(ctx: SettingsCtx) {
+  return (
+    <Suspense fallback={null}>
+      <CalendarsSection {...ctx} />
+    </Suspense>
+  )
+}
 
 /** A group: its button in the nav, and the sections shown under it, in page order. */
 interface SettingsGroupDef {
